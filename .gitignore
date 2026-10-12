@@ -7,6 +7,9 @@
 *.p12
 *.pfx
 secrets/
+.local/
+*.local
+*.local.*
 
 # OS and editors
 .DS_Store
@@ -30,6 +33,7 @@ node_modules/
 .npm/
 .pnpm-store/
 .next/
+.turbo/
 
 # Build products and logs
 build/

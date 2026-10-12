@@ -1,0 +1,11 @@
+#!/bin/sh
+# Git supplies the destination ref on stdin, including explicit refspecs.
+while read -r local_ref local_oid remote_ref remote_oid
+do
+    if [ "$remote_ref" = "refs/heads/main" ]; then
+        echo "YAPLIX: push to refs/heads/main is blocked (including force/delete)." >&2
+        echo "Push a feature/fix/chore branch and open a Pull Request into main." >&2
+        exit 1
+    fi
+done
+exit 0

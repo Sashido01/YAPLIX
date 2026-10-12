@@ -11,11 +11,12 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK = re.compile(r"!?\[[^\]\n]*\]\(([^)]+)\)")
-TEXT_NAMES = {".editorconfig", ".gitattributes", ".gitignore"}
+TEXT_NAMES = {".editorconfig", ".gitattributes", ".gitignore", "pre-push"}
 TEXT_SUFFIXES = {".md", ".yaml", ".yml", ".py", ".toml", ".json", ".txt", ".sh", ".ps1"}
 REQUIRED = {
     "README.md", "CONTRIBUTING.md", "SECURITY.md", ".gitattributes",
     ".github/workflows/repository-checks.yml", ".github/dependabot.yml",
+    ".githooks/pre-push",
 }
 
 
@@ -91,13 +92,52 @@ def validate_markdown_links(file: Path, root: Path) -> list[str]:
             continue
         if not dest.exists():
             errors.append(f"broken relative link: {relative}")
+        elif not has_exact_path_case(file.parent / relative, root):
+            errors.append(f"relative link has incorrect path case: {relative}")
     return errors
+
+
+def has_exact_path_case(path: Path, root: Path) -> bool:
+    """Check directory entries explicitly, including on case-insensitive Windows."""
+    current = root
+    for part in path.relative_to(root).parts:
+        if part == "..":
+            current = current.parent
+        elif part != ".":
+            if part not in {entry.name for entry in current.iterdir()}:
+                return False
+            current = current / part
+    return True
+
+
+def path_case_collisions(names: set[str]) -> list[str]:
+    """Include directory collisions (docs/a.md vs Docs/b.md)."""
+    seen = {}
+    problems = set()
+    for name in sorted(names):
+        parts = name.split("/")
+        for length in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:length])
+            key = prefix.casefold()
+            if key in seen and seen[key] != prefix:
+                problems.add(f"path case collision: {seen[key]} / {prefix}")
+            seen[key] = prefix
+    return sorted(problems)
 
 
 def check_repo(root: Path) -> list[str]:
     problems = []
     paths = tracked_files(root)
     names = {p.relative_to(root).as_posix() for p in paths}
+    problems.extend(path_case_collisions(names))
+    hook = ".githooks/pre-push"
+    if hook in names:
+        mode = subprocess.run(
+            ["git", "ls-files", "--stage", "--", hook], cwd=root,
+            check=True, capture_output=True, text=True,
+        ).stdout.split()
+        if not mode or mode[0] != "100755":
+            problems.append(f"{hook}: Git executable mode must be 100755")
     for expected in sorted(REQUIRED - names):
         problems.append(f"{expected}: required tracked file is missing")
     for path in paths:

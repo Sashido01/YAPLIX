@@ -6,29 +6,33 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from check_repo import is_text, markdown_targets, validate_markdown_links, validate_text  # noqa: E402
+from check_repo import (  # noqa: E402
+    ROOT, is_text, markdown_targets, path_case_collisions,
+    validate_markdown_links, validate_text,
+)
 
 
 class RepositoryCheckerTests(unittest.TestCase):
     def test_text_file_types(self):
         self.assertTrue(is_text(Path(".gitignore")))
         self.assertTrue(is_text(Path("docs/README.md")))
+        self.assertTrue(is_text(Path(".githooks/pre-push")))
         self.assertFalse(is_text(Path("assets/logo.png")))
 
     def test_lf_file(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
             path = Path(directory) / "valid.md"
             path.write_bytes(b"hello\n")
             self.assertEqual(validate_text(path), [])
 
     def test_crlf_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
             path = Path(directory) / "invalid.md"
             path.write_bytes(b"hello\r\n")
             self.assertTrue(any("CR detected" in e for e in validate_text(path)))
 
     def test_missing_final_newline_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
             path = Path(directory) / "invalid.md"
             path.write_bytes(b"hello")
             self.assertIn("missing final newline", validate_text(path))
@@ -38,7 +42,7 @@ class RepositoryCheckerTests(unittest.TestCase):
         self.assertEqual(markdown_targets(s), ["docs/guide.md"])
 
     def test_relative_links(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
             root = Path(directory)
             (root / "docs").mkdir()
             readme = root / "README.md"
@@ -48,6 +52,19 @@ class RepositoryCheckerTests(unittest.TestCase):
             self.assertEqual(validate_markdown_links(readme, root), [])
             readme.write_text("[Missing](docs/missing.md)\n", encoding="utf-8")
             self.assertTrue(any("broken relative link" in e for e in validate_markdown_links(readme, root)))
+
+
+    def test_wrong_case_link_is_rejected_on_both_platforms(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            root = Path(directory)
+            (root / "Guide.md").write_bytes(b"# Guide\n")
+            readme = root / "README.md"
+            readme.write_bytes(b"[Guide](guide.md)\n")
+            self.assertTrue(validate_markdown_links(readme, root))
+
+    def test_case_collision_in_directories(self):
+        self.assertTrue(path_case_collisions({"docs/a.md", "Docs/b.md"}))
+        self.assertEqual(path_case_collisions({"docs/a.md", "docs/b.md"}), [])
 
 
 if __name__ == "__main__":
