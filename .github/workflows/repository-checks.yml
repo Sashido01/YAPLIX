@@ -38,8 +38,6 @@ jobs:
           node-version: '24.18.0'
       - name: Install locked platform dependencies
         run: npm ci
-      - name: Install pinned BGen prompt library
-        run: npm run bgen:install
       - name: Typecheck and platform integration tests
         run: |
           npm run typecheck

@@ -1,19 +1,21 @@
-interface Status { ok: boolean; demoReady?: boolean; liveReady?: boolean; llmState?: string; mode?: string; connectionUrl?: string; accessRequired?: boolean; provider?: string; model?: string; bgenReady?: boolean }
+interface Status { ok: boolean; demoReady?: boolean; liveReady?: boolean; llmState?: string; mode?: string; connectionUrl?: string; accessRequired?: boolean; provider?: string; model?: string; browserReady?: boolean }
+let telegramToken:string|undefined;
 let imageUrl: string | undefined;
 const el = (id: string) => document.getElementById(id)!;
 async function response(path: string) {
-  const result = await fetch(path, { signal: AbortSignal.timeout(5000), cache: 'no-store' });
+  const result = await fetch(path, { signal: AbortSignal.timeout(5000), cache: 'no-store',...(telegramToken?{headers:{'X-Yaplix-Telegram-Session':telegramToken}}:{}) });
   if (!result.ok) throw new Error(result.status === 401 ? 'Доступ истёк: обновите страницу и введите ключ.' : 'API недоступен. Проверьте сервер и подключение.');
   return result;
 }
 function releaseImage() { if (imageUrl) URL.revokeObjectURL(imageUrl); imageUrl = undefined; el('qr-image').removeAttribute('src'); el('qr-image').hidden = true; }
 // Kept outside the initial UI bundle. QR is generated locally on the server only on demand.
-export async function diagnose() {
+export async function diagnose(token?:string) {
+  telegramToken=token;
   releaseImage(); el('qr-message').textContent = ''; el('connection-details').hidden = true;
   el('system-info').textContent = 'Проверяем API, базу и модель…';
   try {
     const data: Status = await (await response('/api/diagnostics')).json();
-    const states: Record<string,string> = {ready:'модель доступна',not_configured:'не настроен',unreachable:'Ollama недоступна',model_missing:'модель не установлена',bgen_missing:'установите BGen: npm run bgen:install',not_verified:'готовность внешнего BGen не проверена'};
+    const states: Record<string,string> = {ready:'модель доступна',not_configured:'не настроен',unreachable:'провайдер недоступен',model_missing:'модель не найдена',authentication_failed:'API key не принят',browser_missing:'установите браузер: npm run checker:install',not_verified:'готовность модели не проверена'};
     el('system-info').textContent = `API: ответ получен. База: ${data.ok?'исправна':'ошибка'}. DEMO: ${data.demoReady===false?'нужна сборка / проверка базы':'доступен'}. LIVE: ${states[data.llmState??'not_configured']??'состояние неизвестно'}${data.model?' / '+data.model:''}. Режим: ${data.mode??'неизвестен'}.`;
     if (data.mode !== 'lan' || !data.connectionUrl) {
       el('lan-instructions').textContent = 'Для телефона запустите npm run lan -- --list, затем npm run lan -- --host <IPv4> --port 3000. Выберите адрес Wi-Fi/Ethernet вашей сети из списка; VPN и виртуальные адаптеры также могут присутствовать.';

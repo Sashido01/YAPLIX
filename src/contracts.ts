@@ -21,7 +21,9 @@ export interface Artifact {
   model: string | null;
   generationStatus: 'succeeded' | 'failed';
   validationStatus: 'unverified' | 'passed' | 'failed';
+  generation?: { attempts: GenerationAttempt[]; fallback: boolean; elapsedMs: number; browser: { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause' } };
 }
+export interface GenerationAttempt { route: 'primary' | 'secondary' | 'local'; provider: string; requestedModel: string; model: string | null; outcome: 'accepted' | 'rejected' | 'failed'; errorCode: string | null; elapsedMs: number }
 export interface GameVersion extends Artifact {
   gameId: string;
   versionId: string;
@@ -76,12 +78,23 @@ export function parseSpec(value: unknown): GameSpec {
   return { prompt: string(o.prompt, 500, 2), audience: choice(o.audience, ['default', 'kids', 'elderly', 'hardcore'] as const), genre: string(o.genre, 64), mechanics: strings(o.mechanics), controls, responsive: o.responsive, webview: o.webview };
 }
 export function parseArtifact(value: unknown): Artifact {
-  const o = object(value, ['html', 'method', 'provider', 'model', 'generationStatus', 'validationStatus']);
+  const o = object(value, ['html', 'method', 'provider', 'model', 'generationStatus', 'validationStatus','generation']);
   const html = string(o.html, MAX_HTML_BYTES);
   if (new TextEncoder().encode(html).byteLength > MAX_HTML_BYTES) throw new Fault('ARTIFACT_TOO_LARGE', 413);
   if (!/^\s*<!doctype html>/i.test(html) || !/<html[\s>]/i.test(html) || !/<\/html>\s*$/i.test(html)) throw new Fault('INVALID_HTML');
   // Structure only; this does not establish playability or sanitize game code.
-  return { html, method: choice(o.method, methods), provider: o.provider === null ? null : string(o.provider, 128), model: o.model === null ? null : string(o.model, 128), generationStatus: choice(o.generationStatus, ['succeeded', 'failed'] as const), validationStatus: choice(o.validationStatus, ['unverified', 'passed', 'failed'] as const) };
+  const artifact:Artifact={ html, method: choice(o.method, methods), provider: o.provider === null ? null : string(o.provider, 128), model: o.model === null ? null : string(o.model, 128), generationStatus: choice(o.generationStatus, ['succeeded', 'failed'] as const), validationStatus: choice(o.validationStatus, ['unverified', 'passed', 'failed'] as const) };
+  if(o.generation!==undefined){
+    const g=object(o.generation,['attempts','fallback','elapsedMs','browser']);
+    const timing=(v:unknown)=>{if(!Number.isSafeInteger(v)||(v as number)<0||(v as number)>300000)throw new Fault('INVALID_GENERATION_METADATA');return v as number;};
+    if(!Array.isArray(g.attempts)||!g.attempts.length||g.attempts.length>9||typeof g.fallback!=='boolean')throw new Fault('INVALID_GENERATION_METADATA');
+    const attempts=g.attempts.map(v=>{const a=object(v,['route','provider','requestedModel','model','outcome','errorCode','elapsedMs']);return{route:choice(a.route,['primary','secondary','local'] as const),provider:string(a.provider,128),requestedModel:string(a.requestedModel,128),model:a.model===null?null:string(a.model,128),outcome:choice(a.outcome,['accepted','rejected','failed'] as const),errorCode:a.errorCode===null?null:string(a.errorCode,128),elapsedMs:timing(a.elapsedMs)};});
+    const b=object(g.browser,['profiles','offline','errors','scope']);
+    if(JSON.stringify(b.profiles)!=='[320,390]'||b.offline!==true||b.errors!==0||b.scope!=='startup-input-pause'||artifact.method!=='llm_code'||artifact.validationStatus!=='passed')throw new Fault('INVALID_GENERATION_METADATA');
+    const final=attempts.at(-1)!;if(final.outcome!=='accepted'||final.errorCode!==null||final.provider!==artifact.provider||final.model!==artifact.model)throw new Fault('INVALID_GENERATION_METADATA');
+    artifact.generation={attempts,fallback:g.fallback,elapsedMs:timing(g.elapsedMs),browser:{profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause'}};
+  }
+  return artifact;
 }
 export function parseEvent(value: unknown): GameEvent {
   if (new TextEncoder().encode(JSON.stringify(value)).byteLength > MAX_EVENT_BYTES) throw new Fault('EVENT_TOO_LARGE', 413);

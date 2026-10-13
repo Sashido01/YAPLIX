@@ -1,429 +1,125 @@
-# Рабочее место и проверки YAPLIX
+# Рабочее место, API и обслуживание
 
-Нужны **Git, Python 3.11+, Node 24.18+ (24.x), npm**. Стек приложения — TypeScript,
-Hono и встроенный SQLite. Новый участник сначала принимает приглашение в
-Private-репозиторий и настраивает GitHub-аутентификацию средствами Git; токены
-не вставляет в URL и файлы проекта.
+Git, Node 24.18+ (24.x), npm; для разработки Python 3.11+. Установка — [README](../README.md).
+Команды из корня клона, секреты/данные/браузеры/инструменты только локально.
 
-## Первый клон
-
-Из выбранной родительской папки (команды Git одинаковы на Windows/Linux):
+## Разработка и CI
 
 ```sh
-git clone https://github.com/Sashido01/yaplix.git
-cd yaplix
 git config --local core.autocrlf false
-git config --show-origin --get core.hooksPath
-```
-
-Отсутствие вывода последней команды и код 1 означают, что core.hooksPath не задан. Если уже настроены чужие hooks, сначала согласуйте их совместное использование: изменение core.hooksPath заменяет активный каталог hooks. Проверьте также свои активные hooks в .git/hooks, если отдельный путь не задан. В существующем клоне не повторяйте git clone.
-
-## Установка локальной защиты main
-
-Из корня клона каждый участник выполняет:
-
-```sh
 git config --local core.hooksPath .githooks
-git config --local --get core.hooksPath
-git ls-files --stage .githooks/pre-push
-```
-
-Ожидаются .githooks и Git mode 100755. На Linux при утрате исполняемого права выполните chmod +x .githooks/pre-push. Git for Windows запускает #!/bin/sh своим shell, дополнительный runtime для hook не нужен. Глобальная Git-конфигурация не меняется. После нового клонирования установка повторяется; .git/config в Git не передаётся.
-
-Hook запрещает **любой удалённый refs/heads/main**: обычный push, явный refspec, создание, force-push и удаление. Сопоставление идёт по целевой ветке из stdin Git, а не по текущей локальной ветке или имени remote. В смешанном push запрещается вся операция. Возможности обхода и серверные ограничения — в [github-ruleset.md](github-ruleset.md). Не проверяйте защиту тестовым push в настоящий origin/main.
-
-## Локальные проверки
-
-Установка/запуск и команды продукта — в [README](../README.md). npm ci использует
-lockfile и проектный `.npmrc`; npm cache находится в `.local/npm-cache`.
-npm start читает `.env`, если он существует; переменные процесса имеют приоритет.
-PORT по умолчанию 3000, YAPLIX_DB внутри `.local`, BGEN_URL опционален,
-BGEN_TIMEOUT_MS по умолчанию 30000, BGEN_INIT_DATA только server-side.
-Сохраните initData локально, не логируйте и обновляйте при истечении срока.
-
-Windows, PowerShell 7:
-
-```powershell
-python --version
+npm ci
+npm run browsers:install
+npm run check
 python scripts/check_repo.py
 python -m unittest discover -s scripts/tests -v
 git diff --check
-git status --short
 ```
 
-Ubuntu/Linux: те же команды с `python3`. Скрипт проверяет **отслеживаемые файлы**; перед проверкой новых файлов добавьте явно просмотренные файлы в индекс (`git add <file>`). Тесты push используют только временные локальные репозитории внутри этого клона и никогда не обращаются к GitHub.
+Ubuntu: python3; при недостающих OS libraries:
+`node scripts/browser-tests.mjs install --with-deps chromium webkit firefox`.
+Production LIVE достаточно checker:install, DEMO не нужен Chromium.
+Hook mode 100755 блокирует remote main; не заменяет server protection. Checker
+проверяет tracked files, UTF-8/LF/регистр ссылок. Gitleaks 8.24.3:
+`gitleaks git --redact --log-opts=--all .`, `gitleaks dir --redact .`.
+Сначала checksum инструмента; binary/reports/secrets не коммитить.
+Hosted Windows/Ubuntu: npm ci, Python tests, types/integration, реальный server-side
+Chromium checker, 12 frontend-профилей, performance. LLM transport синтетический,
+реальный inference отдельно. Actions SHA pinned, обязательны green exact PR head,
+merge и smoke main. [Workflow](../CONTRIBUTING.md).
 
-Для полного локального сканирования установите официальный Gitleaks **8.24.3** в удобный локальный каталог и проверьте checksum архива. Не храните бинарник в Git. Из корня с доступным gitleaks:
+## Конфигурация
 
-```sh
-gitleaks git --redact --log-opts=--all .
-gitleaks dir --redact .
-```
+.env.example безопасен; process variables имеют приоритет над .env.
 
-Вторая команда проверяет также незакоммиченные файлы; не размещайте её отчёт в Git. Находка или ошибка инструмента запрещает считать проверку успешной. Отсутствие находок не гарантирует отсутствия всех секретов. Действия при утечке — в [SECURITY.md](../SECURITY.md).
+| Параметр | Значение / ограничение |
+| --- | --- |
+| PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
+| LIVE_PROVIDER | cloud default; ollama/none; no key отключает только LIVE |
+| CLOUD_BASE_URL / MODEL / API_KEY | exact OpenAI-compatible base / model ID / secret |
+| LLM_TIMEOUT_MS | 1000..300000, default 180000, общий deadline |
+| LLM_MAX_TOKENS | 256..32000, default 12000 |
+| LLM_TOKEN_FIELD | max_tokens default или max_completion_tokens |
+| LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
+| LLM_REPAIRS | 0..2, default 1 |
+| LLM_FALLBACK | none default; explicit secondary/ollama |
+| SECONDARY_BASE_URL / MODEL / API_KEY | все три при secondary |
+| OLLAMA_BASE_URL / MODEL | loopback 11434 / qwen2.5-coder:14b default |
+| YAPLIX_MODE / HOST / PUBLIC_URL | local loopback; explicit LAN/HTTPS |
+| YAPLIX_ACCESS_KEY | random URL-safe 32..128 chars, shared team access |
+| TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS | server token / числовые ID через запятую |
+| TELEGRAM_AUTH_MAX_AGE | 30..900 s, default 300; session TTL 1 h |
 
-## CI
+OpenRouter exact base https://openrouter.ai/api/v1, model **openrouter/free**;
+primary запрещает paid secondary. Альтернативный provider/Gateway21t требует
+официально известные base/model, не угадываются. TLS bypass, credentials/query в
+base запрещены. Readiness GET models не доказывает successful inference.
 
-В одном workflow находятся repository-checks (Ubuntu 24.04 и Windows) и secret-scan
-(Linux, Gitleaks). Обе OS выполняют исходные Python-проверки, npm ci, typecheck,
-platform/adapter integration tests и browser tests (пять профилей).
-Триггеры: pull_request, push в main, ручной workflow_dispatch. На PR/push Action
-проверяет диапазон изменений из полной загруженной истории; ручной запуск
-сканирует историю текущего checkout. Это не равнозначно сканированию всех
-удалённых веток. Для полной локальной истории используйте команду с --all выше.
+## API
 
-Actions закреплены SHA; Dependabot проверяет обновления. Токен имеет contents: read, сканер дополнительно pull-requests: read для чтения списка коммитов Private PR. Запись комментариев, SARIF-артефакты и summary сканера отключены; вывод Gitleaks редактируется (--redact). Для личного аккаунта отдельная лицензия Gitleaks Action не нужна ([документация](https://github.com/gitleaks/gitleaks-action#usage-example)). Private использует квоту GitHub Actions; исчерпание квоты не считается успешным CI.
-
-Локальные проверки не подтверждают hosted CI новой ветки. Перед merge нужно дождаться реальных зелёных checks последней версии PR. Командный процесс — в [CONTRIBUTING.md](../CONTRIBUTING.md), подготовка ноутбука — в [cross-platform.md](cross-platform.md).
-
-## API для UI jeanhayl
-
-JSON body обязателен для POST. По умолчанию API принимает loopback Host и
-same-origin Origin; явные LAN/HTTPS режимы требуют точный настроенный origin; непривязанный запрос из sandbox (Origin null) отклоняется. UI подключает
-API через тот же origin/proxy. LAN/HTTPS защищены общей key/cookie авторизацией;
-персональные аккаунты и multi-user ownership отсутствуют.
+POST JSON, same-origin. LAN key/cookie; HTTPS также валидный Telegram cookie или
+X-Yaplix-Telegram-Session. Events дополнительно session bearer. Origin null запрещён.
 
 | Операция | Контракт |
 | --- | --- |
-| GET /api/games | метаданные последних 50 игр, последняя версия каждой |
-| GET /api/diagnostics | integrity/FK/schema и безопасные сведения конфигурации |
-| POST /api/backups | `{}`; проверенный SQLite backup, filename/hash/schema |
-| GET /api/health | ok по integrity/FK, schemaVersion |
-| POST /api/games | `{spec, mode?, artifact?, requiredMethod?}`; mode=demo — авторская игра, live — строгий LLM, без mode — legacy; ответ GameVersion, 201 |
-| GET /api/games/:gameId | gameId и история метаданных versions без HTML |
-| POST /api/games/:gameId/versions | `{spec, previousVersionId, mode?, artifact?, requiredMethod?}`; DEMO или LLM iteration либо mock import; 201 |
-| GET /api/versions/:versionId | полная GameVersion с HTML |
-| GET /api/versions/:versionId/export | exact HTML attachment; X-Content-SHA256 совпадает с GameVersion.sha256 |
-| POST /api/versions/:versionId/sessions | `{}`; sessionId, versionId, token, expiresAt, protocolVersion |
-| POST /api/sessions/:sessionId/events | один GameEvent + Authorization: Bearer session token; duplicate boolean |
-| GET /api/versions/:versionId/analytics | статистика; optional baselineVersionId query — сравнение |
-| GET /runtime/runtime.js | ES-module mountGame после npm run build |
+| GET /api/health | integrity/FK/schema |
+| GET /api/diagnostics | безопасные readiness/model/browser параметры |
+| POST /api/access | `{key}` → HttpOnly cookie |
+| POST /api/telegram/auth | `{initData}` → Secure cookie + memory sessionToken |
+| GET /api/games | latest metadata 50 игр, title из первого prompt |
+| POST /api/games | `{spec,mode:demo/live,requiredMethod?}` → GameVersion 201 |
+| GET /api/games/:gameId | история metadata без HTML |
+| POST /api/games/:gameId/versions | `{spec,previousVersionId,mode,requiredMethod?}` → linked version |
+| GET /api/versions/:versionId | GameVersion с HTML |
+| GET /api/versions/:versionId/export | exact HTML attachment, X-Content-SHA256 |
+| POST /api/versions/:versionId/share | `{}` → HTTPS URL 7 дней |
+| GET /play/:versionId/:expires/:signature | readonly HTML, cap не авторизует API |
+| POST /api/versions/:versionId/sessions | `{}` → IDs/token/expiresAt/protocolVersion |
+| POST /api/sessions/:sessionId/events | GameEvent + session bearer, duplicate boolean |
+| GET /api/versions/:versionId/analytics | aggregates; baselineVersionId для comparison |
+| POST /api/backups | `{}` → filename/hash/schema verified backup |
+| GET /api/connection/qr.svg | LAN cookie, только адрес/порт |
 
-Точные типы и runtime validators: [contracts.ts](../src/contracts.ts).
-GameSpec имеет prompt, audience (`default/kids/elderly/hardcore`), genre,
-mechanics[], controls[] (`keyboard/touch/pointer`), responsive, webview.
-Неизвестные поля отклоняются. prompt 2–500 символов; адаптер добавляет компактные
-requirements, поэтому суммарный BGen prompt тоже должен помещаться в 500.
-Это текстовые требования, не гарантия их выполнения BGen.
+Strict types — [contracts.ts](../src/contracts.ts). prompt 2..500 chars; audience
+(default/kids/elderly/hardcore); arbitrary genre/mechanics, controls keyboard/touch/
+pointer, responsive/webview boolean. Imported artifact только mock/unverified,
+клиент не может выставить llm_code/passed. requiredMethod только llm_code, без import.
+LIVE success actual provider/model/succeeded/passed + generation attempts/browser
+scope. Failed generation не создаёт version. `{error:CODE}` и sanitized attempts:
+LLM_AUTH/RATE_LIMIT/HTTP/TIMEOUT/BUSY/INVALID_RESPONSE/INVALID_HTML/UNSAFE_ARTIFACT,
+BROWSER_*; own RATE_LIMIT 429. Parent хранит session token, игра получает только IDs
+в yaplix_init v1. HTTP retries сохраняют eventId/sequence. Unmount закрывает realm.
 
-Пример локальной проверки на Windows в другом терминале после npm start:
+## Backup, восстановление, обновление
 
-```powershell
-$spec = @{ prompt='Collect three points'; audience='default'; genre='clicker'; mechanics=@('score'); controls=@('touch','pointer','keyboard'); responsive=$true; webview=$true }
-$artifact = @{ html=(Get-Content tests/fixtures/game.html -Raw); method='mock'; provider='authored-test-fixture'; model=$null; generationStatus='succeeded'; validationStatus='unverified' }
-$version = Invoke-RestMethod http://127.0.0.1:3000/api/games -Method Post -ContentType application/json -Body (@{ spec=$spec; artifact=$artifact } | ConvertTo-Json -Depth 8)
-Invoke-RestMethod "http://127.0.0.1:3000/api/versions/$($version.versionId)/analytics"
-```
+npm run backup: согласованная SQLite online copy даже при WAL, integrity/FK/schema
+v1/SHA-256, до 20 файлов, без перезаписи. .env/модель не входят в backup.
 
-Импорт artifact разрешает только mock + unverified. Реальный llm_code проходит
-через серверный Ollama transport с BGen compiler или строгий BGen HTTP Adapter. Клиент не может сертифицировать
-свою игру как passed или переименовать fixture в LLM.
-requiredMethod допускает только `llm_code`; несовместим с artifact import.
-Для конкурсного запуска всегда указывать это поле. Пример запроса:
+1. Остановите свой backend Ctrl+C, проверьте отсутствие других YAPLIX writers.
+2. `npm run verify:backup -- .local/backups/backup-UUID.sqlite SHA256` read-only;
+   hash/schema mismatch означает остановку.
+3. Если база исправна, защитный backup. Переместите целый каталог своей базы вместе
+   с WAL/SHM в новый `.local/recovery-DATE`, проверив пути внутри клона. Не удаляйте
+   оригинал и не перезаписывайте existing recovery.
+4. Пустой каталог базы: скопируйте verified backup под настроенное имя, без old WAL/SHM.
+5. doctor/start, game/history/export. При ошибке остановите backend, сохраните
+   неудачную копию и верните целый recovery-каталог. UI auto-restore пока нет.
 
-```json
-{"spec":{"prompt":"Create a snake game with touch controls","audience":"default","genre":"snake","mechanics":["collect"],"controls":["touch","keyboard"],"responsive":true,"webview":true},"requiredMethod":"llm_code"}
-```
-
-Допустимый успех — GameVersion с UUID gameId/versionId, previousVersionId null
-для первого запуска, spec, html, sha256 (64 hex), createdAt (UTC),
-method=llm_code, provider/model непустые строки, generationStatus=succeeded,
-validationStatus=unverified. Это схема ответа, не наблюдённый live-результат.
-При старом удалённом BGen endpoint ожидается HTTP 503 `{"error":"BGEN_LIVE_CONTRACT_REQUIRED"}`.
-
-UI получает версию и сессию, вызывает `mountGame(container, html, {sessionId,
-versionId}, onEvent)` и держит token у родителя. onEvent ставит события в
-последовательную очередь HTTP; повторяет **тот же** eventId/sequence при сетевой
-ошибке. При пропущенном событии сначала повторить его; не пересоздавать ID.
-unmount удаляет frame/listener. Срок токена 1 час; для следующего запуска новая
-сессия. Во время offline телеметрия может отсутствовать; gameplay должен работать.
-
-После загрузки bridge посылает `yaplix_init` с protocolVersion=1 и IDs, без token.
-Игра отправляет `{channel:'yaplix', event:GameEvent}` через parent.postMessage;
-при отсутствии родителя просто пропускает отправку. Минимальный пример —
-[авторская fixture](../tests/fixtures/game.html). Это YAPLIX протокол; локальная LLM получает его контракт в промпте.
-Текущий BGen telemetry измеряет генерацию и не считается игровым.
-
-## Предложение контракта для SKZHPRVT
-
-Сохраняем /api/generate и /api/iterate и текущие поля. Предлагаем добавить:
-
-```json
-{
-  "html": "<!DOCTYPE html><html>...</html>",
-  "ok": true,
-  "fromCache": false,
-  "provider": "openai",
-  "provenance": {
-    "protocolVersion": 1,
-    "method": "llm_code",
-    "provider": "openai",
-    "model": "actual-model-id"
-  }
-}
-```
-
-method всегда один из llm_code/template_config/mock/fallback, соответствует
-реальному пути. Для cache сохранить **исходное** provenance с артефактом;
-для engine/default честно template_config/fallback, для Mock всегда mock.
-model/provider null, если неизвестны; строгий llm_code такой ответ отклоняет.
-ok сообщает итог генерации/анализатора,
-не результат браузерного испытания. Этот контракт ещё не принят BGen.
-
-Отдельно нужны: явный code-generation путь для обязательного условия кейса,
-передача previousCode в CompileOptions при iterate, отказ от скрытого Mock,
-GigaChat TLS с проверяемым CA вместо rejectUnauthorized=false, опциональный
-YAPLIX event bridge с автономным fallback. Эти изменения выполняет владелец BGen.
-Замечания переданы здесь как предложение к командному review; внешних сообщений
-участнику эта задача не отправляет.
-
-Для строгого режима предлагаем маленький read-only handshake
-`GET /api/capabilities` (пока отсутствует в BGen):
-
-```json
-{"protocolVersion":1,"revision":"<40 lowercase hex Git SHA>","codeGeneration":true,"tlsVerification":true,"previousCode":true}
-```
-
-revision — SHA развёрнутого сервиса. codeGeneration — поддержка требуемого пути,
-tlsVerification — проверка сертификатов **всех** разрешённых LLM/OAuth запросов,
-previousCode — HTML реально попадает в compiler/LLM. Это утверждения владельца,
-их сверяют с исходниками; endpoint не заменяет аудит TLS. Известный SHA 419c649
-небезопасен и отклоняется. Нельзя просто добавить true к старому коду.
-
-POST generate/iterate дополнительно получает requiredMethod=llm_code: пропустить
-жанровые шаблоны, запретить Mock/default/config fallback; при невозможности вернуть
-ошибку. Cache допускается только с сохранёнными исходными provenance/model.
-POST iterate получает previousCodeSha256; ответ должен вернуть этот же hash
-после проверки, что соответствующий HTML передан в CompileOptions.previousCode.
-Hash не означает, что модель успешно сохранила поведение; это проверяется отдельно.
-Без previousCode=true итерация блокируется до POST. Bridge v1 остаётся optional.
-
-## Live-запуск и демонстрация TASK-003
-
-После исправления/аудита BGen, из корня проекта:
-
-```powershell
-$env:BGEN_URL='https://your-generator.example'
-$env:BGEN_TIMEOUT_MS='120000'
-npm run demo:live
-```
-
-Не отключать TLS. BGEN_INIT_DATA, если требуется, задаётся только серверному
-процессу из локального защищённого источника. Скрипт не логирует initData или
-upstream error body. URL не должен содержать credentials/query/path.
-
-Команда создаёт отдельный `.local/live/<run>` с SQLite, evidence.json и exact HTML:
-snake (может быть шаблоном в legacy, поэтому здесь обязательно code mode),
-Signal Courier (зеркала, луч и запас энергии; отдельный сценарий), затем запрос
-изменения snake с пяти до восьми яблок. Все промпты сохраняются в evidence/spec.
-Это запланированные сценарии; ни один из них пока не получен от настоящей LLM.
-Статус generated_unverified означает только генерацию/хранение/hash, не playability.
-При отказе status=blocked, код процесса 1, частичные версии сохраняются честно.
-
-Для дальнейшей демонстрации: открыть run database существующим сервером через
-YAPLIX_DB, получить version/session через API, подключить mountGame в UI jeanhayl,
-испытать Start/управление/победу/поражение на пяти Playwright-профилях. У каждой
-реальной игры проверить её конкретные элементы и механику, не переиспользовать
-selectors авторской fixture без проверки. Скачать export; открыть файл в
-изолированном browser context с offline=true до загрузки, проверить тот же цикл,
-Canvas при 320/390 px, ошибки JS и запросы сети. Сверить SHA скачанного файла.
-Физический Android проверять отдельно при наличии устройства.
-
-Если артефакт отправляет bridge events, записывать только пришедшие события,
-проверить analytics и сравнение linked version с baselineVersionId. При отсутствии
-bridge оставить telemetry not_observed. Нулевые/null агрегаты не заменять
-синтетическими событиями. Реальную итерацию оценить по изменению поведения.
-До этого validationStatus остаётся unverified; автоматического присвоения passed нет.
-
-13 октября 2026: merge PR #5/main 3b5815d подтверждён, BGen SHA419c649 unchanged.
-HTTPS root/health 200, capabilities 404; demo:live сохранил blocked /
-BGEN_LIVE_CONTRACT_REQUIRED с 0 версий в локальном evidence. Первый сетевой запуск
-также отказал; никакой отказ не переключился на mock. Не отправлено ни одного
-generation/iterate POST. Блокеры SKZHPRVT: code mode/provenance/model, TLS и
-previousCode; jeanhayl: интегрированного UI в main пока нет. CI подтверждает
-synthetic интеграцию, а не live LLM.
-
-Ошибки адаптера: BGEN_AUTH, BGEN_RATE_LIMIT, BGEN_HTTP, BGEN_TIMEOUT,
-BGEN_NETWORK, BGEN_INVALID_JSON/RESPONSE/PROVENANCE/ARTIFACT, BGEN_PROVENANCE_REQUIRED,
-BGEN_PROVENANCE_CONFLICT; BODY_TOO_LARGE для размеров.
-Строгий режим дополнительно: BGEN_LIVE_CONTRACT_REQUIRED, BGEN_UNSAFE_CAPABILITIES,
-BGEN_AUDITED_REVISION_UNSAFE, BGEN_CAPABILITIES_HTTP/INVALID, BGEN_CODE_REQUIRED,
-BGEN_GENERATION_FAILED, BGEN_ITERATION_UNSUPPORTED/UNCONFIRMED;
-INSECURE_TLS_CONFIGURATION и INVALID_REQUIRED_METHOD для входной политики.
-API ошибки имеют `{error:code}`, без upstream body/секретов; неверные входы 400,
-лимиты 413/507, неизвестные сущности 404, конфликт событий 409, токен 401.
-
-## Доказательные границы TASK-002
-
-Локально: Node 24.18.0, SQLite 3.53.1, 19 Python tests, TypeScript typecheck,
-25 platform/adapter tests, 15 Playwright tests. Адаптер проверен изолированным
-HTTP-сервером; его llm_code metadata синтетические, не результат платной LLM.
-В каждом browser-профиле проверены offline win/loss, SQLite event forwarding и
-отрицательные sandbox/CSP/bridge сценарии. Windows проверяет directory junction,
-Linux CI дополнительно dangling file symlink. Реальные BGen/LLM/WebView,
-физические устройства и демонстрационный Ubuntu ноутбук — NOT VERIFIED.
-Hosted CI оценивается по конкретному последнему SHA PR, не по этим локальным тестам.
-
-TASK-003 локально: 19 Python tests, typecheck, 40 unit/integration tests,
-20 Playwright tests в тех же пяти профилях — PASS. Regression runner использует
-синтетический HTTP BGen и сохраняет две игры + linked version, затем проверяет
-SQLite/export и отсутствие придуманных сессий. Проверены также redacted URL
-configuration errors и отказ до POST при unsafe TLS/неподдерживаемой итерации.
-На Windows sandbox ограничил завершение первого test server; повторный запуск
-с правами на остановку своих дочерних процессов завершился exit 0, 20 passed.
-Реальный endpoint проверен только HTTPS GET/preflight; live LLM, реальные игровые
-события/итерация и Android остаются NOT VERIFIED. Минимум готовности TASK-003
-не выполнен до исправления BGen и испытания настоящих артефактов.
-
-## TASK-004: локальный LIVE и обслуживание
-
-Единый UI открыт на `/`; build отдаёт `/runtime/ui.js`. DEMO всегда явно
-маркирован mock, provider=yaplix-authored-demo, model=null. Для LIVE установите
-Ollama/модель и pinned BGen по README; LIVE_PROVIDER=ollama выбирает только эту
-модель. POST /api/chat с stream=false возвращает полный ответ; проверяются done,
-model, размер, HTML и запрет внешних scripts/network. BGen compiler получает
-prompt/audience, полный GameSpec как требования и previousCode/previousPrompt
-в CompileOptions. При ошибке версия не сохраняется; шаблонной подмены нет.
-
-Встроенный backup использует SQLite online backup API, проверяет копию read-only
-по integrity_check, foreign_key_check, user_version=1 и каноническим SQL-определениям
-таблиц, ограничений и индексов, вычисляет SHA-256. Это
-согласованная копия даже при WAL; копирование только активного .sqlite не заменяет
-backup. Максимум 20 файлов backup-UUID.sqlite; имена принадлежат операции,
-существующие файлы не перезаписываются. Копия не сохраняет .env или модели.
-
-### Восстановление
-
-1. Остановите backend Ctrl+C, проверьте, что других YAPLIX процессов нет.
-2. `npm run verify:backup -- .local/backups/backup-UUID.sqlite <сохранённый SHA-256>`.
-   Команда ничего не записывает в копию; при несовпадении hash/схемы остановитесь.
-3. Сохраните текущее состояние: `npm run backup` (если база исправна), затем
-   переместите **целую** `.local/data` вместе с WAL/SHM в новую, ещё не существующую
-   `.local/recovery-<дата-время>`. Проверьте пути внутри клона. Не удаляйте оригинал.
-   Для нестандартного YAPLIX_DB переместите его отдельный каталог по тому же правилу.
-4. Создайте пустую `.local/data`, скопируйте проверенный backup как
-   `.local/data/yaplix.sqlite`. Старые WAL/SHM к новой базе не переносите.
-5. `npm run doctor`, `npm start`; откройте сохранённую игру, историю и экспорт.
-   При ошибке остановите backend, сохраните неудачную копию отдельным именем и
-   верните целый recovery-каталог. Автоматического restore через UI пока нет.
-
-Используйте native PowerShell Move-Item/Copy-Item/New-Item на Windows и mv/cp/mkdir
-на Ubuntu, только после проверки новых целевых имён; не смешивайте shells и
-не выполняйте recursive delete. Синтетический readback backup и restart проверяются
-тестами; реальные повреждённые пользовательские базы в этой задаче не восстанавливались.
-
-### Обновление без потери данных
-
-Остановите процесс и сделайте/проверьте backup. В чистом клоне на main:
+Windows native Move-Item/Copy-Item/New-Item с LiteralPath; Ubuntu mv/cp/mkdir.
+Обновление после остановки и backup, в чистой main:
 
 ```sh
 git pull --ff-only origin main
 npm ci
-npm run bgen:install
+npm run checker:install
 npm run build
 npm run doctor
 npm start
 ```
 
-Если есть локальные изменения или ff-only не проходит, остановитесь и сохраните
-их в своей ветке; не применяйте reset/clean/force. `.local` и `.env` не заменяются
-Git/npm. После обновления проверьте предыдущую игру, версии, запуск и экспорт.
-Модель установлена отдельно и не удаляется обновлением приложения.
-
-## LAN для телефона
-
-После `npm ci` и `npm run build` выполните `npm run lan -- --list` вместо `npm start`.
-`--host` выбирает существующий частный IPv4, `--port` — свободный порт:
-
-```sh
-npm run lan -- --host 192.168.0.12 --port 3000
-```
-
-Адрес/ключ выводятся только в локальном терминале. Передайте ключ доверенному
-участнику отдельным каналом; не добавляйте его в URL, Git, screenshot или HTML.
-Если задан YAPLIX_ACCESS_KEY в `.env`, используется он; иначе ключ сохраняется
-в `.local/lan-access.key` и повторно используется. API требует auth-cookie и точный Origin. Ctrl+C закрывает сервер
-и базу; cookie инвалидируется при перезапуске, игровые данные сохраняются.
-Ollama остаётся на loopback сервера. Никаких автоматических firewall правок.
-
-На компьютере откройте напечатанный LAN URL, введите ключ, нажмите
-«Диагностика» → «Показать QR». QR локальный и содержит только адрес/порт,
-без ключа и токенов. «Скопировать ссылку» имеет ручной fallback для HTTP.
-На телефоне в той же Wi-Fi сети сканируйте QR и введите ключ отдельно.
-VPN/Hyper-V/VirtualBox интерфейсы не выбираются автоматически: сопоставьте
-имя с Wi-Fi/Ethernet вашей сети. Смена IP/порта требует нового URL и QR.
-`HOST_NOT_AVAILABLE` — адрес не принадлежит компьютеру; `PORT_IN_USE` — выберите
-свободный порт либо остановите собственный сервер. Проверка API на компьютере
-не проверяет firewall/изоляцию Wi-Fi или доступность с телефона.
-
-`GET /api/diagnostics` требует LAN cookie и возвращает `ok`, `demoReady`,
-`missingAssets`, `mode`, `address`, `port`, `connectionUrl`, `accessRequired`,
-`liveConfigured`, `liveReady`, `llmState`, `modelReady`, provider/model/BGen revision.
-`llmState`: not_configured, ready, unreachable, model_missing, bgen_missing,
-not_verified (внешний BGen). `GET /api/connection/qr.svg` требует ту же cookie,
-точный Host/Origin и LAN mode, отдаёт SVG с no-store; local/HTTPS → 409.
-CLI doctor дополнительно проверяет доступность порта для нового запуска.
-
-## HTTPS на сервере
-
-Production-compatible конфигурация: Node 24 server + постоянный `.local/data`
-+ HTTPS reverse proxy. Домены/hosting не нужны для LAN приёмки. Для публичного
-запуска оператор выбирает DNS/сертификат/proxy и доступ к TCP 443; следующие
-команды — инструкция, не подтверждение уже развёрнутого HTTPS сервиса.
-
-1. Клонируйте этот репозиторий в постоянный каталог сервера, выполните `npm ci`,
-   `npm run build`, для LIVE — `npm run bgen:install`; установите выбранную LLM
-   на сервере. Не используйте эфемерный checkout без volume для `.local/data`.
-2. Создайте `.env` (в Ubuntu `chmod 600 .env`; у service user права на `.local`):
-
-```dotenv
-PORT=3000
-YAPLIX_MODE=https
-YAPLIX_HOST=127.0.0.1
-PUBLIC_URL=https://games.example.com
-YAPLIX_ACCESS_KEY=REPLACE_WITH_RANDOM_URL_SAFE_KEY
-YAPLIX_DB=.local/data/yaplix.sqlite
-LIVE_PROVIDER=none
-```
-
-Ключ сгенерируйте локально командой (одинакова в PowerShell/Ubuntu):
-
-```sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
-```
-
-3. Запустите `npm start` от ограниченного service user, не root. Process manager
-   должен использовать каталог клона как working directory, читать `.env` и
-   посылать SIGTERM с grace timeout не менее 10 секунд. На Windows локально
-   используется Ctrl+C. Перезапуск не удаляет `.local`.
-4. Пример [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
-   (оператор устанавливает Caddy и заменяет hostname; repo не меняет ОС):
-
-```caddyfile
-games.example.com {
-    reverse_proxy 127.0.0.1:3000
-}
-```
-
-Caddy завершает TLS, сохраняет внешний Host и устанавливает X-Forwarded-Proto.
-При другом proxy передайте точный public Host, Origin клиента и
-X-Forwarded-Proto=https; не переписывайте Host в 127.0.0.1. Backend нельзя
-публиковать напрямую. Proxy response/idle timeout должен покрывать до 300 секунд
-LIVE. У `.env` PUBLIC_URL должен точно совпадать с browser origin, включая
-нестандартный HTTPS порт. Внешний URL открывает форму входа, API без cookie 401;
-успешный вход устанавливает HttpOnly/SameSite=Strict/Secure cookie, HSTS включён.
-5. Проверьте HTTPS, вход, DEMO, `/api/health` с cookie, экспорт и backup, рестарт
-   без потери данных. Для Telegram настройте этот HTTPS URL в конкретном Mini App
-   отдельно. Telegram initData не используется как YAPLIX login; общей командной
-   auth недостаточно для публичного multi-tenant сервиса.
-
-Обновление: остановка → проверенный backup → `git pull --ff-only origin main` →
-`npm ci` → `npm run build` → запуск → auth/health/DEMO/readback. Сохраните .env,
-`.local/data` и .local/backups; старые backup не удаляются автоматически. Схема 1
-не менялась. Установленная модель/BGen не нужны для key-free DEMO.
-
-Новые network ошибки: ACCESS_REQUIRED/ACCESS_DENIED (401), ACCESS_RATE_LIMIT
-(429), HOST_FORBIDDEN/ORIGIN_FORBIDDEN/HTTPS_REQUIRED (403). После restart повторите
-вход. POST `/api/access` принимает только JSON `{key}`, до 256 bytes; ключ не
-возвращается. Отменённая до сохранения генерация: REQUEST_CANCELLED (499).
-UI/API timeout не обещает отмены уже совершённого SQLite commit.
+Git/npm не заменяют .local/.env. Dirty/ff-only failure: сохраните свою ветку,
+без reset/clean/force. Проверьте прежнюю игру/history/export hash. TASK-007 schema
+v1 не меняет, old HTML/metadata сохраняются. LAN/QR — README, [HTTPS/Telegram](telegram.md).
+PORT_IN_USE — свой активный server или чужой процесс; остановите только свой либо
+смените порт. Doctor проверяет новый bind: активный server может давать PORT_IN_USE.
+После изменения .env перезапустите backend, build не перезагружает его.

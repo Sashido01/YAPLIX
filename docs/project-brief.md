@@ -30,12 +30,9 @@ score_changed, game_won, game_lost, session_ended, game_error. Есть SQLite,
 
 ## Текущая граница
 
-В репозитории есть platform foundation на Node 24/TypeScript/Hono/SQLite,
-HTTP-адаптер BGen, sandbox bridge, CI и Git hook. Генератор BGen развивается
-отдельно SKZHPRVT, Mobile First UI — jeanhayl. LLM-код и iterate в реальном BGen
-ещё требуют интеграционной проверки. Social/Media и Business Campaigns — планы.
-
-Следующий шаг — внедрить provenance/code-generation/iterate/TLS исправления BGen,
-подключить UI, проверить один реальный LLM-артефакт и последующую доработку.
-Права на материалы и условия конкурса команда проверяет отдельно.
-Private-репозиторий сохраняется; публичного релиза приложения нет.
+Собственные frontend/generator/API/SQLite/runtime в одном репозитории; cloud
+primary, OpenRouter free only, Telegram тот же UI с HMAC/HTTPS. History/export/backup
+независимы от чужих проектов. Social/Media/Business — дальнейшие направления.
+Автоматической эволюции и причинного доказательства улучшений пока нет.
+[Архитектура](architecture.md), [приёмка](demo-readiness.md). Права/конкурсные условия
+проверяются отдельно. Private сохраняется, публичного релиза нет.

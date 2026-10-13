@@ -37,9 +37,8 @@ Lockfile фиксирует зависимости; Playwright проверяе�
 требования к сети. Детали — в [архитектуре](architecture.md).
 
 Frontend/backend — один процесс npm start; .env читается автоматически. DEMO
-не требует внешних сервисов. Для LIVE установите Ollama для своей ОС, модель и
-проектную BGen library по README. На Ubuntu CI установка pinned library идёт из
-чистого checkout; live inference зависит от ресурсов компьютера и не входит в CI.
+не требует внешних сервисов. Для LIVE server Chromium и cloud key по README. Ollama — явная альтернатива.
+CI не вызывает реальные модели.
 
 ## Mobile First: платформа и способ проверки
 
@@ -51,7 +50,7 @@ Frontend/backend — один процесс npm start; .env читается а
 | Chrome / Edge desktop | Chromium 1366×768 | Установленный Edge, аппаратные особенности |
 | Firefox desktop | Firefox 1366×768 | Физический Linux notebook |
 | Safari desktop | Общий WebKit engine проверен на mobile/tablet | macOS Safari |
-| Telegram Mini App Android/iOS | Shared browser client и HTTPS-ready API | Telegram SDK/container, реальные клиенты и HTTPS URL |
+| Telegram Mini App Android/iOS | Synthetic SDK/HMAC/HTTPS на Chromium/WebKit | Реальные Telegram клиенты и HTTPS URL |
 
 Это engine emulation, а не идентичные устройства. Версии движков зафиксированы
 Playwright lockfile; hosted Windows/Ubuntu CI проверяет все 12 профилей.
@@ -144,3 +143,22 @@ QR encoder работает на сервере по запросу, его не
 После 40 reopen/close циклов iframe=0; parent heap после принудительного GC
 около 2.15 MB, прогрев/кэш ограничены тремя версиями. Эти лабораторные данные
 не доказывают скорость физического телефона или любого LLM HTML.
+
+## TASK-007: повторное измерение
+
+Тот же runner, семь cold contexts 390x844 DPR2 Slow4G/CPUx4, отдельно от suite.
+
+| Метрика | Before TASK-007 | After TASK-007 |
+| --- | --- | --- |
+| Shell p75 ms | 619.30 | 646.50 |
+| Game launch p75 ms | 944.45 | 949.79 |
+| Touch p75 ms | 5.90 | 5.50 |
+| API p75 ms | 2.14 | 2.98 |
+| Initial JS gzip bytes | 6065 | 6659 |
+| CSS gzip bytes | 1991 | 2107 |
+| Critical gzip bytes | 10274 | 11027 |
+
+Добавлены provenance/share и lazy Telegram adapter. Размер вырос, budgets прежние
+и выполнены. Timing колебания не выдаются за ускорение. LLM latency/Chromium checker
+не входят в shell. Telegram SDK загружается только /telegram.
+После 40 циклов навигации осталось 0 iframe; heap after 2164696 bytes. Это CDP heap, не полный RAM.

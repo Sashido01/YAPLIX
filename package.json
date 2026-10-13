@@ -10,7 +10,12 @@
     "start": "node --env-file-if-exists=.env src/server.ts",
     "lan": "node --env-file-if-exists=.env scripts/lan.ts",
     "demo:live": "node --env-file-if-exists=.env scripts/live-generation.ts",
-    "bgen:install": "node scripts/install-bgen.ts",
+    "checker:install": "node scripts/browser-tests.mjs install chromium",
+    "telegram:check": "node --env-file-if-exists=.env scripts/telegram-setup.ts check",
+    "telegram:id": "node --env-file-if-exists=.env scripts/telegram-setup.ts id",
+    "telegram:menu": "node --env-file-if-exists=.env scripts/telegram-setup.ts menu",
+    "tunnel:install": "node scripts/tunnel.ts install",
+    "tunnel": "node --env-file-if-exists=.env scripts/tunnel.ts",
     "doctor": "node --env-file-if-exists=.env scripts/maintenance.ts doctor",
     "backup": "node --env-file-if-exists=.env scripts/maintenance.ts backup",
     "verify:backup": "node scripts/maintenance.ts verify-backup",
@@ -26,6 +31,7 @@
   "dependencies": {
     "@hono/node-server": "2.1.5",
     "hono": "4.13.13",
+    "playwright-core": "1.64.0",
     "qrcode-generator": "2.0.4"
   },
   "devDependencies": {

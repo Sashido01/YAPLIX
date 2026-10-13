@@ -47,7 +47,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
   });
   await new Promise<void>(done=>mock.listen(0,'127.0.0.1',done));const port=(mock.address() as {port:number}).port;
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
-  const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'5000'});
+  const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'15000'});
   try {
     await page.goto(server.url);await page.locator('#mode').selectOption('live');await page.getByRole('button',{name:'Создать игру',exact:true}).click();
     if(scenario==='success'||scenario==='repair'){
@@ -55,7 +55,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
       const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
-      await expect(page.locator('#message')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Проверьте Ollama'}[scenario]);
+      await expect(page.locator('#message')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'провайдера'}[scenario]);
       await expect(page.locator('#generate')).toBeEnabled();expect((await(await page.request.get(server.url+'/api/games')).json()).games).toHaveLength(0);expect(calls).toBe(scenario==='unsafe'?2:scenario==='unavailable'?0:1);
     }
   } finally {await server.stop();server.cleanup();mock.closeAllConnections();await new Promise<void>(done=>mock.close(()=>done()));}
