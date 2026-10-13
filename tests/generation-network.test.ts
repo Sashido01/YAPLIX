@@ -16,6 +16,7 @@ test('native-dialog regression: one model repair, strict revalidation, complete 
   const artifact=await new LocalCodeAdapter({url:`http://127.0.0.1:${(server.address() as any).port}`,model:'test-model'}).generate(spec,undefined,'llm_code');
   assert.equal(artifact.html,html.trim());assert.equal(artifact.method,'llm_code');assert.equal(bodies.length,2);
   assert.match(bodies[1].messages.at(-1).content,/native-dialogs/);assert.match(bodies[1].messages.at(-2).content,/alert\("won"\)/);
+  assert.ok(bodies[1].messages.at(-1).content.endsWith(spec.prompt));
   assert.deepEqual(bodies[1].messages.slice(0,2),bodies[0].messages);
 });
 
