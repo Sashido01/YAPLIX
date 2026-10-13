@@ -1,4 +1,25 @@
 import {test,expect} from '@playwright/test';
+import {html} from './helpers.ts';
+
+test('fixed bottom game controls remain reachable above platform navigation',async({page,isMobile})=>{
+  // Independently authored fixture models the layout found in a real cloud game.
+  const fixed=html.replace('</style>','#point{position:fixed;bottom:0;left:0;margin:0;width:100%}</style>');
+  await page.route('**/api/games',async route=>{
+    if(route.request().method()!=='POST')return route.continue();
+    const response=await route.fetch(),version=await response.json();
+    await route.fulfill({response,json:{...version,html:fixed}});
+  });
+  await page.goto('/');await page.getByRole('button',{name:'Создать',exact:true}).click();
+  await page.locator('#prompt').fill('Космический корабль уклоняется от движущихся астероидов. Длинное название игры занимает несколько строк на маленьком экране.');
+  await page.getByRole('button',{name:'Создать игру',exact:true}).click();
+  await expect(page.locator('#message')).toContainText('Игра сохранена');
+  const frame=page.frameLocator('#game iframe');
+  await frame.locator('#start').click();
+  if(isMobile)await frame.locator('#point').tap();else await frame.locator('#point').click();
+  await expect(frame.locator('#score')).toHaveText('1');
+  await expect(page.locator('body')).toHaveAttribute('data-screen','play');
+  await expect(page.locator('#game iframe')).toHaveCount(1);
+});
 
 test('touch, rotation, reduced viewport, focus game and repeated library navigation preserve state with one runtime', async ({page,context,isMobile},info)=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));

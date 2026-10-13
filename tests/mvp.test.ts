@@ -8,7 +8,6 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Store, PROJECT_ROOT } from '../src/store.ts';
 import { createApp } from '../src/api.ts';
-import { LocalCodeAdapter, checkBGen } from '../src/live.ts';
 import { spec, html } from './helpers.ts';
 import type { GameSpec } from '../src/contracts.ts';
 
@@ -82,34 +81,4 @@ test('backup verification and startup reject an unrelated or altered schema even
     }
     finally { store.close(); }
   } finally { rmSync(directory, { recursive: true }); }
-});
-
-test('BGen compiler and explicit Ollama transport generate code with previous HTML and no template fallback (synthetic LLM)', async t => {
-  checkBGen(); const bodies: any[] = [];
-  const server = createServer((req, res) => { let text = ''; req.on('data', chunk => text += chunk); req.on('end', () => { bodies.push(JSON.parse(text)); res.end(JSON.stringify({ done: true, done_reason: 'stop', model: 'test-model', message: { content: html } })); }); });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  const store = new Store(':memory:'); t.after(() => store.close());
-  const adapter = new LocalCodeAdapter({ url: `http://127.0.0.1:${(server.address() as any).port}`, model: 'test-model' });
-  const requested: GameSpec = { ...spec, genre: 'puzzle', mechanics: ['matching'], controls: ['touch'], webview: false };
-  const first = store.save(requested, await adapter.generate(requested)); const second = store.save(spec, await adapter.generate(spec, first));
-  assert.equal(first.method, 'llm_code'); assert.equal(second.model, 'test-model'); assert.equal(second.validationStatus, 'unverified');
-  assert.equal(bodies[0].stream, false); assert.ok(bodies[1].messages[1].content.includes(first.html));
-  assert.ok(bodies[1].messages[1].content.includes(first.spec.prompt));
-  assert.ok(bodies[0].messages[0].content.includes('yaplix_init'));
-  assert.ok(!bodies[0].messages[0].content.includes('bgen:input'));
-  assert.ok(!bodies[0].messages[0].content.includes('своих кнопок НЕ делай'));
-  assert.ok(bodies[0].messages[0].content.includes('OWN accessible buttons'));
-  assert.ok(bodies[0].messages[1].content.includes(JSON.stringify(requested)));
-});
-
-for (const [name, response, expected] of [
-  ['truncated', { done: true, done_reason: 'length', model: 'test-model', message: { content: html } }, 'LLM_INVALID_RESPONSE'],
-  ['wrong model', { done: true, model: 'other-model', message: { content: html } }, 'LLM_INVALID_RESPONSE'],
-  ['external script', { done: true, model: 'test-model', message: { content: html.replace('</html>', '<script src="https://example.test/code.js"></script></html>') } }, 'LLM_UNSAFE_ARTIFACT'],
-  ['network game', { done: true, model: 'test-model', message: { content: html.replace('</html>', '<script>fetch("https://example.test")</script></html>') } }, 'LLM_UNSAFE_ARTIFACT'],
-] as const) test(`Ollama rejects ${name} without fallback (synthetic LLM)`, async t => {
-  const server = createServer((_req, res) => res.end(JSON.stringify(response)));
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => { server.closeAllConnections(); server.close(); });
-  await assert.rejects(new LocalCodeAdapter({ url: `http://127.0.0.1:${(server.address() as any).port}`, model: 'test-model' }).generate(spec), new RegExp(expected));
 });

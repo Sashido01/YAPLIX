@@ -21,8 +21,11 @@ local/remote branch only when fully merged and unused by other worktrees.
 
 MVP must run from a clean clone: clear Windows/Ubuntu setup, key-free labelled
 DEMO, available real LLM path, playable sandbox, persistence/restart, versions,
-offline HTML export, diagnostics, backup and update instructions. Published
-BGen components may be reused; do not alter participants' external repositories.
+offline HTML export, diagnostics, backup and update instructions. The generator
+and prompts are independently authored here. Do not fetch/read/use BGen or its
+old local checkout, templates, assets or docs as a reference. Do not modify external
+repositories. Preserve unknown ignored files. Cloud is primary; OpenRouter is
+FREE ONLY via openrouter/free. No paid or hidden fallback.
 Implement the minimal UI here when no integrated UI exists.
 
 Report MAIN, MERGED, RUN, VERIFIED, MVP, LIVE, DOCS and NEXT. Synthetic tests,

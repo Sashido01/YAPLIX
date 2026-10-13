@@ -2,8 +2,18 @@ import { test, expect } from '@playwright/test';
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { managedPath } from '../src/store.ts';
 import { pathToFileURL } from 'node:url';
+import {spec} from './helpers.ts';
+
+test('direct game link resolves latest version and preserves original library title',async({page})=>{
+  const first=await(await page.request.post('/api/games',{data:{spec:{...spec,prompt:'Original game idea'},mode:'demo'}})).json();
+  const latest=await(await page.request.post('/api/games/'+first.gameId+'/versions',{data:{spec:{...spec,prompt:'Repair instructions for the next version'},mode:'demo',previousVersionId:first.versionId}})).json();
+  await page.goto('/?game='+first.gameId);await expect(page.locator('#export')).toHaveAttribute('href','/api/versions/'+latest.versionId+'/export');await expect(page.locator('#game-title')).toHaveText('Original game idea');await expect(page.frameLocator('#game iframe').getByRole('button',{name:'Старт',exact:true})).toBeVisible();
+});
 
 test('user creates DEMO, wins, changes goal, selects old version, exports and backs up', async ({ page, browser }, testInfo) => {
+  // Two versions, independent offline browser, backup and reload are separate
+  // operations; per-assertion waits remain bounded at the normal five seconds.
+  test.setTimeout(45000);
   await page.goto('/'); await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await page.getByRole('button', { name: 'Создать игру', exact: true }).click();
   await expect(page.locator('#message')).toHaveText('Игра сохранена. Можно играть.');

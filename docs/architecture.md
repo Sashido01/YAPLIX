@@ -1,286 +1,92 @@
-# Архитектура YAPLIX MVP (TASK-002–005)
+# Архитектура YAPLIX
 
-## Реализованная вертикаль
+Один Node 24.18+ (24.x) процесс: Hono API, лёгкий frontend, собственный generator,
+SQLite и sandbox. TypeScript/esbuild; Node/Chromium/модели устанавливаются только
+на сервере, телефон использует браузер. Нет внешнего локального проекта-источника.
 
 ```mermaid
 flowchart LR
-  UI[Встроенный UI / ui.ts] --> API[Hono API]
+  UI[Браузер / Telegram] --> API[Hono / auth]
+  API --> Spec[GameSpec]
+  Spec --> LLM[Cloud / явный local transport]
+  LLM --> Check[Extract / static / Chromium]
+  Check --> Repair[Bounded repair]
+  Repair --> LLM
+  Check --> DB[(SQLite / checked version)]
   API --> Demo[Авторский DEMO]
-  API --> Local[BGen compiler + Ollama]
-  API --> Adapter[BGen HTTP Adapter]
-  Adapter --> BGen[BGen SKZHPRVT]
-  API --> DB[(SQLite)]
-  Game[Opaque iframe / автономный HTML] --> Bridge[Проверяемый postMessage]
-  Bridge --> API
-  DB --> Analytics[Агрегаты и сравнение версий]
+  Demo --> DB
+  DB --> Game[Opaque iframe / offline HTML]
+  Game --> Events[Проверенный bridge / статистика]
+  Events --> API
 ```
 
-Это один локальный процесс, а не набор сервисов. `src/api.ts` управляет записью
-игр/версий, сессиями и событиями; `src/store.ts` хранит HTML и метаданные;
-`src/bgen.ts` сохраняет HTTP-интеграцию, `src/live.ts` использует опубликованный
-BGen compiler и прямой явный Ollama transport. Минимальный UI src/ui.ts встроен
-в YAPLIX и не требует отдельного репозитория. Бренд YAPLIX сохранён.
+## Собственная генерация
 
-Стек: Node 24.18+, TypeScript, Hono + Node adapter, встроенный `node:sqlite`,
-prepared SQL без ORM. Версия приложения 0.0.1 — локальный MVP, без публичного релиза.
-SQLite API на Node 24 пока experimental; используется только проверенный небольшой
-набор DatabaseSync/prepare/transaction. Синхронный SQL подходит ограниченной
-локальной демонстрации; production concurrency и персональные аккаунты — последующие задачи.
+[generation.ts](../src/generation.ts) независимо формирует specification/messages
+по собственным GameSpec/event contracts. Нет substring жанровой классификации,
+готового каталога, сторонних промптов/шаблонов/assets. Iteration передаёт полный
+previous HTML, исходное описание и изменение. [transport.ts](../src/transport.ts)
+напрямую вызывает OpenAI-compatible HTTPS или явно выбранную локальную Ollama.
+TLS проверяется, redirects запрещены, HTTP только loopback. Секреты только серверу.
 
-## Хранение и Evolution Data
+[live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
+(default 1), до трёх явно заданных routes. HTTP-ошибка не вызывает скрытого retry.
+Cloud default — openrouter/free, OpenRouter запрещает paid model/paid secondary.
+Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
+чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
+и может получить тот же один bounded repair, с требованием компактного HTML.
 
-Миграция 1 атомарно создаёт `games`, `versions`, `sessions`, `events` и
-`PRAGMA user_version=1`. Более новая схема отклоняется. SQLite FK включены,
-WAL используется на диске. Health выполняет integrity_check и foreign_key_check.
-База по умолчанию `.local/data/yaplix.sqlite`; абсолютные/относительные пути
-за пределами управляемого `.local` отклоняются. База/HTML не исполняются сервером.
+HTML <=200000 UTF-8 bytes, ровно один документ. Static отклоняет external resources,
+опасные API, отсутствие mobile viewport/game contract. Затем [browser-check.ts](../src/browser-check.ts)
+запускает Chromium с OS sandbox, environment без server secrets, offline, без
+popups/dialogs/downloads, deadline 18 s. Реальные Start/input/pause, размеры Canvas,
+overflow, порядок/уникальность events, JS/console errors; далее standalone offline.
+320/390 px, DPR 2. Проверяется короткий startup-input-pause сценарий, а не полный
+путь любой игры до победы/поражения, производительность или безопасность движка.
 
-Версия содержит spec, предыдущую версию, исходный HTML, SHA-256 UTF-8 HTML,
-provider/model (null при неизвестных), время UTC, способ получения и два отдельных
-статуса: generationStatus и validationStatus. Метаданные истории возвращаются
-без HTML; конкретная версия возвращает артефакт JSON. Проверка структуры HTML
-не доказывает играбельность. Импорт API разрешён только для mock/unverified:
-клиент не может пометить авторскую тестовую игру как LLM или проверенную.
-`GET /api/versions/:versionId/export` выдаёт точный исходный UTF-8 HTML как
-attachment, с X-Content-SHA256 и ограничивающим CSP для HTTP-ответа. При сохранении
-файла HTTP CSP не сохраняется: автономный HTML по-прежнему недоверенный, его
-испытание проводится в изолированном браузере offline.
+Только успешный результат llm_code/succeeded/passed записывается. `generation`
+хранит requested/actual model, route, rejected/failed/accepted, errorCode/time,
+explicit fallback и scope browser evidence. Error API возвращает безопасные codes
+и attempts, не raw upstream error. Repair получает original request/failed HTML
+и ограниченную техническую обратную связь. DEMO/import маркируются mock/unverified.
 
-Лимиты: HTML 200 000 UTF-8 bytes; всего 100 MB HTML и 10 000 версий;
-10 000 сессий; 100 000 событий; 1 000 событий на сессию. При исчерпании
-квоты API прекращает запись. Автоматического удаления истории нет.
-События имеют UUID, sequence, timestamp; повтор того же eventId/payload
-идемпотентен, изменение payload — конфликт. Токен сессии хранится как SHA-256;
-срок 1 час. События идут по sequence от 0 с неубывающим временем, clock skew
-до 5 минут. Нужен game_started перед score/outcome/end; один outcome;
-session_ended закрывает сессию. game_error может предшествовать старту.
+## Runtime и доступ
 
-Аналитика: sessionCount — все выданные сессии; startedCount — начатые;
-completedCount — session_ended; won/lost — сессии с outcome;
-winRate = won / startedCount; meanDurationMs — среднее end-start завершённых;
-meanScore — последний счёт каждой сессии, передававшей score_changed.
-Без наблюдений средние/доля null, счётчики 0. Outcome может быть записан до
-session_ended. Незавершённые игры входят в знаменатель доли побед.
+Opaque iframe `sandbox=allow-scripts`, без same-origin. CSP блокирует connect/frames/
+workers/forms/base/objects; inline JS/CSS разрешены. Bridge проверяет конкретный
+contentWindow/origin null, IDs/protocol/size/sequence. Parent держит HTTP token;
+игре передаются только session/version IDs. Queue 128, message rate 60/s, version
+cache 3. Unmount удаляет iframe/listener. События — недоверенная клиентская статистика.
 
-Сравнение доступно только разным версиям одной игры. До пяти завершённых
-сессий на каждой стороне — insufficient_data; после — preliminary, всегда
-описательный результат по недоверенным данным, без причинных выводов.
-Возвращаются разницы длительности и доли побед, исходные агрегаты и замечания
-для будущего LLM-контекста. Автоматических изменений кода и ИИ-эволюции нет.
+Local loopback; LAN выбранный private IPv4 + key/cookie. HTTPS loopback за proxy,
+точные Host/Origin/forwarded scheme, Secure cookie. Generation: 6/min на principal,
+12/min globally, один активный запрос. Общая team library без ownership/ролей.
 
-## BGen: проверенный аудит и границы
+## Telegram и shares
 
-Read-only аудит BGen HEAD `419c64968d487068a2fbed2e4bd99489cc734430`
-13 октября 2026. MIT: copyright 2026 SKZHPRVT. Исходники BGen не копировались
-и не менялись; временная копия находится в игнорируемой `.local/BGen`.
+Официальный SDK только на `/telegram`, lazy adapter и тот же frontend. Backend
+проверяет HMAC, auth age (default 300 s), TELEGRAM_ALLOWED_USER_IDS; initDataUnsafe
+не доверяется. Сессии 1 h, 1000 максимум, hashed tokens. HttpOnly/Secure cookie и
+memory-only header-token для blocked third-party cookies; никаких tokens в URLs,
+storage/game/postMessage. Theme/viewport/safe-area по SDK events, Back → library,
+pagehide снимает listeners. [Настройка HTTPS](telegram.md).
 
-- `/api/generate` принимает prompt (2–500 символов), audience, theme и optional
-  previousCode/previousPrompt; `/api/iterate` требует previousCode (до 200 000
-  символов) и новый prompt. Ответ: html, provider, ok, fromCache, warnings и
-  служебные поля; model и generation method отсутствуют.
-- `core/src/index.ts` использует 12 жанровых шаблонов: LLM возвращает конфиг;
-  при ошибке — defaultConfig. provider `engine+...` отражает этот путь.
-- `llm/router.ts` автоматически добавляет Mock при отсутствии доступных LLM.
-- `iterate` передаёт previousCode в UserInput, но fresh pipeline вызывает
-  `compile(userInput, { examples })`, а compiler читает `opts.previousCode`.
-  Исходный HTML до компилятора не доходит. Шаблонный путь также пересобирает игру.
-- `llm/providers/gigachat.ts` передаёт `tls: { rejectUnauthorized: false }`
-  в OAuth и chat fetch. Это блокер безопасного production-подключения GigaChat.
-- Телеметрия BGen измеряет генерацию, не игровые сессии. 13 октября 2026 HTTPS
-  `https://bgenserver-production.up.railway.app/` и `/api/health` вернули 200;
-  `/api/capabilities` — 404. Это подтверждает доступность, но не SHA развёрнутого
-  кода, наличие безопасного LLM, играбельность или происхождение игр.
+Share — подписанная server key HTTPS-ссылка на одну immutable version, TTL 7 дней,
+не авторизует API/history/backup/sessions. HTML под opaque CSP/no-store/no-referrer.
+Key rotation отзывает ссылки. `/telegram?game=UUID` требует обычный signed вход.
 
-Наш адаптер ограничивает запрос/ответ, таймаут включая чтение body, запрещает
-redirect, HTTP кроме loopback и credentials в URL. Не переключается на Mock.
-Legacy `engine+openai|anthropic|ollama|gigachat+json|keyvalue` → template_config;
-`engine+mock+...` → mock; `engine+default` → fallback. Legacy cache/manual/raw
-provider отклоняются с BGEN_PROVENANCE_REQUIRED: информации недостаточно.
-Добавленная поддержка provenance v1 — **предложенный**, пока не внедрённый BGen
-контракт; пример и ограничения находятся в [development-setup](development-setup.md).
-provider/model — утверждения генератора, не криптографическое доказательство.
-`ok` BGen соответствует generationStatus; playability остаётся unverified.
+## Данные и Evolution
 
-Для конкурсного запроса UI передаёт `requiredMethod: "llm_code"`. До любого
-generation POST адаптер проверяет предложенный `/api/capabilities` v1: SHA
-revision, codeGeneration=true, tlsVerification=true, previousCode boolean.
-Известный небезопасный SHA 419c649 отклоняется даже при декларации TLS=true;
-новые SHA требуют review владельца и исходников. Декларация capabilities не
-доказывает проверку upstream TLS сама по себе. Передавать false/неизвестное
-значение вместо честного true обязательно, пока исправление не готово.
-Preflight ограничен 4096 bytes и 15 секундами, redirects запрещены.
-NODE_TLS_REJECT_UNAUTHORIZED=0 отклоняется и при прямом вызове адаптера.
+Schema v1: games/versions/sessions/events, FK/WAL/prepared SQL. TASK-007 не меняет
+схему и не переписывает старые HTML/metadata. Старые versions без generation evidence
+валидны. Title библиотеки берётся из первого prompt, не repair instructions.
+Лимиты: 100 MB HTML, 10000 versions/sessions, 100000 events, 1000 events/session.
+Session token SHA-256, TTL 1 h. eventId/payload retry идемпотентен; изменённый payload
+конфликтует. Ready → Started → Score/один Outcome → End; End закрывает сессию.
 
-Строгий запрос требует succeeded + provenance llm_code + непустые provider/model.
-При iterate отправляются предыдущий HTML и его SHA-256; ответ должен подтвердить
-previousCodeSha256, capabilities.previousCode должен быть true. Это проверяемое
-утверждение сервиса о входе, не доказательство использования кода моделью.
-Нужны исправление CompileOptions в BGen и поведенческий браузерный тест.
-Ошибки не создают GameVersion. Обычные template_config/mock/fallback остаются
-доступны через прежний режим; запрещено выдавать их за конкурсный llm_code.
-
-`scripts/live-generation.ts` оркестрирует существующий API без второго UI или
-генератора: две независимые игры, затем изменение первой, SQLite и точный экспорт
-с readback/hash. При ошибке сохраняет partial evidence и выходит с кодом 1;
-отсутствие событий записывает как not_observed, проверку браузером — not_run.
-Артефакты и run database игнорируются Git. При старом удалённом endpoint preflight
-останавливается до generation POST. TASK-004 предоставляет отдельный безопасный
-локальный путь; ограничения remote endpoint не обходятся.
-
-## Runtime и Mobile First
-
-`mountGame` — библиотека встроенного UI. iframe sandbox
-содержит только allow-scripts: origin opaque, без same-origin, popups, forms,
-top navigation и доступа к storage/DOM платформы. CSP предшествует HTML:
-default-src none, connect/frame/worker/object/form/base запрещены; inline script
-и CSS, data/blob изображения/медиа разрешены. Внешние ресурсы не поддерживаются.
-Игра должна содержать viewport, touch/keyboard управление и весь код внутри HTML.
-
-События принимаются только от конкретного contentWindow с origin null,
-проверяются протокол, IDs, формат, размер. Bridge ограничен 60 входящими
-сообщениями/секунду; при отключении iframe listener удаляется. Игра получает
-IDs, родитель держит HTTP-токен и последовательную очередь отправки/повторов.
-Игра скомпрометированного игрока всё равно может подделать свою статистику.
-Токены не доказывают честность рекордов.
-
-Sandbox/CSP не дают гарантий CPU/memory изоляции или полной блокировки сетевой
-навигации самого iframe: вредоносная игра может навигировать свой frame.
-Origin после навигации тоже может оставаться opaque/null; одной проверки origin
-недостаточно для запрета навигации. Защита от утечки через любую навигацию
-требует parent CSP и отдельной WebView политики. Публичный доступ требует HTTPS, ключа командного доступа и аккуратной
-эксплуатации; это не multi-tenant sandbox для враждебных пользователей.
-
-Тестовый HTML авторский и маркирован mock; без родителя/postMessage основной
-цикл, победа и поражение работают offline. Playwright проверяет Chromium desktop,
-Chromium mobile и WebKit mobile 320×568/390×844. Это эмуляция, не физические
-Android/iPhone и не доказательство качества реальных LLM-артефактов.
-TASK-003 дополнительно проверяет скачанный из API HTML как file:// при отключённой
-сети, touch tap на mobile, клавиатуру на desktop, изменение размера Canvas и
-devicePixelRatio. Это авторская synthetic fixture, а не полученная от модели игра.
-
-## Повторное использование практик
-
-Из BGen переиспользованы Hono/TypeScript-подход и HTTP-контракты, без переноса кода.
-Read-only README MyDevelop использован для принципов project-root isolation,
-doctor/check/test, доказательных проверок и явного Git-манифеста; инфраструктура,
-данные и конфигурация других проектов не копировались, внешних локальных
-зависимостей нет. TASK-001 hooks и Python-проверки сохранены.
-
-## TASK-004: compiler-only LIVE, UI и backup
-
-`scripts/install-bgen.ts` клонирует pinned MIT BGen внутри .local. Перед импортом
-проверяются SHA, tracked source diff и отсутствие выхода через links. Импортируются
-только prompt/compiler и зависимости классификации/правил, analyze/extractor,
-analyze/security и utils/strip. Router, templates, GigaChat и HTTP server отсутствуют
-в import graph. Поэтому unsafe SHA запрещён для полного удалённого сервиса, но
-reviewed pure compiler modules этого SHA допустимы локально. Это явная интеграция
-готового prompt compiler, не исправление внешнего BGen и не скрытый template path.
-
-LocalCodeAdapter отправляет system/user BGen и GameSpec в Ollama /api/chat,
-stream=false, think=false. Возвращённые done/model/content проверяются; incomplete,
-oversized, внешние scripts и runtime-network отклоняются. HTTP допустим только
-на loopback, остальные URL требуют HTTPS; credentials/query/redirect и глобальный
-TLS bypass запрещены. Timeout покрывает body, одна генерация на adapter; нет
-автоматической смены модели/fallback. HTML извлекается штатным BGen extractor,
-не заменяется authored игрой, validation остаётся unverified.
-
-TASK-006 адаптирует именно exported HARD_RULES_BLOCK, OUTPUT_FORMAT_BLOCK и
-QUALITY_REMINDER закреплённого BGen: его host требует внешних bgen:input controls,
-запрещает собственные кнопки и предлагает бесконечный rAF. Эти целые блоки
-заменены контрактом YAPLIX (собственные controls, CSS world coordinates / DPR,
-background pause, события). Classifier, genre/audience/mechanics и iteration
-compiler сохраняются. Если ожидаемые блоки изменились, adapter fail-closed.
-Файлы внешнего BGen не редактируются, HTML всё равно полностью пишет модель.
-В compiler передаётся supported explicit theme="": полная пользовательская тема
-остаётся в raw prompt, но substring «победа» больше не добавляет «еда».
-Явный поддерживаемый GameSpec.genre имеет приоритет; для арканоида/кирпичей
-breakout rule и derived spec заменяют ошибочный shooter от слова «стрелками».
-Исходный запрос и previous HTML сохраняются дословно. Очевидные literal payload
-с лишним score в lifecycle events также направляются на ограниченный repair.
-
-TASK-006: security rejection (включая native dialogs) передаётся модели вместе
-с предыдущим ответом для одной попытки исправления. Общие timeout/abort/busy
-не сбрасываются; оба ответа проверяются одинаково. Повторное нарушение — ошибка,
-никакого ослабления sandbox/валидатора или сохранения unsafe HTML.
-Дополнительно проверяются обязательные маркеры bridge и visibilitychange для
-анимированных игр. Это статическая проверка присутствия, не доказательство
-корректной работы handlers; сохранённая provenance остаётся unverified.
-
-Для iteration previousCode/previousPrompt передаются именно в CompileOptions;
-новая версия ссылается на исходную и сохраняет новый hash. Contract message shape
-добавляется в prompt как инструкция модели, не внедряется в готовый HTML. Модель
-может ошибиться в игре/bridge — это требует наблюдения и следующего запроса на
-исправление. Статический security check и provenance не доказывают играбельность.
-
-UI пользуется только same-origin API и textContent для пользовательских строк.
-Родительский CSP разрешает inline scripts/styles из-за наследования CSP в srcdoc;
-GAME_CSP перед недоверенным HTML запрещает сеть и внешние ресурсы. Token остаётся
-в родителе. Replay создаёт новую сессию и iframe. События сохраняются serial queue
-с тремя idempotent retry; после ошибки UI сообщает несохранённое событие. Долговечной
-offline-очереди нет. Отсутствие событий не считается успешным прохождением игры.
-
-Online SQLite backup включает всю базу и проверяется read-only: integrity/FK и каноническая схема всех таблиц, ограничений и индексов
-со SHA-256. Имена UUID, лимит 20, одновременный backup на Store отклоняется. CLI verify
-требует сохранённый SHA и не изменяет копию. Restore вручную после остановки сервера
-с сохранением целого старого каталога; обновление main только ff-only с backup.
-SQLite schema остаётся 1; новый UI не создаёт параллельное хранилище.
-
-## TASK-005: mobile shell, сетевые режимы и жизненный цикл
-
-Browser/WebView → один origin UI/API → серверный generator → исходный HTML.
-По умолчанию `networkPolicy` разрешает только loopback. LAN launcher перечисляет
-RFC1918 IPv4 интерфейсы и требует явный --host, проверяет наличие адреса/порт;
-после успешного listen печатает URL и постоянный URL-safe access key
-локально. HTTPS mode слушает loopback за reverse proxy, требует PUBLIC_URL,
-точный Host/Origin и X-Forwarded-Proto=https. Public URL не может содержать
-credentials, path/query/hash. Не доверяем произвольному forwarded IP для auth.
-
-connection-ui — отдельный ленивый bundle, загружаемый при диагностике; проверяет
-API/SQLite/сборку и фактическую модель Ollama. Сервер лениво импортирует
-qrcode-generator для authenticated QR SVG. Клиент отображает SVG через blob img,
-освобождает URL; начальный UI bundle не содержит QR encoder. QR не несёт секретов.
-DEMO — авторское пошаговое поле 6×5 с перемещением, сбором и столкновениями;
-рисование только по input/resize, без постоянного animation/polling loop.
-
-В LAN/HTTPS все data API, диагностика, экспорт и backup требуют cookie;
-без входа доступны только login HTML/CSS/JS. Ключ сверяется через constant-time
-SHA-256, неверные попытки ограничены десятью в минуту. Чужие ошибки не блокируют
-правильный ключ. Cookie random 256-bit, HttpOnly/SameSite=Strict, HTTPS Secure,
-8 часов; в памяти хранятся digest/expiry, максимум 1000 сессий. Перезапуск
-отзывает cookie. Ключ — общий командный административный доступ, не роли/аккаунты;
-каждый обладатель видит общие игры и может генерировать/делать backup. LAN HTTP
-не защищает от прослушивания, используется только в доверенной сети. Для публичной
-эксплуатации нужен TLS на proxy и защищённые .env/data filesystem permissions.
-Токен игровой сессии по-прежнему необходим для каждого GameEvent; cookie его
-не заменяет. Opaque origin не может вызвать API с Origin:null.
-
-`esbuild` — dev/build dependency, не browser runtime. Сборка bundle/minify/tree
-shake даёт один ui.js; legacy runtime/contracts endpoints остаются для fixtures.
-Static assets читаются/сжимаются один раз на server instance, Vary и ETag дают
-проверяемое revalidation; private cache не переиспользуется публичным CDN.
-HTML UI и API/export остаются no-store, экспорт hash соответствует исходным
-байтам. После изменения сборки нужен перезапуск сервера. Нет внешних fonts/images
-и тяжёлого frontend framework. Экран диагностики грузит данные только по запросу.
-
-Show подготавливает историю и сессию параллельно, затем меняет UI и iframe.
-Кэш максимум три HTML-версии; навигация удаляет frame/listener. Один serial event
-queue ограничен 128 pending, статистика обновляется после результата, не каждого
-касания. Запросы имеют AbortController/timeouts; обе LLM adapters получают
-request signal, отменяют headers/body/preflight, освобождают lock/listeners.
-Закрытие сервера вызывает adapter.close(), прекращает приём соединений, даёт
-5 секунд на завершение и закрывает SQLite. SIGINT/SIGTERM и локальный IPC используют
-один путь; удалённого shutdown endpoint нет. Если abort происходит уже после
-commit, сохранённая версия остаётся, отмена UI не откатывает данные.
-
-LAN HTTP не имеет secure context. Runtime добавляет только controlled UUID
-compatibility helper через crypto.getRandomValues, если randomUUID отсутствует;
-этот helper не меняет хранимый/экспортируемый HTML, не получает токен и не снимает
-CSP/sandbox. Новый prompt просит модель использовать тот же secure random helper.
-DEMO содержит явный UTF-8 charset: file:// WebKit иначе декодирует кириллицу неверно.
-Canvas размер рассчитывается из CSS bbox × DPR; resize сохраняет gameplay state.
-Authored DEMO рисует при действиях/resize, без RAF/timer/audio. Background возвращение
-и произвольные анимационные игры требуют проверки на физическом устройстве.
-
-Ограничения/измерения и platform matrix — в
-[cross-platform](cross-platform.md), команды LAN/HTTPS — в
-[development-setup](development-setup.md). Общая SQLite схема остаётся 1.
+Аналитика: issued/started/completed, won/lost, последний score, end-start duration,
+winRate=won/started. Без наблюдений средние null. Comparison только same game:
+<5 completed на сторону insufficient_data, иначе preliminary без причинных выводов.
+Автоматического переобучения/эволюции нет. Online backup проверяет integrity/FK/schema
+и SHA-256; [restore/update](development-setup.md). Sandbox не гарантирует CPU/RAM
+изоляцию; exported HTML теряет HTTP CSP и проверяется offline отдельно.

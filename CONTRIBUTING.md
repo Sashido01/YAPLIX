@@ -66,7 +66,7 @@ git status --short
 remote refs/heads/main, но не заменяет серверную защиту:
 [ограничения](docs/github-ruleset.md). Установка — [development-setup](docs/development-setup.md).
 
-Проверки: `npm run bgen:install`, `npm run check`, Python checker/tests и
+Проверки: `npm run browsers:install`, `npm run check`, Python checker/tests и
 Gitleaks; на Ubuntu — python3. Synthetic, реальные LLM-вызовы и физические
 устройства проверяйте и описывайте отдельно. Не выдавайте DEMO/fallback за LLM.
 Секреты, персональные данные и непубличные материалы запрещены даже в Private.

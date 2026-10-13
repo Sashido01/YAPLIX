@@ -1,20 +1,31 @@
 import { Hono } from 'hono';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
-import { boundedText, requiredMethod } from './bgen.ts';
-import type { Generator } from './bgen.ts';
+import { boundedText, requiredMethod } from './transport.ts';
+import type { Generator } from './transport.ts';
+import { GenerationFailure } from './live.ts';
 import { demoArtifact } from './demo.ts';
 import type { Store } from './store.ts';
 import { AccessSessions } from './access.ts';
 import type { NetworkPolicy } from './access.ts';
 import { staticAssets } from './static.ts';
+import { TelegramSessions } from './telegram.ts';
+import { RateLimit } from './rate-limit.ts';
+import { shareLink, validShare } from './sharing.ts';
+import { GAME_CSP } from './runtime.ts';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { PROJECT_ROOT } from './store.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions()) {
   const app = new Hono();
   if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
   const staticFile = staticAssets();
   const access = policy?.key ? new AccessSessions(policy.key, policy.mode === 'https') : undefined;
+  const limit=new RateLimit();
+  const telegramCsp=UI_CSP.replace("script-src 'self' 'unsafe-inline'","script-src 'self' 'unsafe-inline' https://telegram.org").replace("frame-ancestors 'none'","frame-ancestors https://web.telegram.org https://*.web.telegram.org");
+  const principal=(cookie?:string,header?:string)=>telegram.user(cookie,header)?.toString()??'owner';
   app.use('*', async (c, next) => {
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('Cache-Control', 'no-store');
@@ -29,15 +40,23 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
       c.header('Strict-Transport-Security', 'max-age=31536000');
     }
     const origin = c.req.header('Origin');
-    if (origin && origin !== expected.origin || c.req.header('Sec-Fetch-Site') === 'cross-site') throw new Fault('ORIGIN_FORBIDDEN', 403);
+    const publicNavigation=c.req.method==='GET'&&['/','/telegram'].includes(c.req.path)||c.req.method==='GET'&&c.req.path.startsWith('/play/');
+    if (origin && origin !== expected.origin || c.req.header('Sec-Fetch-Site') === 'cross-site'&&!publicNavigation) throw new Fault('ORIGIN_FORBIDDEN', 403);
+    const shared=policy?.mode==='https'&&c.req.method==='GET'&&validShare(c.req.path,policy.key!);
     if (access) {
+      if(c.req.path==='/api/telegram/auth'&&c.req.method==='POST'){
+        if(policy?.mode!=='https')throw new Fault('TELEGRAM_HTTPS_REQUIRED',409);
+        limit.take('telegram-login',30);
+        const body=object(await json(c.req.raw,10000),['initData']);const session=telegram.login(body.initData);
+        c.header('Set-Cookie',session.cookie);return c.json({ok:true,sessionToken:session.sessionToken});
+      }
       if (c.req.path === '/api/access' && c.req.method === 'POST') {
         const body = object(await json(c.req.raw, 256), ['key']);
         c.header('Set-Cookie', access.login(body.key)); return c.json({ ok: true });
       }
-      if (!access.allowed(c.req.header('Cookie'))) {
+      if (!shared&&!access.allowed(c.req.header('Cookie'))&&!(policy?.mode==='https'&&telegram.user(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session')))) {
         if (c.req.path === '/' && c.req.method === 'GET') { c.header('Content-Security-Policy', UI_CSP); return staticFile(c, 'assets/access.html', 'text/html; charset=utf-8', false); }
-        if (!['/ui/style.css', '/runtime/access-ui.js'].includes(c.req.path)) throw new Fault('ACCESS_REQUIRED', 401);
+        if (!['/telegram','/ui/style.css', '/runtime/access-ui.js','/runtime/ui.js','/runtime/telegram-ui.js','/runtime/connection-ui.js'].includes(c.req.path)) throw new Fault('ACCESS_REQUIRED', 401);
       }
     }
     await next();
@@ -62,6 +81,11 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return c.body(connectionQr(policy.origin), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
   });
   app.get('/api/games', c => c.json({ games: store.list() }));
+  app.post('/api/versions/:versionId/share',async c=>{object(await json(c.req.raw,32),[]);if(policy?.mode!=='https')throw new Fault('HTTPS_SHARE_REQUIRED',409);const version=store.getVersion(c.req.param('versionId'));return c.json({url:shareLink(policy.origin!,policy.key!,version.versionId),expiresIn:604800,scope:'read-only-artifact'});});
+  app.get('/play/:versionId/:expires/:signature',c=>{
+    if(policy?.mode!=='https'||!validShare(c.req.path,policy.key!))throw new Fault('SHARE_INVALID_OR_EXPIRED',403);
+    const version=store.getVersion(c.req.param('versionId'));c.header('Content-Security-Policy','sandbox allow-scripts; '+GAME_CSP);c.header('Referrer-Policy','no-referrer');return c.body(version.html,200,{'Content-Type':'text/html; charset=utf-8'});
+  });
   app.post('/api/backups', async c => { object(await json(c.req.raw, 32), []); return c.json(await store.backup(), 201); });
   function mode(value: unknown) { if (value !== undefined && value !== 'demo' && value !== 'live') throw new Fault('INVALID_MODE'); return value; }
   app.post('/api/games', async c => {
@@ -71,7 +95,8 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     if (selected === 'demo' && (method || body.artifact !== undefined)) throw new Fault('DEMO_CONTRACT_CONFLICT');
     if (method && body.artifact !== undefined) throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     const spec = parseSpec(body.spec);
-    if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
+    if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('LLM_NOT_CONFIGURED', 503);
+    if(!body.artifact&&selected!=='demo'){limit.take('generation-global',12);limit.take('generation-'+principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session')),6);}
     const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, undefined, method, c.req.raw.signal);
     if (c.req.raw.signal.aborted) throw new Fault('REQUEST_CANCELLED', 499);
     return c.json(store.save(spec, artifact), 201);
@@ -86,7 +111,8 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     const previous = store.getVersion(uuid(body.previousVersionId));
     if (previous.gameId !== uuid(c.req.param('gameId'))) throw new Fault('PARENT_GAME_MISMATCH', 409);
     const spec = parseSpec(body.spec);
-    if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
+    if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('LLM_NOT_CONFIGURED', 503);
+    if(!body.artifact&&selected!=='demo'){limit.take('generation-global',12);limit.take('generation-'+principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session')),6);}
     const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous, method, c.req.raw.signal);
     if (c.req.raw.signal.aborted) throw new Fault('REQUEST_CANCELLED', 499);
     return c.json(store.save(spec, artifact, previous.versionId), 201);
@@ -120,8 +146,14 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     c.header('Content-Security-Policy', UI_CSP);
     return staticFile(c, 'assets/index.html', 'text/html; charset=utf-8', false);
   });
+  app.get('/telegram',async c=>{
+    if(policy?.mode!=='https')throw new Fault('TELEGRAM_HTTPS_REQUIRED',409);
+    c.header('Content-Security-Policy',telegramCsp);
+    const html=await readFile(resolve(PROJECT_ROOT,'assets/index.html'),'utf8');
+    return c.html(html.replace('</head>','<script src="https://telegram.org/js/telegram-web-app.js"></script></head>').replace('<body','<body data-entry="telegram"'));
+  });
   app.get('/ui/style.css', c => staticFile(c, 'assets/style.css', 'text/css; charset=utf-8'));
-  for (const file of ['ui', 'access-ui', 'connection-ui']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['ui', 'access-ui', 'connection-ui','telegram-ui']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });
@@ -132,7 +164,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.onError((error, c) => {
     const fault = error instanceof Fault ? error : new Fault('INTERNAL_ERROR', 500);
     // Never echo upstream responses, game errors, prompts, or environment secrets.
-    return c.json({ error: fault.code }, fault.status as 400);
+    return c.json({ error: fault.code, ...(fault instanceof GenerationFailure?{attempts:fault.attempts}:{}) }, fault.status as 400);
   });
   return app;
 }

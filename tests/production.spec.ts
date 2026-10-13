@@ -6,8 +6,20 @@ import { PNG } from 'pngjs';
 import { lanAddresses } from '../src/network.ts';
 import { productionServer } from './production-helper.ts';
 import { html } from './helpers.ts';
+import {spec} from './helpers.ts';
 
 test.beforeEach(({},info)=>{test.skip(!['chromium-desktop','chromium-320','webkit-390'].includes(info.project.name),'Production coverage on desktop Chromium and small Chromium/WebKit. Other profiles run full runtime/mobile suites.');});
+
+test('production HTTP disconnect cancels cloud body and stores no game',async()=>{
+ let started!:()=>void,disconnected!:()=>void;const began=new Promise<void>(done=>started=done),ended=new Promise<void>(done=>disconnected=done);
+ const upstream=createServer((_req,res)=>{res.on('close',disconnected);res.writeHead(200);res.write('{');started();});await new Promise<void>(done=>upstream.listen(0,'127.0.0.1',done));
+ const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'cloud',CLOUD_MODEL:'synthetic-model',CLOUD_API_KEY:'synthetic-not-a-secret',CLOUD_BASE_URL:'http://127.0.0.1:'+(upstream.address() as any).port});
+ try{
+  const controller=new AbortController();const pending=fetch(server.url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'}),signal:controller.signal});const rejected=expect(pending).rejects.toThrow(/abort/i);
+  await Promise.race([began,new Promise<void>((_,reject)=>setTimeout(()=>reject(Error('UPSTREAM_NOT_STARTED')),5000).unref())]);controller.abort();await rejected;
+  await Promise.race([ended,new Promise<void>((_,reject)=>setTimeout(()=>reject(Error('UPSTREAM_NOT_CANCELLED')),1500).unref())]);expect((await(await fetch(server.url+'/api/games')).json()).games).toEqual([]);
+ }finally{await server.stop();server.cleanup();upstream.closeAllConnections();await new Promise<void>(done=>upstream.close(()=>done()));}
+});
 
 test('real production LAN: authentication, QR independent decode, relative API, gameplay, restart and changed port', async({page,context},info)=>{
   const host=lanAddresses()[0]?.address;test.skip(!host,'No private IPv4 interface available on this runner.');
@@ -37,6 +49,7 @@ test('real production LAN: authentication, QR independent decode, relative API, 
 });
 
 for(const scenario of ['success','repair','unsafe','http-error','timeout','unavailable'] as const)test('production LIVE '+scenario+' (synthetic transport, no model-quality claim)',async({page})=>{
+  test.setTimeout(35000);
   let calls=0;const model='test-model';
   const mock=createServer((req,res)=>{
     if(req.url==='/api/tags'){res.end(JSON.stringify({models:[{name:model}]}));return;}
@@ -47,15 +60,17 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
   });
   await new Promise<void>(done=>mock.listen(0,'127.0.0.1',done));const port=(mock.address() as {port:number}).port;
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
-  const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'5000'});
+  const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'15000'});
   try {
     await page.goto(server.url);await page.locator('#mode').selectOption('live');await page.getByRole('button',{name:'Создать игру',exact:true}).click();
     if(scenario==='success'||scenario==='repair'){
-      await expect(page.locator('#message')).toContainText('Игра сохранена');await expect(page.locator('#provenance')).toContainText('llm_code');
+      // The real server-side checker is included in the 15-second generation
+      // deadline above. Wait for that contract, rather than a five-second poll.
+      await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('llm_code');
       const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
-      await expect(page.locator('#message')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Проверьте Ollama'}[scenario]);
+      await expect(page.locator('#message')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'провайдера'}[scenario]);
       await expect(page.locator('#generate')).toBeEnabled();expect((await(await page.request.get(server.url+'/api/games')).json()).games).toHaveLength(0);expect(calls).toBe(scenario==='unsafe'?2:scenario==='unavailable'?0:1);
     }
   } finally {await server.stop();server.cleanup();mock.closeAllConnections();await new Promise<void>(done=>mock.close(()=>done()));}

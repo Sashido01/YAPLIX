@@ -12,15 +12,6 @@
 
 **Только после проверки** выберем конкретную лицензию и добавим `LICENSE` со всеми необходимыми уведомлениями. Типовая MIT/Apache-2.0 не ставится автоматически. При необходимости ведём учёт зависимостей и их лицензий. Здесь нет юридического заключения.
 
-## BGen prompt library
-
-TASK-004 использует read-only checkout публичного [BGen](https://github.com/SKZHPRVT/BGen),
-SHA 419c64968d487068a2fbed2e4bd99489cc734430, MIT, copyright 2026 SKZHPRVT.
-Установщик сохраняет оригинальный LICENSE в .local/BGen; исходники не копируются
-в tracked YAPLIX и внешний репозиторий не изменяется. При передаче сборки с
-библиотекой сохраняйте её LICENSE и уведомление. Лицензии Ollama и отдельно
-загруженной модели проверяются для конкретной поставки; веса в YAPLIX не включены.
-
 ## QR и независимая проверка
 
 Runtime: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
@@ -28,3 +19,11 @@ Runtime: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
 Dev/test: [jsQR](https://github.com/cozmo/jsQR) 1.4.0, Apache-2.0, и pngjs 7.0.0,
 MIT, для независимого декодирования снимка QR. Пакеты закреплены lockfile;
 оригинальные LICENSE/NOTICE сохраняются в node_modules при установке.
+
+## Платформа
+
+Собственный generator/prompts/DEMO в YAPLIX, внешняя prompt library не поставляется.
+Runtime Hono/@hono/node-server и esbuild — MIT; playwright-core/@playwright/test —
+Apache-2.0. Оригинальные LICENSE/NOTICE сохраняются npm. cloudflared — Apache-2.0,
+официальная optional binary для HTTPS-теста. Лицензии отдельно установленных моделей/
+Ollama проверяются для конкретной поставки.

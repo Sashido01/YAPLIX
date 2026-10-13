@@ -40,3 +40,15 @@ Backup/restore выполняются по [development-setup](docs/development-
 Данные и .env игнорируются Git, но оператор отвечает за filesystem permissions
 и сохранение проверенных backup. При отзыве access key перезапустите server:
 старые cookie прекращают работать. Частные контакты/SLA команда ещё не утвердила.
+
+## Cloud и Telegram
+
+TLS verification/redirect deny, OpenRouter openrouter/free only, paid secondary
+запрещён. Repair/deadline/response/concurrency bounded. Chromium checker с OS sandbox,
+без server secrets в environment, offline/CSP; не полная защита от browser exploits
+или resource exhaustion. Не открывайте MVP как anonymous multi-tenant service.
+Telegram HMAC/age/allowlist до library/LLM; initDataUnsafe не доверяется.
+HttpOnly Secure cookie/memory header token не в игре/storage/URL. Generation 6/min
+на principal, 12/min global. Shared library без personal ownership. Share 7 дней
+для одной version без API/backup, key rotation отзывает cap.
+Quick Tunnel — явный временный protected HTTPS ingress; Cloudflare видит HTTP traffic.
