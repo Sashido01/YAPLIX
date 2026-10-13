@@ -48,6 +48,14 @@ jobs:
         run: node scripts/browser-tests.mjs install --with-deps chromium webkit firefox
       - name: Autonomous game and isolation browser tests
         run: npm run test:browser
+      - name: Preserve browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-failure-${{ matrix.os }}
+          path: .local/playwright-results/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Mobile performance and compressed size budgets
         run: npm run performance:smoke
 

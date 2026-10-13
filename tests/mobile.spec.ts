@@ -8,22 +8,26 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
   const frame=page.frameLocator('#game iframe'),action=async(name:string)=>isMobile?frame.getByRole('button',{name,exact:true}).tap():frame.getByRole('button',{name,exact:true}).click();
   await action('Старт');await action('Груз');
   const original=page.viewportSize()!;
+  let stage='rotation';
+  const mark=(value:string)=>{stage=value;};
+  info.annotations.push({type:'mobile-scenario',description:'rotation/focus/offline/reopen'});
+  page.on('close',()=>console.log('Mobile scenario ended at '+stage));
   for(const size of [{width:original.height,height:original.width},original,{width:original.width,height:Math.min(400,original.height)}]) {
     await page.setViewportSize(size);await expect(frame.locator('#score')).toHaveText('1');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await expect.poll(()=>frame.locator('canvas').evaluate(c=>(c as HTMLCanvasElement).width===Math.round(c.getBoundingClientRect().width*devicePixelRatio))).toBe(true);
     for(const button of await frame.locator('.controls button').all()){const rect=await button.boundingBox();expect(rect!.width).toBeGreaterThanOrEqual(44);expect(rect!.height).toBeGreaterThanOrEqual(44);}
   }
-  await page.setViewportSize(original);await page.getByRole('button',{name:'Игровой экран',exact:true}).click();
+  mark('focus');await page.setViewportSize(original);await page.getByRole('button',{name:'Игровой экран',exact:true}).click();
   await action('Груз');await expect(frame.locator('#score')).toHaveText('2');
   await page.screenshot({path:info.outputPath('mobile-game.png')});
   await page.getByRole('button',{name:'Обычный экран',exact:true}).click();
-  await context.setOffline(true);await action('Груз');await expect(frame.locator('#status')).toHaveText('Победа');await context.setOffline(false);
-  await page.getByRole('button',{name:'Игры',exact:true}).click();await expect(page.locator('iframe')).toHaveCount(0);
+  mark('offline touch');await context.setOffline(true);await action('Груз');await expect(frame.locator('#status')).toHaveText('Победа');await context.setOffline(false);
+  mark('library');await page.getByRole('button',{name:'Игры',exact:true}).click();await expect(page.locator('iframe')).toHaveCount(0);
   const first=page.locator('#games button').first();
   let reads=0;page.on('request',r=>{if(/\/api\/versions\/[^/]+$/.test(new URL(r.url()).pathname))reads++;});
-  for(let i=0;i<6;i++){await first.click();await expect(page.locator('iframe')).toHaveCount(1);await expect(frame.getByRole('button',{name:'Старт',exact:true})).toBeVisible();await page.getByRole('button',{name:'Игры',exact:true}).click();await expect(page.locator('iframe')).toHaveCount(0);}
-  expect(reads).toBe(0);expect(errors).toEqual([]);
+  for(let i=0;i<6;i++){mark('reopen '+i);await first.click();await expect(page.locator('iframe')).toHaveCount(1);await expect(frame.getByRole('button',{name:'Старт',exact:true})).toBeVisible();await page.getByRole('button',{name:'Игры',exact:true}).click();await expect(page.locator('iframe')).toHaveCount(0);}
+  mark('complete');expect(reads).toBe(0);expect(errors).toEqual([]);
 });
 
 test('generation cancellation, terminal errors, draft and offline diagnostics never leave a busy spinner', async({page})=>{
