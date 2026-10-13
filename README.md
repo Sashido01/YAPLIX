@@ -132,6 +132,7 @@ python -m unittest discover -s scripts/tests -v
 
 На Ubuntu используйте `python3`; если Playwright не хватает системных библиотек,
 `node scripts/browser-tests.mjs install --with-deps chromium webkit`.
+`npm test` сначала собирает frontend для проверки настоящего production server.
 Тесты используют synthetic LLM и авторские игры; CI не требует запущенной LLM.
 Windows/Ubuntu Actions проверяют чистый checkout, pinned BGen, типы, SQLite/API,
 production restart, DEMO UI и sandbox в Chromium/WebKit; secret-scan — отдельно.
