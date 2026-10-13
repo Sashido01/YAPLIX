@@ -1,4 +1,4 @@
-# Архитектура YAPLIX MVP (TASK-002–004)
+# Архитектура YAPLIX MVP (TASK-002–005)
 
 ## Реализованная вертикаль
 
@@ -18,14 +18,14 @@ flowchart LR
 Это один локальный процесс, а не набор сервисов. `src/api.ts` управляет записью
 игр/версий, сессиями и событиями; `src/store.ts` хранит HTML и метаданные;
 `src/bgen.ts` сохраняет HTTP-интеграцию, `src/live.ts` использует опубликованный
-BGen compiler и прямой явный Ollama transport. Минимальный UI assets/ui.ts встроен
+BGen compiler и прямой явный Ollama transport. Минимальный UI src/ui.ts встроен
 в YAPLIX и не требует отдельного репозитория. Бренд YAPLIX сохранён.
 
 Стек: Node 24.18+, TypeScript, Hono + Node adapter, встроенный `node:sqlite`,
 prepared SQL без ORM. Версия приложения 0.0.1 — локальный MVP, без публичного релиза.
 SQLite API на Node 24 пока experimental; используется только проверенный небольшой
 набор DatabaseSync/prepare/transaction. Синхронный SQL подходит ограниченной
-локальной демонстрации; production concurrency и auth — последующие задачи.
+локальной демонстрации; production concurrency и персональные аккаунты — последующие задачи.
 
 ## Хранение и Evolution Data
 
@@ -147,8 +147,8 @@ Sandbox/CSP не дают гарантий CPU/memory изоляции или п
 навигации самого iframe: вредоносная игра может навигировать свой frame.
 Origin после навигации тоже может оставаться opaque/null; одной проверки origin
 недостаточно для запрета навигации. Защита от утечки через любую навигацию
-требует parent CSP и отдельной WebView политики. Не запускать
-такой локальный foundation как публичный production сервис.
+требует parent CSP и отдельной WebView политики. Публичный доступ требует HTTPS, ключа командного доступа и аккуратной
+эксплуатации; это не multi-tenant sandbox для враждебных пользователей.
 
 Тестовый HTML авторский и маркирован mock; без родителя/postMessage основной
 цикл, победа и поражение работают offline. Playwright проверяет Chromium desktop,
@@ -202,3 +202,55 @@ Online SQLite backup включает всю базу и проверяется 
 требует сохранённый SHA и не изменяет копию. Restore вручную после остановки сервера
 с сохранением целого старого каталога; обновление main только ff-only с backup.
 SQLite schema остаётся 1; новый UI не создаёт параллельное хранилище.
+
+## TASK-005: mobile shell, сетевые режимы и жизненный цикл
+
+Browser/WebView → один origin UI/API → серверный generator → исходный HTML.
+По умолчанию `networkPolicy` разрешает только loopback. LAN launcher выбирает
+существующий RFC1918 IPv4 интерфейс и печатает случайный URL-safe access key
+локально. HTTPS mode слушает loopback за reverse proxy, требует PUBLIC_URL,
+точный Host/Origin и X-Forwarded-Proto=https. Public URL не может содержать
+credentials, path/query/hash. Не доверяем произвольному forwarded IP для auth.
+
+В LAN/HTTPS все data API, диагностика, экспорт и backup требуют cookie;
+без входа доступны только login HTML/CSS/JS. Ключ сверяется через constant-time
+SHA-256, неверные попытки ограничены десятью в минуту. Чужие ошибки не блокируют
+правильный ключ. Cookie random 256-bit, HttpOnly/SameSite=Strict, HTTPS Secure,
+8 часов; в памяти хранятся digest/expiry, максимум 1000 сессий. Перезапуск
+отзывает cookie. Ключ — общий командный административный доступ, не роли/аккаунты;
+каждый обладатель видит общие игры и может генерировать/делать backup. LAN HTTP
+не защищает от прослушивания, используется только в доверенной сети. Для публичной
+эксплуатации нужен TLS на proxy и защищённые .env/data filesystem permissions.
+Токен игровой сессии по-прежнему необходим для каждого GameEvent; cookie его
+не заменяет. Opaque origin не может вызвать API с Origin:null.
+
+`esbuild` — dev/build dependency, не browser runtime. Сборка bundle/minify/tree
+shake даёт один ui.js; legacy runtime/contracts endpoints остаются для fixtures.
+Static assets читаются/сжимаются один раз на server instance, Vary и ETag дают
+проверяемое revalidation; private cache не переиспользуется публичным CDN.
+HTML UI и API/export остаются no-store, экспорт hash соответствует исходным
+байтам. После изменения сборки нужен перезапуск сервера. Нет внешних fonts/images
+и тяжёлого frontend framework. Экран диагностики грузит данные только по запросу.
+
+Show подготавливает историю и сессию параллельно, затем меняет UI и iframe.
+Кэш максимум три HTML-версии; навигация удаляет frame/listener. Один serial event
+queue ограничен 128 pending, статистика обновляется после результата, не каждого
+касания. Запросы имеют AbortController/timeouts; обе LLM adapters получают
+request signal, отменяют headers/body/preflight, освобождают lock/listeners.
+Закрытие сервера вызывает adapter.close(), прекращает приём соединений, даёт
+5 секунд на завершение и закрывает SQLite. SIGINT/SIGTERM и локальный IPC используют
+один путь; удалённого shutdown endpoint нет. Если abort происходит уже после
+commit, сохранённая версия остаётся, отмена UI не откатывает данные.
+
+LAN HTTP не имеет secure context. Runtime добавляет только controlled UUID
+compatibility helper через crypto.getRandomValues, если randomUUID отсутствует;
+этот helper не меняет хранимый/экспортируемый HTML, не получает токен и не снимает
+CSP/sandbox. Новый prompt просит модель использовать тот же secure random helper.
+DEMO содержит явный UTF-8 charset: file:// WebKit иначе декодирует кириллицу неверно.
+Canvas размер рассчитывается из CSS bbox × DPR; resize сохраняет gameplay state.
+Authored DEMO рисует при действиях/resize, без RAF/timer/audio. Background возвращение
+и произвольные анимационные игры требуют проверки на физическом устройстве.
+
+Ограничения/измерения и platform matrix — в
+[cross-platform](cross-platform.md), команды LAN/HTTPS — в
+[development-setup](development-setup.md). Общая SQLite схема остаётся 1.

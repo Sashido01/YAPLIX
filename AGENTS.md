@@ -27,3 +27,19 @@ Implement the minimal UI here when no integrated UI exists.
 
 Report MAIN, MERGED, RUN, VERIFIED, MVP, LIVE, DOCS and NEXT. Synthetic tests,
 source audits, real LLM calls and physical devices have different proof boundaries.
+
+Mobile First is permanent: Android Chrome/System WebView, iOS Safari/WKWebView
+and Telegram clients have priority. Keep the browser client light; Node/SQLite
+and LLM run on the server. Test 320/360/390/430 px, tablet and desktop, touch,
+rotation, keyboard viewport and safe-area. Do not claim physical device PASS
+from browser emulation. Preserve opaque sandbox and session authorization.
+
+Measure a baseline before optimization. Repeat the same cold mobile Slow 4G /
+CPU ×4 profile at least seven times; separate shell, API, LLM, game start and
+rendering. Gzip budgets: initial JS 150 KB, CSS 30 KB, critical assets 250 KB.
+Interactive p75 target 3 s is a reported timing goal on shared CI, not an excuse
+to increase budgets. Keep bounded caches/queues; dispose iframe and listeners,
+pause animation in background, cancel abandoned generation. Do not guarantee
+arbitrary LLM code performance. Default loopback; LAN is explicit, private-IP,
+key protected and trusted-network only. Public use requires HTTPS reverse proxy
+and protected API. Never change firewall or expose Ollama automatically.

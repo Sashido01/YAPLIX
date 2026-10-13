@@ -78,10 +78,10 @@ Actions закреплены SHA; Dependabot проверяет обновлен
 
 ## API для UI jeanhayl
 
-JSON body обязателен для POST. API принимает только loopback Host и same-origin
-Origin; непривязанный запрос из sandbox (Origin null) отклоняется. UI подключает
-API через тот же origin/proxy. Публичная авторизация и multi-user ownership
-пока отсутствуют — это локальный MVP.
+JSON body обязателен для POST. По умолчанию API принимает loopback Host и
+same-origin Origin; явные LAN/HTTPS режимы требуют точный настроенный origin; непривязанный запрос из sandbox (Origin null) отклоняется. UI подключает
+API через тот же origin/proxy. LAN/HTTPS защищены общей key/cookie авторизацией;
+персональные аккаунты и multi-user ownership отсутствуют.
 
 | Операция | Контракт |
 | --- | --- |
@@ -329,3 +329,83 @@ npm start
 их в своей ветке; не применяйте reset/clean/force. `.local` и `.env` не заменяются
 Git/npm. После обновления проверьте предыдущую игру, версии, запуск и экспорт.
 Модель установлена отдельно и не удаляется обновлением приложения.
+
+## LAN для телефона
+
+После `npm ci` и `npm run build` запустите `npm run lan` вместо `npm start`.
+`--host` выбирает существующий частный IPv4, `--port` — свободный порт:
+
+```sh
+npm run lan -- --host 192.168.0.12 --port 3000
+```
+
+Адрес/ключ выводятся только в локальном терминале. Передайте ключ доверенному
+участнику отдельным каналом; не добавляйте его в URL, Git, screenshot или HTML.
+Если задан YAPLIX_ACCESS_KEY в `.env`, используется он; иначе каждый запуск
+создаёт новый. API требует auth-cookie и точный Origin. Ctrl+C закрывает сервер
+и базу; cookie инвалидируется при перезапуске, игровые данные сохраняются.
+Ollama остаётся на loopback сервера. Никаких автоматических firewall правок.
+
+## HTTPS на сервере
+
+Production-compatible конфигурация: Node 24 server + постоянный `.local/data`
++ HTTPS reverse proxy. Домены/hosting не нужны для LAN приёмки. Для публичного
+запуска оператор выбирает DNS/сертификат/proxy и доступ к TCP 443; следующие
+команды — инструкция, не подтверждение уже развёрнутого HTTPS сервиса.
+
+1. Клонируйте этот репозиторий в постоянный каталог сервера, выполните `npm ci`,
+   `npm run build`, для LIVE — `npm run bgen:install`; установите выбранную LLM
+   на сервере. Не используйте эфемерный checkout без volume для `.local/data`.
+2. Создайте `.env` (в Ubuntu `chmod 600 .env`; у service user права на `.local`):
+
+```dotenv
+PORT=3000
+YAPLIX_MODE=https
+YAPLIX_HOST=127.0.0.1
+PUBLIC_URL=https://games.example.com
+YAPLIX_ACCESS_KEY=REPLACE_WITH_RANDOM_URL_SAFE_KEY
+YAPLIX_DB=.local/data/yaplix.sqlite
+LIVE_PROVIDER=none
+```
+
+Ключ сгенерируйте локально командой (одинакова в PowerShell/Ubuntu):
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+3. Запустите `npm start` от ограниченного service user, не root. Process manager
+   должен использовать каталог клона как working directory, читать `.env` и
+   посылать SIGTERM с grace timeout не менее 10 секунд. На Windows локально
+   используется Ctrl+C. Перезапуск не удаляет `.local`.
+4. Пример [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+   (оператор устанавливает Caddy и заменяет hostname; repo не меняет ОС):
+
+```caddyfile
+games.example.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Caddy завершает TLS, сохраняет внешний Host и устанавливает X-Forwarded-Proto.
+При другом proxy передайте точный public Host, Origin клиента и
+X-Forwarded-Proto=https; не переписывайте Host в 127.0.0.1. Backend нельзя
+публиковать напрямую. Proxy response/idle timeout должен покрывать до 300 секунд
+LIVE. У `.env` PUBLIC_URL должен точно совпадать с browser origin, включая
+нестандартный HTTPS порт. Внешний URL открывает форму входа, API без cookie 401;
+успешный вход устанавливает HttpOnly/SameSite=Strict/Secure cookie, HSTS включён.
+5. Проверьте HTTPS, вход, DEMO, `/api/health` с cookie, экспорт и backup, рестарт
+   без потери данных. Для Telegram настройте этот HTTPS URL в конкретном Mini App
+   отдельно. Telegram initData не используется как YAPLIX login; общей командной
+   auth недостаточно для публичного multi-tenant сервиса.
+
+Обновление: остановка → проверенный backup → `git pull --ff-only origin main` →
+`npm ci` → `npm run build` → запуск → auth/health/DEMO/readback. Сохраните .env,
+`.local/data` и .local/backups; старые backup не удаляются автоматически. Схема 1
+не менялась. Установленная модель/BGen не нужны для key-free DEMO.
+
+Новые network ошибки: ACCESS_REQUIRED/ACCESS_DENIED (401), ACCESS_RATE_LIMIT
+(429), HOST_FORBIDDEN/ORIGIN_FORBIDDEN/HTTPS_REQUIRED (403). После restart повторите
+вход. POST `/api/access` принимает только JSON `{key}`, до 256 bytes; ключ не
+возвращается. Отменённая до сохранения генерация: REQUEST_CANCELLED (499).
+UI/API timeout не обещает отмены уже совершённого SQLite commit.
