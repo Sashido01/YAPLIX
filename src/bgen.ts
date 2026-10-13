@@ -1,0 +1,89 @@
+import { Fault, MAX_HTML_BYTES, object, parseArtifact, parseSpec } from './contracts.ts';
+import type { Artifact, GameSpec, GameVersion } from './contracts.ts';
+
+export async function boundedText(response: Response, max: number): Promise<string> {
+  if (Number(response.headers.get('content-length')) > max) {
+    await response.body?.cancel().catch(() => {});
+    throw new Fault('BODY_TOO_LARGE', 413);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) throw new Fault('BODY_TOO_LARGE', 413);
+      chunks.push(value);
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
+export interface BGenOptions { url: string; timeoutMs?: number; initData?: string }
+function upstreamArtifact(value: unknown): Artifact {
+  try { return parseArtifact(value); }
+  catch { throw new Fault('BGEN_INVALID_ARTIFACT', 502); }
+}
+export class BGenAdapter {
+  private options: BGenOptions;
+  constructor(options: BGenOptions) {
+    const url = new URL(options.url);
+    if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Fault('INVALID_BGEN_URL');
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))) throw new Fault('INSECURE_BGEN_URL');
+    if (options.timeoutMs !== undefined && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 120_000)) throw new Fault('INVALID_TIMEOUT');
+    this.options = options;
+  }
+  async generate(spec: GameSpec, previous?: GameVersion): Promise<Artifact> {
+    parseSpec(spec);
+    // Current BGen takes prompt + audience; no silent claims that extra fields are honored.
+    const prompt = [spec.prompt, `Requirements: genre=${spec.genre}; mechanics=${spec.mechanics.join(',')}; controls=${spec.controls.join(',')}; responsive=${spec.responsive}; webview=${spec.webview}`].join('\n');
+    if (prompt.length > 500) throw new Fault('BGEN_PROMPT_TOO_LARGE');
+    const body = JSON.stringify({ prompt, audience: spec.audience, ...(previous ? { previousCode: previous.html, previousPrompt: previous.spec.prompt } : {}) });
+    if (Buffer.byteLength(body) > MAX_HTML_BYTES * 6 + 8192) throw new Fault('BGEN_INPUT_TOO_LARGE', 413);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 30_000);
+    try {
+      const res = await fetch(new URL(previous ? '/api/iterate' : '/api/generate', this.options.url), {
+        method: 'POST', redirect: 'error', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', ...(this.options.initData ? { 'X-Telegram-Init-Data': this.options.initData } : {}) }, body,
+      });
+      if (!res.ok) throw new Fault(res.status === 401 || res.status === 403 ? 'BGEN_AUTH' : res.status === 429 ? 'BGEN_RATE_LIMIT' : 'BGEN_HTTP', 502);
+      let result: Record<string, unknown>;
+      try { result = JSON.parse(await boundedText(res, MAX_HTML_BYTES * 6 + 8192)); }
+      catch (error) { if (error instanceof Fault) throw error; if (controller.signal.aborted) throw error; throw new Fault('BGEN_INVALID_JSON', 502); }
+      if (!result || typeof result !== 'object' || Array.isArray(result) || typeof result.ok !== 'boolean' || typeof result.fromCache !== 'boolean' || typeof result.provider !== 'string') throw new Fault('BGEN_INVALID_RESPONSE', 502);
+      const provider = result.provider;
+      let method: Artifact['method'];
+      let model: string | null = null;
+      if (result.provenance !== undefined) {
+        let p: Record<string, unknown>;
+        try { p = object(result.provenance, ['protocolVersion', 'method', 'provider', 'model']); }
+        catch { throw new Fault('BGEN_INVALID_PROVENANCE', 502); }
+        if (!p || p.protocolVersion !== 1 || typeof p.model !== 'string' && p.model !== null || typeof p.provider !== 'string' && p.provider !== null) throw new Fault('BGEN_INVALID_PROVENANCE', 502);
+        method = p.method as Artifact['method'];
+        model = p.model as string | null;
+        // Explicit metadata must agree with observable mock/default/template labels.
+        if ((provider.includes('mock') || typeof p.provider === 'string' && p.provider.includes('mock')) && method !== 'mock' || provider === 'engine+default' && method !== 'fallback' || provider.startsWith('engine+') && !provider.includes('mock') && provider !== 'engine+default' && method !== 'template_config') throw new Fault('BGEN_PROVENANCE_CONFLICT', 502);
+        return upstreamArtifact({ html: result.html, method, provider: p.provider, model, generationStatus: result.ok ? 'succeeded' : 'failed', validationStatus: 'unverified' });
+      }
+      // Audited legacy labels are conservative. Cache loses provenance, raw provider alone
+      // cannot prove generated code, and manual output need not originate from an LLM.
+      if (result.fromCache) throw new Fault('BGEN_PROVENANCE_REQUIRED', 502);
+      if (provider.includes('mock')) method = 'mock';
+      else if (provider === 'engine+default') method = 'fallback';
+      else if (/^engine\+(openai|anthropic|ollama|gigachat)\+(json|keyvalue)$/.test(provider)) method = 'template_config';
+      else throw new Fault('BGEN_PROVENANCE_REQUIRED', 502);
+      return upstreamArtifact({ html: result.html, method, provider, model, generationStatus: result.ok ? 'succeeded' : 'failed', validationStatus: 'unverified' });
+    } catch (error) {
+      if (controller.signal.aborted) throw new Fault('BGEN_TIMEOUT', 504);
+      if (error instanceof Fault) throw error;
+      throw new Fault('BGEN_NETWORK', 502);
+    } finally { clearTimeout(timeout); controller.abort(); }
+  }
+}
