@@ -3,15 +3,15 @@ import { randomUUID, createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { BGenAdapter } from '../src/bgen.ts';
+import type { Generator } from '../src/bgen.ts';
+import { configuredGenerator, LocalCodeAdapter, BGEN_REVISION } from '../src/live.ts';
 import { createApp } from '../src/api.ts';
 import { Fault } from '../src/contracts.ts';
 import type { GameSpec, GameVersion } from '../src/contracts.ts';
 import { Store, PROJECT_ROOT } from '../src/store.ts';
 
-const url = process.env.BGEN_URL;
-if (!url) { console.error('BGEN_NOT_CONFIGURED: set BGEN_URL in the process environment'); process.exit(1); }
-let adapter: BGenAdapter;
-try { adapter = new BGenAdapter({ url, initData: process.env.BGEN_INIT_DATA, timeoutMs: Number(process.env.BGEN_TIMEOUT_MS ?? 120_000) }); }
+let adapter: Generator | undefined;
+try { adapter = configuredGenerator(); if (!adapter) throw new Fault('BGEN_NOT_CONFIGURED'); }
 catch (error) { console.error(error instanceof Fault ? error.code : 'LIVE_CONFIGURATION_INVALID'); process.exit(1); }
 const run = `.local/live/${randomUUID()}`;
 const store = new Store(`${run}/yaplix.sqlite`); // Same containment/link checks as the server.
@@ -20,7 +20,7 @@ const specs: GameSpec[] = [
   { prompt: 'Create a snake game: collect five apples to win, hit a wall to lose. Include Start and touch direction buttons.', genre: 'snake', mechanics: ['collect', 'win', 'lose'], audience: 'default', controls: ['keyboard', 'touch'], responsive: true, webview: true },
   { prompt: 'Create Signal Courier: rotate three mirrors to route a light beam from a lighthouse to a harbour. Each move spends energy; connect before energy runs out. Include Start, touch mirror buttons and restart.', genre: 'signal-routing', mechanics: ['rotate', 'energy', 'win', 'lose'], audience: 'default', controls: ['keyboard', 'touch'], responsive: true, webview: true },
 ];
-const evidence: Record<string, unknown> = { startedAt: new Date().toISOString(), endpoint: new URL(url).origin, specs, status: 'blocked', versions: [], browserValidation: 'not_run', telemetry: 'not_observed' };
+const evidence: Record<string, unknown> = { startedAt: new Date().toISOString(), provider: adapter instanceof LocalCodeAdapter ? adapter.provider : 'bgen', model: adapter instanceof LocalCodeAdapter ? adapter.model : null, bgenRevision: adapter instanceof LocalCodeAdapter ? BGEN_REVISION : null, specs, status: 'blocked', versions: [], browserValidation: 'not_run', telemetry: 'not_observed' };
 const versions: Omit<GameVersion, 'html'>[] = [];
 async function generate(spec: GameSpec, previous?: GameVersion) {
   const response = await app.request(previous ? `/api/games/${previous.gameId}/versions` : '/api/games', {
@@ -38,9 +38,10 @@ async function generate(spec: GameSpec, previous?: GameVersion) {
   return version;
 }
 try {
-  const capabilities = await adapter.liveCapabilities();
-  evidence.capabilities = capabilities;
-  if (!capabilities.previousCode) throw new Fault('BGEN_ITERATION_UNSUPPORTED', 503);
+  if (adapter instanceof BGenAdapter) {
+    const capabilities = await adapter.liveCapabilities(); evidence.capabilities = capabilities;
+    if (!capabilities.previousCode) throw new Fault('BGEN_ITERATION_UNSUPPORTED', 503);
+  }
   const first = await generate(specs[0]);
   await generate(specs[1]);
   await generate({ ...specs[0], prompt: 'Modify the previous snake game: collect eight apples to win; preserve the controls, start, wall collision and offline operation.' }, first);

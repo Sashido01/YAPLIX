@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>DEMO — Звёздный курьер</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#10182c;color:#f5f7ff;font:18px system-ui}main{max-width:600px;margin:auto;padding:16px}h1{font-size:25px}button{font:inherit;padding:14px 18px;min-height:48px;margin:4px;border:0;border-radius:12px;background:#f7d449;color:#171717}button:disabled{opacity:.45}canvas{display:block;width:100%;border-radius:14px;background:#192645}.note{color:#aebad5;font-size:14px}#status{font-weight:700}</style></head>
+<body><main><p class="note">DEMO · готовая авторская игра · без LLM</p><h1>Звёздный курьер</h1><p>Соберите __GOAL__ грузов. Ловушка завершает полёт поражением.</p><canvas aria-label="Корабль и собранный груз"></canvas><p id="status" role="status">Готов к полёту</p><p>Груз: <output id="score">0</output> / __GOAL__</p><button id="start">Старт</button><button id="point" disabled>Груз</button><button id="trap" disabled>Ловушка</button><p class="note">Enter — старт, пробел — груз. На телефоне используйте кнопки.</p></main>
+<script>
+// Authored DEMO template, never reported as model-generated code.
+const goal=__GOAL__, start=document.querySelector('#start'),point=document.querySelector('#point'),trap=document.querySelector('#trap'),status=document.querySelector('#status'),scoreOutput=document.querySelector('#score'),canvas=document.querySelector('canvas');
+let score=0,active=false,session=null,sequence=0;
+function draw(){const width=Math.min(568,innerWidth-32);canvas.style.height='140px';canvas.width=Math.round(width*devicePixelRatio);canvas.height=Math.round(140*devicePixelRatio);const ctx=canvas.getContext('2d');ctx.scale(devicePixelRatio,devicePixelRatio);ctx.fillStyle='#f7d449';ctx.fillRect(15,50,50,35);ctx.fillStyle='#7edcc3';for(let i=0;i<score;i++)ctx.fillRect(80+(i%10)*24,40+Math.floor(i/10)*30,16,16);}
+function emit(type,data={}){if(!session||parent===window)return;parent.postMessage({channel:'yaplix',event:{protocolVersion:1,eventId:crypto.randomUUID(),sessionId:session.sessionId,versionId:session.versionId,sequence:sequence++,type,timestamp:Date.now(),data}},'*');}
+window.addEventListener('message',e=>{if(e.source===parent&&e.data?.channel==='yaplix_init'&&e.data.protocolVersion===1&&!session){session=e.data;emit('game_ready');}});
+function finish(won){active=false;point.disabled=trap.disabled=true;start.disabled=true;start.textContent='Завершено — запустите заново';status.textContent=won?'Победа':'Поражение';emit(won?'game_won':'game_lost');emit('session_ended');}
+start.onclick=()=>{if(active)return;active=true;start.disabled=true;point.disabled=trap.disabled=false;status.textContent='В полёте';emit('game_started');};
+point.onclick=()=>{if(!active)return;scoreOutput.textContent=String(++score);draw();emit('score_changed',{score});if(score>=goal)finish(true);};
+trap.onclick=()=>{if(active)finish(false);};
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!start.disabled)start.click();if(e.key===' '&&active){e.preventDefault();point.click();}});
+if(parent===window){const replay=document.createElement('button');replay.textContent='Перезапуск';replay.onclick=()=>location.reload();document.querySelector('main').append(replay);}
+window.addEventListener('error',e=>emit('game_error',{message:String(e.message).slice(0,512)}));window.addEventListener('resize',draw);draw();
+</script></body></html>
