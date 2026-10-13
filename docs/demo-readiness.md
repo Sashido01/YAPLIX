@@ -74,3 +74,51 @@ read-only hash/integrity/FK/schema, остановка и повторный з�
 Удалённый legacy BGen API по-прежнему не удовлетворяет строгому контракту; локальный
 compiler-only путь от него не зависит. Hosted CI проверяет synthetic сценарии;
 реальная LLM не является зависимостью CI.
+
+## TASK-005: Mobile First, 13 октября 2026
+
+На Windows проверены key-protected LAN HTTP по существующему Wi-Fi адресу:
+Chromium 320×568 и WebKit 390×844, создание DEMO 3→5, touch win/loss, реальные
+bridge/events/SQLite, история/reopen, exact export как file:// offline, graceful
+IPC stop/restart с сохранением hash. Телефон не использовался; firewall не менялся.
+
+Настоящая LLM через тот же LAN UI: qwen2.5-coder:14b + pinned compiler, llm_code.
+Первая итерация с целью 4 заняла 41.2 s и сохранила постоянный RAF; новая итерация
+35.7 s исправила отрисовку/resize по запросу модели. Результат не правился вручную:
+версия `b7b9d5d3-f871-42de-8cae-5e2b8831536f`, SHA-256
+`a0fe62e71a2b42fffdcea1139e961a89002e92b94cbdb7c26e0b32d4fecab1b8`.
+HTML 5795 bytes, встроенный JS 4303, CSS 876 bytes, без внешних ресурсов.
+Отдельные семь повторов на том же 390×844 / CPU ×4 / Slow 4G профиле:
+готовая LIVE-игра запускается с p75 978.9 ms, touch → score 4.5 ms; CDP JS heap
+после игры около 5.80 MB. После 40 закрытий/open и GC — 2.15 MB в родителе,
+ноль оставшихся iframe. Это отдельный измеренный артефакт/база, не baseline
+сравнение и не полный RAM процесса. LLM 35.7 s измерена отдельно от UI. Chromium/WebKit 390×844: touch win,
+поворот 844×390 и обратно сохраняет score, export/hash, offline file:// loss
+на 320×568, restart с сохранённой версией. Старый bridge с randomUUID также
+проверен на LAN HTTP через controlled compatibility helper. События получены
+от настоящего runtime; тестовый скрипт не отправлял искусственную статистику.
+Реальный backend/инференс и browser proof отделены от synthetic CI.
+
+Автоматизированная матрица: 12 профилей Chromium/WebKit/Firefox, шесть контрольных
+размеров, portrait/landscape, touch, сокращение viewport, DPR, отмена/ошибки,
+изоляция, навигация без оставшихся iframe и повторной передачи HTML. Результаты
+performance и ограничения выборки — [cross-platform](cross-platform.md).
+
+Перед физической приёмкой на каждом Android/iPhone/планшете:
+
+- [ ] Открыть LAN адрес с ключом; для Telegram/WKWebView — настроенный HTTPS URL.
+- [ ] Создать DEMO, touch Start/Груз/Ловушка; наблюдать сохранённые win/loss.
+- [ ] Повернуть экран в процессе игры, открыть клавиатуру в prompt/change;
+      проверить safe-area/системные панели, 44 px кнопки и отсутствие clipping.
+- [ ] Уйти в фон/вернуться, отключить сеть после загрузки; проверить состояние,
+      отсутствие лишней анимации/звука и честную ошибку сохранения событий.
+- [ ] Создать LIVE/версию, reopen, download HTML, открыть файл offline;
+      если download ограничен контейнером, повторить в системном браузере.
+- [ ] Повторить запуск сервера, backup/verify и обновление без потери игры.
+- [ ] Зафиксировать модель/OS/browser/app версии, устройство, адрес режима,
+      результаты и расход ресурсов. Секретный ключ не включать в evidence.
+
+NOT VERIFIED: реальные Android System WebView, iOS WKWebView, Telegram Mini App,
+macOS Safari, аппаратная батарея/нагрузка, публичный HTTPS deployment и очная
+репетиция на Ubuntu laptop. Подготовленная HTTPS конфигурация/синтетический
+Secure cookie тест не подтверждают сертификат, домен и production развёртывание.

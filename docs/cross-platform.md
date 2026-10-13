@@ -32,7 +32,7 @@ git diff --check
 CI настроен на Windows и Ubuntu 24.04, но конфигурация workflow не доказывает успешное исполнение. Локальное выполнение через Git for Windows не является проверкой Linux. Даже успешный hosted CI не заменяет репетицию на физическом ноутбуке Ubuntu 24.04 по [demo-readiness.md](demo-readiness.md).
 
 Lockfile фиксирует зависимости; Playwright проверяет автономный авторский HTML
-в Chromium desktop/mobile и WebKit mobile. Физический WebView требует отдельной проверки. Реальные LLM-артефакты
+в Chromium desktop/mobile, WebKit mobile/tablet и Firefox desktop. Физический WebView требует отдельной проверки. Реальные LLM-артефакты
 испытываются отдельно от authored fixture; границы указаны в demo-readiness. Генерация и gameplay имеют разные
 требования к сети. Детали — в [архитектуре](architecture.md).
 
@@ -40,3 +40,83 @@ Frontend/backend — один процесс npm start; .env читается а
 не требует внешних сервисов. Для LIVE установите Ollama для своей ОС, модель и
 проектную BGen library по README. На Ubuntu CI установка pinned library идёт из
 чистого checkout; live inference зависит от ресурсов компьютера и не входит в CI.
+
+## Mobile First: платформа и способ проверки
+
+| Среда | Автоматизированная проверка | Оставшаяся проверка |
+| --- | --- | --- |
+| Android Chrome / System WebView | Chromium, touch/DPR, 320×568, 360×800, 390×844, 430×932 | Физический Android и embedded WebView |
+| iOS Safari / WKWebView | Playwright WebKit, те же mobile размеры | Физический iPhone, клавиатура, safe-area, загрузка HTML |
+| Android tablet / iPadOS | Chromium/WebKit 768×1024, portrait/landscape | Физический планшет |
+| Chrome / Edge desktop | Chromium 1366×768 | Установленный Edge, аппаратные особенности |
+| Firefox desktop | Firefox 1366×768 | Физический Linux notebook |
+| Safari desktop | Общий WebKit engine проверен на mobile/tablet | macOS Safari |
+| Telegram Mini App Android/iOS | Shared browser client и HTTPS-ready API | Telegram SDK/container, реальные клиенты и HTTPS URL |
+
+Это engine emulation, а не идентичные устройства. Версии движков зафиксированы
+Playwright lockfile; hosted Windows/Ubuntu CI проверяет все 12 профилей.
+Клиент не использует Node, Ollama, внешние шрифты, библиотеки или install step.
+Запуск/генерация требуют сети до сервера; inference находится на сервере.
+После загрузки gameplay не зависит от связи; события при долгом offline могут
+не сохраниться, UI сообщает ошибку. Экспорт автономен и не требует postMessage.
+Telegram WebView может ограничивать download/file:// — используйте системный
+браузер, это не обходится разрешением privileged origin недоверенной игре.
+
+UI поддерживает 44 px цели, font-size 16 px для ввода, safe-area и compact
+landscape. На телефоне навигация занимает отдельную строку под прокручиваемым
+содержимым и не перекрывает игровые кнопки. `visualViewport` скрывает её при перекрытии клавиатурой;
+сокращение viewport не пересоздаёт iframe. У authored DEMO нет анимационного
+цикла/звука: фон не потребляет непрерывную игровую перерисовку. Для LLM это
+инструкция и отдельная приёмка каждого артефакта, не универсальная гарантия.
+
+## Производительность: измерение 13 октября 2026
+
+`npm run performance:smoke` запускает production server, сохраняет JSON в
+`.local/performance/current.json` и проверяет размеры. Для другого уже работающего
+локального сервера задайте `PERF_URL`; секретный LAN endpoint в этом тесте не нужен.
+Профиль: Chromium 156.0.8078.4 на Windows, viewport 390×844, DPR 2,
+CPU AMD Ryzen 5 7500F (12 logical cores), CPU throttle ×4, CDP Slow 4G: latency 150 ms, download 1.6 Mbps, upload 750 kbps.
+Сервер прогрет; каждый из семи повторов — новый browser context, cache disabled.
+Baseline снят до оптимизации и повторён на неизменённом TASK-004 checkout тем же
+runner. After измерен отдельно от полного browser suite. Это лабораторный профиль,
+не реальная сеть/аппаратная скорость телефона.
+
+| Метрика | Baseline TASK-004 | After TASK-005 |
+| --- | --- | --- |
+| Первый экран с загруженным списком, p75 | 1014.2 ms | 630.7 ms |
+| Выбор готовой игры → доступная кнопка Start, p75 | 1011.0 ms | 966.7 ms |
+| Локальный API /games без сетевого throttling, p75 из 10 | 2.64 ms | 3.31 ms |
+| Touch pointerdown → изменение счёта DEMO, p75 | 2.9 ms | 4.9 ms |
+| JS первоначальной загрузки, gzip | 6313 bytes | 6061 bytes |
+| CSS первоначальной загрузки, gzip | 1185 bytes | 1939 bytes |
+| Критические HTML/CSS/JS, gzip | 9262 bytes | 10022 bytes |
+| Статические запросы первоначального экрана | 5 | 3 |
+
+UI стал функциональнее: авторизация, отмена, экраны, размеры артефакта. CSS/HTML
+увеличились; JS и число запросов уменьшились. Baseline gzip — расчёт на тех же
+байтах, прежний сервер отдавал их без сжатия; after реально отдаёт gzip.
+Первый экран ускорился примерно на 38%; API/touch колебания не выдаются за
+улучшение. JS heap после gameplay: baseline около 5.60 MB, after около 5.45 MB;
+это CDP heap, не полный RAM процесса. Parent long tasks: baseline отсутствуют,
+after 0–1 на повтор, 50–56 ms. rAF интервалы измерительного sampler: медиана
+16.7 ms в обоих вариантах. DEMO рисует по действиям/resize: эти интервалы
+характеризуют browser scheduling, а не обещание постоянных 60 FPS/экономии батареи.
+
+DEMO: HTML 4378 bytes, встроенный JS 2522, CSS 880, внешних зависимостей нет.
+Размеры конкретного LLM HTML и inference latency приведены в demo-readiness;
+они не входят во время загрузки оболочки. Память и CPU произвольного LLM-кода
+не гарантируются opaque iframe. Закрытие экрана удаляет игровой realm/listener;
+bounded UI cache хранит максимум три версии, очередь максимум 128 событий.
+
+Бюджеты: JS ≤150000, CSS ≤30000, критические ресурсы ≤250000 bytes gzip.
+Превышение размера блокирует performance check. p75 interactive 3000 ms — цель;
+shared hosted runner выводит предупреждение при превышении, не меняет лимит.
+Тесты touch/изоляции/сохранения состояния обязательны независимо от скорости.
+HTML >100 KB показывает warning, существующий hard limit 200 KB сохранён.
+Небольшая выборка и синтетический throttling не доказывают field p75.
+
+
+После 40 циклов открыть/закрыть с принудительным CDP GC: ни одного оставшегося
+iframe; heap стабилизируется около 2.13 MB после прогрева/кэша (10/20/30/40
+циклов записываются в JSON). Это ограниченная проверка retention родителя,
+не доказательство отсутствия любых утечек в движке или неизвестной LLM игре.

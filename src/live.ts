@@ -36,6 +36,8 @@ export class LocalCodeAdapter implements Generator {
   readonly model: string;
   private timeout: number;
   private busy = false;
+  private active: AbortController | undefined;
+  close() { this.active?.abort(); }
   constructor(options: { url?: string; model?: string; timeoutMs?: number } = {}) {
     let url: URL;
     try { url = new URL(options.url ?? 'http://127.0.0.1:11434'); } catch { throw new Fault('INVALID_LLM_URL'); }
@@ -43,13 +45,16 @@ export class LocalCodeAdapter implements Generator {
     this.url = url.origin; this.model = options.model ?? 'qwen2.5-coder:14b'; this.timeout = options.timeoutMs ?? 180_000;
     if (!this.model.trim() || this.model.length > 128 || !Number.isSafeInteger(this.timeout) || this.timeout < 1 || this.timeout > 300_000) throw new Fault('INVALID_LLM_CONFIGURATION');
   }
-  async generate(spec: GameSpec, previous?: GameVersion, requiredMethod?: 'llm_code'): Promise<Artifact> {
+  async generate(spec: GameSpec, previous?: GameVersion, requiredMethod?: 'llm_code', signal?: AbortSignal): Promise<Artifact> {
     parseSpec(spec);
     if (requiredMethod !== undefined && requiredMethod !== 'llm_code') throw new Fault('INVALID_REQUIRED_METHOD');
     if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Fault('INSECURE_TLS_CONFIGURATION', 503);
     if (this.busy) throw new Fault('LLM_BUSY', 409);
     this.busy = true;
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), this.timeout);
+    this.active = controller;
+    const cancel = () => controller.abort(); signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
     try {
       const { compiler, extractor, security } = await modules();
       const compiled = compiler.compile({ prompt: spec.prompt, audience: spec.audience }, previous ? { previousCode: previous.html, previousPrompt: previous.spec.prompt } : {});
@@ -64,19 +69,21 @@ export class LocalCodeAdapter implements Generator {
       if (security.checkSecurity(html).some(issue => issue.severity === 'error' || issue.id === 'runtime-network')) throw new Fault('LLM_UNSAFE_ARTIFACT', 502);
       return parseArtifact({ html, method: 'llm_code', provider: this.provider, model: result.model, generationStatus: 'succeeded', validationStatus: 'unverified' });
     } catch (e) {
-      if (controller.signal.aborted) throw new Fault('LLM_TIMEOUT', 504);
+      if (controller.signal.aborted) throw new Fault(signal?.aborted ? 'REQUEST_CANCELLED' : 'LLM_TIMEOUT', signal?.aborted ? 499 : 504);
       if (e instanceof Fault) throw e;
       throw new Fault('LLM_NETWORK_OR_RESPONSE', 502);
-    } finally { clearTimeout(timer); controller.abort(); this.busy = false; }
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); controller.abort(); this.active = undefined; this.busy = false; }
   }
 }
 // A contract instruction, never a replacement game or an injected client script.
 const BRIDGE_RULES = `YAPLIX integration contract (required): gameplay must also work standalone.
+Include meta charset=utf-8 and viewport width=device-width,initial-scale=1,viewport-fit=cover. Fit 320px and landscape; safe-area padding and touch buttons >=44px. Resize Canvas using its actual CSS size and devicePixelRatio without resetting game state. Prefer event-driven drawing; if animating use one requestAnimationFrame loop only during play and pause on document.hidden. Resume safely on visibilitychange. Audio can start only after a real user action. No external assets, libraries or fonts.
 Use this exact message shape and listener in your generated code:
 let yaplixSession=null, yaplixSequence=0, yaplixEnded=false;
+function yaplixUuid(){const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);}
 function yaplixEmit(type,data={}) {
   if (!yaplixSession || parent===window || yaplixEnded) return;
-  parent.postMessage({channel:'yaplix',event:{protocolVersion:1,eventId:crypto.randomUUID(),sessionId:yaplixSession.sessionId,versionId:yaplixSession.versionId,sequence:yaplixSequence++,type,timestamp:Date.now(),data}},'*');
+  parent.postMessage({channel:'yaplix',event:{protocolVersion:1,eventId:yaplixUuid(),sessionId:yaplixSession.sessionId,versionId:yaplixSession.versionId,sequence:yaplixSequence++,type,timestamp:Date.now(),data}},'*');
   if(type==='session_ended') yaplixEnded=true;
 }
 window.addEventListener('message', e=>{

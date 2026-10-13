@@ -1,7 +1,27 @@
 <!DOCTYPE html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YAPLIX — придумай и играй</title><link rel="stylesheet" href="/ui/style.css"><script type="module" src="/runtime/ui.js"></script></head>
-<body><header><a class="brand" href="/">YAPLIX<span>Ты придумал. Теперь играй.</span></a><button id="diagnostics" class="quiet">Диагностика</button></header>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>YAPLIX — придумай и играй</title><link rel="stylesheet" href="/ui/style.css"><script type="module" src="/runtime/ui.js"></script></head>
+<body data-screen="create">
+<header><a class="brand" href="/">YAPLIX<span>Ты придумал. Теперь играй.</span></a><button id="diagnostics" class="quiet">Диагностика</button></header>
 <main><section class="intro"><p class="eyebrow">ВАША ИДЕЯ → ВАША ИГРА</p><h1>Какую игру создадим?</h1><p>Опишите правила, запустите игру и попробуйте изменить её.</p></section>
-<div class="workspace"><section class="panel composer"><form id="create"><label for="prompt">Идея игры</label><textarea id="prompt" maxlength="500" minlength="2" required>Собери 3 груза и избегай ловушки</textarea><label for="mode">Режим создания</label><select id="mode"><option value="demo">DEMO — готовая игра, без ключей</option><option value="live">LIVE — модель создаёт HTML/JS</option></select><p id="mode-help" class="muted">DEMO использует авторскую игру «Звёздный курьер». Число в запросе задаёт цель. Это не LLM.</p><button id="generate" class="primary" type="submit">Создать игру</button></form><p id="message" role="status" aria-live="polite"></p><div class="divider"></div><h2>Мои игры</h2><p class="muted">Игры сохраняются на этом компьютере.</p><div id="games" class="list"></div></section>
-<section class="panel player"><div class="player-top"><h2 id="game-title">Здесь будет ваша игра</h2><span id="provenance" class="badge">Пока пусто</span></div><div id="game"><div class="empty">Начните с DEMO — установка LLM не нужна.</div></div><div class="actions"><button id="replay" disabled>Запустить заново</button><a id="export" aria-disabled="true">Скачать HTML</a></div><p class="muted">Скачанный HTML работает самостоятельно. Сохранённый файл — недоверенный код; открывайте его offline в отдельном браузере.</p><label for="versions">Версия игры</label><select id="versions" disabled></select><form id="iterate"><label for="change">Что изменить?</label><textarea id="change" maxlength="500" minlength="2" required placeholder="Например: теперь нужно собрать 5 грузов"></textarea><button id="improve" type="submit" disabled>Создать следующую версию</button></form><h2>Результаты игры</h2><p id="analytics" class="muted">Пока нет игровых событий.</p><p id="comparison" class="muted"></p></section></div>
-<details id="system" class="panel"><summary>Диагностика и резервная копия</summary><p id="system-info"></p><button id="backup">Создать резервную копию</button><p id="backup-result" role="status"></p><p class="muted">Инструкции настройки LIVE, восстановления и обновления — в README репозитория.</p></details></main><footer>YAPLIX · локальный MVP · статистика передаётся клиентом и не подтверждает честность рекордов.</footer></body></html>
+<p id="connection" class="connection" role="status" hidden>Связь с сервером недоступна. Загруженная игра продолжает работать; сохранение событий требует связи.</p>
+<div class="feedback"><p id="message" role="status" aria-live="polite"></p><button id="cancel" class="quiet" hidden>Отменить ожидание</button></div>
+<div class="workspace">
+<section class="panel composer">
+<form id="create"><label for="prompt">Идея игры</label><textarea id="prompt" maxlength="500" minlength="2" required>Собери 3 груза и избегай ловушки</textarea><label for="mode">Режим создания</label><select id="mode"><option value="demo">DEMO — без ключей</option><option value="live">LIVE — генерация LLM</option></select><p id="mode-help" class="muted">DEMO использует авторскую игру «Звёздный курьер». Число в запросе задаёт цель. Это не LLM.</p><button id="generate" class="primary" type="submit">Создать игру</button></form>
+<div id="library"><div class="divider"></div><h2>Мои игры</h2><p class="muted">Игры и версии сохраняются на сервере.</p><div id="games" class="list"></div></div>
+</section>
+<section class="panel player"><div class="player-top"><h2 id="game-title">Здесь будет ваша игра</h2><span id="provenance" class="badge">Пока пусто</span></div>
+<div id="game"><div class="empty">Начните с DEMO — установка LLM не нужна.</div></div>
+<div class="actions"><button id="focus-game" disabled>Игровой экран</button><button id="replay" disabled>Запустить заново</button><a id="export" aria-disabled="true" download>Скачать HTML</a></div>
+<p class="muted">HTML играет без сервера. Если WebView не сохраняет файл, откройте YAPLIX в обычном браузере. Автономный файл открывайте offline.</p>
+<p id="artifact-info" class="muted"></p>
+<label for="versions">Версия игры</label><select id="versions" disabled></select>
+<form id="iterate"><label for="change">Что изменить?</label><textarea id="change" maxlength="500" minlength="2" required placeholder="Например: теперь нужно собрать 5 грузов"></textarea><button id="improve" type="submit" disabled>Создать следующую версию</button></form>
+<details id="results" open><summary>Результаты игры</summary><p id="analytics" class="muted">Пока нет игровых событий.</p><p id="comparison" class="muted"></p></details>
+</section></div>
+<details id="system" class="panel"><summary>Диагностика и резервная копия</summary><p id="system-info"></p><button id="backup">Создать резервную копию</button><p id="backup-result" role="status"></p><p class="muted">Настройка LIVE, восстановление и обновление — в README.</p></details>
+<footer>YAPLIX · локальный MVP · статистика передаётся клиентом и не подтверждает честность рекордов.</footer>
+</main>
+<nav class="navigation" aria-label="Разделы"><button data-view="create" aria-current="page">Создать</button><button data-view="library">Игры</button><button data-view="play" disabled>Игра</button></nav>
+</body></html>

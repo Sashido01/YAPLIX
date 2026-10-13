@@ -1,0 +1,16 @@
+import { networkInterfaces } from 'node:os';
+import { randomBytes } from 'node:crypto';
+import { privateIPv4 } from '../src/access.ts';
+const args = process.argv.slice(2);
+if (args.some((value, i) => i % 2 === 0 && !['--host', '--port'].includes(value)) || args.length % 2) throw new Error('Use npm run lan -- --host private-IP --port 3000');
+const option = (name: string) => args[args.indexOf(name) + 1];
+const addresses = Object.values(networkInterfaces()).flat().filter(info => info && !info.internal && info.family === 'IPv4' && privateIPv4(info.address)).map(info => info!.address);
+const wifi = Object.entries(networkInterfaces()).filter(([name]) => /wi.?fi|wireless|wlan|беспровод/i.test(name)).flatMap(([,list]) => list ?? []).find(info => info.family === 'IPv4' && privateIPv4(info.address));
+const host = args.includes('--host') ? option('--host') : wifi?.address ?? addresses[0];
+if (!host || !addresses.includes(host)) throw new Error('No selected private IPv4 interface. Connect Wi-Fi/LAN, or select --host from your local interfaces.');
+process.env.YAPLIX_MODE = 'lan'; process.env.YAPLIX_HOST = host;
+if (args.includes('--port')) process.env.PORT = option('--port');
+delete process.env.PUBLIC_URL;
+process.env.YAPLIX_ACCESS_KEY ??= randomBytes(32).toString('base64url');
+console.log(`LAN preview: http://${host}:${process.env.PORT ?? 3000}/\nEnter this key on your phone (trusted LAN only): ${process.env.YAPLIX_ACCESS_KEY}\nOllama is server-only; no firewall rules were changed. Ctrl+C stops preview.`);
+await import('../src/server.ts');
