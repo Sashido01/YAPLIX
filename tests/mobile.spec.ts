@@ -22,6 +22,7 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
   await action('Груз');await expect(frame.locator('#score')).toHaveText('2');
   await page.screenshot({path:info.outputPath('mobile-game.png')});
   await page.getByRole('button',{name:'Обычный экран',exact:true}).click();
+  if(original.width<=760)expect(await page.evaluate(()=>document.querySelector('main')!.getBoundingClientRect().bottom<=document.querySelector('.navigation')!.getBoundingClientRect().top)).toBe(true);
   mark('offline touch');await context.setOffline(true);await action('Груз');await expect(frame.locator('#status')).toHaveText('Победа');await context.setOffline(false);
   mark('library');await page.getByRole('button',{name:'Игры',exact:true}).click();await expect(page.locator('iframe')).toHaveCount(0);
   const first=page.locator('#games button').first();

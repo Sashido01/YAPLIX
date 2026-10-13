@@ -89,7 +89,7 @@ IPC stop/restart с сохранением hash. Телефон не испол�
 `a0fe62e71a2b42fffdcea1139e961a89002e92b94cbdb7c26e0b32d4fecab1b8`.
 HTML 5795 bytes, встроенный JS 4303, CSS 876 bytes, без внешних ресурсов.
 Отдельные семь повторов на том же 390×844 / CPU ×4 / Slow 4G профиле:
-готовая LIVE-игра запускается с p75 978.2 ms, touch → score 4.4 ms; CDP JS heap
+готовая LIVE-игра запускается с p75 978.9 ms, touch → score 4.5 ms; CDP JS heap
 после игры около 5.80 MB. После 40 закрытий/open и GC — 2.15 MB в родителе,
 ноль оставшихся iframe. Это отдельный измеренный артефакт/база, не baseline
 сравнение и не полный RAM процесса. LLM 35.7 s измерена отдельно от UI. Chromium/WebKit 390×844: touch win,
