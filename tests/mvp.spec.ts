@@ -11,6 +11,9 @@ test('direct game link resolves latest version and preserves original library ti
 });
 
 test('user creates DEMO, wins, changes goal, selects old version, exports and backs up', async ({ page, browser }, testInfo) => {
+  // Two versions, independent offline browser, backup and reload are separate
+  // operations; per-assertion waits remain bounded at the normal five seconds.
+  test.setTimeout(45000);
   await page.goto('/'); await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await page.getByRole('button', { name: 'Создать игру', exact: true }).click();
   await expect(page.locator('#message')).toHaveText('Игра сохранена. Можно играть.');

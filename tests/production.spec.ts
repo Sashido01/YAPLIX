@@ -49,6 +49,7 @@ test('real production LAN: authentication, QR independent decode, relative API, 
 });
 
 for(const scenario of ['success','repair','unsafe','http-error','timeout','unavailable'] as const)test('production LIVE '+scenario+' (synthetic transport, no model-quality claim)',async({page})=>{
+  test.setTimeout(35000);
   let calls=0;const model='test-model';
   const mock=createServer((req,res)=>{
     if(req.url==='/api/tags'){res.end(JSON.stringify({models:[{name:model}]}));return;}
@@ -63,7 +64,9 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
   try {
     await page.goto(server.url);await page.locator('#mode').selectOption('live');await page.getByRole('button',{name:'Создать игру',exact:true}).click();
     if(scenario==='success'||scenario==='repair'){
-      await expect(page.locator('#message')).toContainText('Игра сохранена');await expect(page.locator('#provenance')).toContainText('llm_code');
+      // The real server-side checker is included in the 15-second generation
+      // deadline above. Wait for that contract, rather than a five-second poll.
+      await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('llm_code');
       const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
