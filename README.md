@@ -25,9 +25,19 @@ YAPLIX — проект ИИ-платформы для генерации, ра�
 Data, без автоматического изменения игр. Генератор развивает SKZHPRVT, Mobile
 First UI — jeanhayl. Нового генератора и второго frontend здесь нет.
 
-Настоящая LLM-генерация, live BGen/Railway/GigaChat и физические Android/iPhone
-пока не подтверждены этой интеграцией. Шаблон, Mock и fallback явно отличаются
-от llm_code. Legacy BGen cache/raw-provider без provenance отклоняется.
+TASK-003 добавляет строгий запрос `requiredMethod: "llm_code"`, проверку возможностей
+BGen перед вызовом, экспорт HTML с SHA-256 и воспроизводимый `npm run demo:live`.
+Шаблон, Mock, fallback, неизвестная модель или неподтверждённая итерация не сохраняются
+как конкурсный результат. Обычный API сохраняет отдельные режимы TASK-002.
+
+**Настоящая генерация пока заблокирована:** 13 октября 2026 опубликованный BGen
+HTTPS API отвечает на health, но `/api/capabilities` возвращает 404. Свежий BGen
+`419c649` не предоставляет provenance/model, содержит GigaChat TLS bypass и
+не передаёт предыдущий HTML компилятору. Live preflight завершился
+`BGEN_LIVE_CONTRACT_REQUIRED`, 0 версий; LLM-запрос не отправлен. Ни один реальный
+LLM/provider/model этой интеграцией не подтверждён. Физические устройства не испытаны.
+Минимальный контракт для SKZHPRVT и шаги демонстрации — в
+[инструкции рабочего места](docs/development-setup.md).
 
 ## Установка и запуск
 
@@ -52,6 +62,12 @@ npm test
 npm run browsers:install
 npm run test:browser
 ```
+
+Для live-запуска после принятия контракта BGen задайте BGEN_URL в окружении и
+выполните `npm run demo:live`. Команда вызывает тот же API/адаптер, сохраняет два
+сценария и связанную доработку в отдельной `.local/live/<run>/yaplix.sqlite`,
+экспортирует HTML и записывает evidence.json. До браузерного испытания результат
+остаётся `generated_unverified`; команда не сочиняет события и не ставит PASS.
 
 На Linux при отсутствии системных библиотек Playwright:
 `node scripts/browser-tests.mjs install --with-deps chromium webkit`.
