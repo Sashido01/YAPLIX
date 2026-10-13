@@ -1,5 +1,16 @@
 import { Fault, MAX_HTML_BYTES, object, parseArtifact, parseSpec } from './contracts.ts';
 import type { Artifact, GameSpec, GameVersion } from './contracts.ts';
+import { createHash } from 'node:crypto';
+
+export interface LiveCapabilities {
+  protocolVersion: 1; revision: string; codeGeneration: true;
+  tlsVerification: true; previousCode: boolean;
+}
+export function requiredMethod(value: unknown): 'llm_code' | undefined {
+  if (value === undefined) return undefined;
+  if (value !== 'llm_code') throw new Fault('INVALID_REQUIRED_METHOD');
+  return value;
+}
 
 export async function boundedText(response: Response, max: number): Promise<string> {
   if (Number(response.headers.get('content-length')) > max) {
@@ -33,18 +44,51 @@ function upstreamArtifact(value: unknown): Artifact {
 export class BGenAdapter {
   private options: BGenOptions;
   constructor(options: BGenOptions) {
-    const url = new URL(options.url);
+    let url: URL;
+    try { url = new URL(options.url); }
+    catch { throw new Fault('INVALID_BGEN_URL'); }
     if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Fault('INVALID_BGEN_URL');
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))) throw new Fault('INSECURE_BGEN_URL');
     if (options.timeoutMs !== undefined && (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 120_000)) throw new Fault('INVALID_TIMEOUT');
     this.options = options;
   }
-  async generate(spec: GameSpec, previous?: GameVersion): Promise<Artifact> {
+  async liveCapabilities(): Promise<LiveCapabilities> {
+    if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Fault('INSECURE_TLS_CONFIGURATION', 503);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.min(this.options.timeoutMs ?? 30_000, 15_000));
+    try {
+      const res = await fetch(new URL('/api/capabilities', this.options.url), {
+        redirect: 'error', signal: controller.signal,
+        headers: this.options.initData ? { 'X-Telegram-Init-Data': this.options.initData } : {},
+      });
+      if (res.status === 404) throw new Fault('BGEN_LIVE_CONTRACT_REQUIRED', 503);
+      if (!res.ok) throw new Fault('BGEN_CAPABILITIES_HTTP', 502);
+      let p;
+      try { p = JSON.parse(await boundedText(res, 4096)); }
+      catch (error) { if (error instanceof Fault || controller.signal.aborted) throw error; throw new Fault('BGEN_CAPABILITIES_INVALID', 502); }
+      if (!p || p.protocolVersion !== 1 || typeof p.revision !== 'string' || !/^[0-9a-f]{40}$/.test(p.revision) || p.codeGeneration !== true || p.tlsVerification !== true || typeof p.previousCode !== 'boolean') throw new Fault('BGEN_UNSAFE_CAPABILITIES', 503);
+      if (p.revision === '419c64968d487068a2fbed2e4bd99489cc734430') throw new Fault('BGEN_AUDITED_REVISION_UNSAFE', 503);
+      // These are upstream assertions; they must also agree with the owner's source audit.
+      return { protocolVersion: 1, revision: p.revision, codeGeneration: true, tlsVerification: true, previousCode: p.previousCode };
+    } catch (error) {
+      if (controller.signal.aborted) throw new Fault('BGEN_TIMEOUT', 504);
+      if (error instanceof Fault) throw error;
+      throw new Fault('BGEN_NETWORK', 502);
+    } finally { clearTimeout(timeout); controller.abort(); }
+  }
+  async generate(spec: GameSpec, previous?: GameVersion, requestedMethod?: 'llm_code'): Promise<Artifact> {
     parseSpec(spec);
+    requiredMethod(requestedMethod);
+    if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Fault('INSECURE_TLS_CONFIGURATION', 503);
+    if (requestedMethod) {
+      const capabilities = await this.liveCapabilities();
+      if (previous && !capabilities.previousCode) throw new Fault('BGEN_ITERATION_UNSUPPORTED', 503);
+    }
     // Current BGen takes prompt + audience; no silent claims that extra fields are honored.
     const prompt = [spec.prompt, `Requirements: genre=${spec.genre}; mechanics=${spec.mechanics.join(',')}; controls=${spec.controls.join(',')}; responsive=${spec.responsive}; webview=${spec.webview}`].join('\n');
     if (prompt.length > 500) throw new Fault('BGEN_PROMPT_TOO_LARGE');
-    const body = JSON.stringify({ prompt, audience: spec.audience, ...(previous ? { previousCode: previous.html, previousPrompt: previous.spec.prompt } : {}) });
+    const previousCodeSha256 = previous ? createHash('sha256').update(previous.html).digest('hex') : undefined;
+    const body = JSON.stringify({ prompt, audience: spec.audience, ...(requestedMethod ? { requiredMethod: requestedMethod } : {}), ...(previous ? { previousCode: previous.html, previousPrompt: previous.spec.prompt, ...(requestedMethod ? { previousCodeSha256 } : {}) } : {}) });
     if (Buffer.byteLength(body) > MAX_HTML_BYTES * 6 + 8192) throw new Fault('BGEN_INPUT_TOO_LARGE', 413);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 30_000);
@@ -59,6 +103,12 @@ export class BGenAdapter {
       catch (error) { if (error instanceof Fault) throw error; if (controller.signal.aborted) throw error; throw new Fault('BGEN_INVALID_JSON', 502); }
       if (!result || typeof result !== 'object' || Array.isArray(result) || typeof result.ok !== 'boolean' || typeof result.fromCache !== 'boolean' || typeof result.provider !== 'string') throw new Fault('BGEN_INVALID_RESPONSE', 502);
       const provider = result.provider;
+      if (requestedMethod) {
+        if (!result.ok) throw new Fault('BGEN_GENERATION_FAILED', 502);
+        if (previous && result.previousCodeSha256 !== previousCodeSha256) throw new Fault('BGEN_ITERATION_UNCONFIRMED', 502);
+        const p = result.provenance as Record<string, unknown> | undefined;
+        if (!p || p.method !== requestedMethod || typeof p.provider !== 'string' || !p.provider.trim() || ['mock', 'manual', 'cache'].includes(p.provider) || typeof p.model !== 'string' || !p.model.trim()) throw new Fault('BGEN_CODE_REQUIRED', 502);
+      }
       let method: Artifact['method'];
       let model: string | null = null;
       if (result.provenance !== undefined) {
