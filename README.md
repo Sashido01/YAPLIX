@@ -19,13 +19,54 @@ YAPLIX — проект ИИ-платформы для генерации, ра�
 
 **YAPLIX Evolution Engine** — планируемое развитие: собирать игровой опыт, анализировать результаты и создавать следующие поколения игр с улучшенными механиками. Будущие направления YAPLIX Play и YAPLIX Studio, аналитика, распространение и игровые кампании описаны в [паспорте проекта](docs/project-brief.md).
 
-**Сейчас реализована только основа репозитория:** документация, проверки и локальная защита push в main. Приложение, Game Generator, Analytics и Evolution Engine отсутствуют. Стек приложения и LLM-провайдер не выбраны; команд запуска приложения пока нет. Поддержка Ubuntu 24.04 на реальном демонстрационном ноутбуке ещё не подтверждена.
+**Реализована локальная интеграционная основа 0.0.1:** Hono API, SQLite с миграцией,
+хранение игр/версий и SHA-256, валидация событий, статистика и сравнение версий,
+серверный HTTP-адаптер BGen и sandboxed browser runtime. Это фундамент Evolution
+Data, без автоматического изменения игр. Генератор развивает SKZHPRVT, Mobile
+First UI — jeanhayl. Нового генератора и второго frontend здесь нет.
+
+Настоящая LLM-генерация, live BGen/Railway/GigaChat и физические Android/iPhone
+пока не подтверждены этой интеграцией. Шаблон, Mock и fallback явно отличаются
+от llm_code. Legacy BGen cache/raw-provider без provenance отклоняется.
+
+## Установка и запуск
+
+Нужны **Node 24.18+ (ветка 24.x), npm, Git и Python 3.11+**.
+Команды из корня проекта одинаковы на Windows и Ubuntu:
+
+```sh
+npm ci
+npm run build
+npm start
+```
+
+API слушает только `127.0.0.1:3000`; health — `/api/health`, база —
+`.local/data/yaplix.sqlite`. Без BGEN_URL генерация возвращает BGEN_NOT_CONFIGURED;
+для локальной проверки доступен импорт известного mock HTML. Конфигурация через
+переменные процесса; `.env.example` — шаблон. Для чтения локального `.env`:
+`node --env-file=.env src/server.ts`. Ключи генератора не передаются браузеру.
+
+```sh
+npm run typecheck
+npm test
+npm run browsers:install
+npm run test:browser
+```
+
+На Linux при отсутствии системных библиотек Playwright:
+`node scripts/browser-tests.mjs install --with-deps chromium webkit`.
+Браузеры, npm cache, browser temp и отчёты сохраняются внутри `.local`.
+`npm run check` выполняет typecheck, integration и browser tests; команды
+TASK-001 ниже сохраняются отдельно. Тестовый HTML написан вручную, маркирован
+mock и не считается результатом LLM.
 
 ## Структура
 
 | Путь | Назначение |
 | --- | --- |
 | docs/ | Контекст продукта, рабочее место, защита main, подготовка демонстрации, ADR |
+| src/ | Контракты, Hono API, SQLite, BGen Adapter, browser bridge |
+| tests/ | API/SQLite/adapter tests и автономный авторский HTML для Playwright |
 | scripts/check_repo.py | Проверка UTF-8, LF, ссылок, регистра путей и прав hook |
 | scripts/tests/ | Тесты проверки репозитория и локальной защиты push |
 | .githooks/pre-push | Запрет отправки изменений в удалённую refs/heads/main |
@@ -51,6 +92,8 @@ python -m unittest discover -s scripts/tests -v
 - [Концепция, требования и предполагаемые модули](docs/project-brief.md)
 - [Командный процесс и review](CONTRIBUTING.md)
 - [Рабочее место и установка hooks](docs/development-setup.md)
+- [Архитектура, аудит BGen и границы безопасности](docs/architecture.md)
+- [ADR платформы и разделение работы команды](docs/decisions/0003-platform-foundation.md)
 - [Windows / Ubuntu](docs/cross-platform.md) и [чеклист демонстрации](docs/demo-readiness.md)
 - [ADR](docs/decisions/0001-public-portfolio-repository.md) и [решение о CI](docs/decisions/0002-repository-ci.md)
 - [Безопасность](SECURITY.md), [правила общения](CODE_OF_CONDUCT.md), [подтверждённые вклады](AUTHORS.md)

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic test game</title>
+<style>body{margin:0;font:20px system-ui;background:#141414;color:#fff}main{padding:16px;max-width:420px}button{font:inherit;padding:12px;margin:4px;min-height:48px}button:disabled{opacity:.5}</style></head>
+<body><main><h1>Synthetic test game</h1><p>Reach 3 points. Choosing a trap loses.</p><button id="start">Start</button><button id="point" disabled>Point</button><button id="trap" disabled>Trap</button><p id="status">Ready</p><output id="score">0</output></main>
+<script>
+// Authored fixture, never an LLM result. Gameplay works with no parent or bridge.
+let score=0, active=false, session=null, sequence=0;
+const start=document.querySelector('#start'), point=document.querySelector('#point'), trap=document.querySelector('#trap'), status=document.querySelector('#status');
+function emit(type,data={}) {
+  if (!session || window.parent===window) return;
+  window.parent.postMessage({channel:'yaplix',event:{protocolVersion:1,eventId:crypto.randomUUID(),sessionId:session.sessionId,versionId:session.versionId,sequence:sequence++,type,timestamp:Date.now(),data}},'*');
+}
+window.addEventListener('message',e=>{if(e.source===window.parent && e.data?.channel==='yaplix_init' && !session){session=e.data;emit('game_ready');}});
+function finish(won){active=false;point.disabled=trap.disabled=true;status.textContent=won?'Won':'Lost';emit(won?'game_won':'game_lost');emit('session_ended');}
+start.onclick=()=>{if(active)return;score=0;active=true;start.disabled=true;point.disabled=trap.disabled=false;status.textContent='Playing';document.querySelector('#score').textContent='0';emit('game_started');};
+point.onclick=()=>{if(!active)return;document.querySelector('#score').textContent=String(++score);emit('score_changed',{score});if(score===3)finish(true);};
+trap.onclick=()=>{if(active)finish(false);};
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!active&&!start.disabled)start.click();if(e.key===' '&&active){e.preventDefault();point.click();}});
+window.addEventListener('error',e=>emit('game_error',{message:String(e.message).slice(0,512)}));
+</script></body></html>

@@ -11,8 +11,8 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK = re.compile(r"!?\[[^\]\n]*\]\(([^)]+)\)")
-TEXT_NAMES = {".editorconfig", ".gitattributes", ".gitignore", "pre-push"}
-TEXT_SUFFIXES = {".md", ".yaml", ".yml", ".py", ".toml", ".json", ".txt", ".sh", ".ps1"}
+TEXT_NAMES = {".editorconfig", ".gitattributes", ".gitignore", ".npmrc", "pre-push"}
+TEXT_SUFFIXES = {".md", ".yaml", ".yml", ".py", ".toml", ".json", ".txt", ".sh", ".ps1", ".ts", ".mjs", ".html"}
 REQUIRED = {
     "README.md", "CONTRIBUTING.md", "SECURITY.md", ".gitattributes",
     ".github/workflows/repository-checks.yml", ".github/dependabot.yml",

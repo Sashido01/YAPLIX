@@ -1,0 +1,97 @@
+// Pure validators shared by the API and the browser bridge. No Node dependencies.
+export const MAX_HTML_BYTES = 200_000;
+export const MAX_EVENT_BYTES = 4096;
+export const methods = ['llm_code', 'template_config', 'mock', 'fallback'] as const;
+export const eventTypes = ['game_ready', 'game_started', 'score_changed', 'game_won', 'game_lost', 'session_ended', 'game_error'] as const;
+export type GenerationMethod = typeof methods[number];
+export type EventType = typeof eventTypes[number];
+export interface GameSpec {
+  prompt: string;
+  audience: 'default' | 'kids' | 'elderly' | 'hardcore';
+  genre: string;
+  mechanics: string[];
+  controls: ('keyboard' | 'touch' | 'pointer')[];
+  responsive: boolean;
+  webview: boolean;
+}
+export interface Artifact {
+  html: string;
+  method: GenerationMethod;
+  provider: string | null;
+  model: string | null;
+  generationStatus: 'succeeded' | 'failed';
+  validationStatus: 'unverified' | 'passed' | 'failed';
+}
+export interface GameVersion extends Artifact {
+  gameId: string;
+  versionId: string;
+  previousVersionId: string | null;
+  spec: GameSpec;
+  sha256: string;
+  createdAt: string;
+}
+export interface GameEvent {
+  protocolVersion: 1;
+  eventId: string;
+  sessionId: string;
+  versionId: string;
+  sequence: number;
+  type: EventType;
+  timestamp: number;
+  data: { score?: number; message?: string };
+}
+export class Fault extends Error {
+  code: string;
+  status: number;
+  constructor(code: string, status = 400) { super(code); this.code = code; this.status = status; }
+}
+export function object(value: unknown, keys: readonly string[]): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Fault('INVALID_OBJECT');
+  const obj = value as Record<string, unknown>;
+  if (Object.keys(obj).some(k => !keys.includes(k))) throw new Fault('UNKNOWN_FIELD');
+  return obj;
+}
+function string(value: unknown, max: number, min = 1): string {
+  if (typeof value !== 'string' || value.trim().length < min || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new Fault('INVALID_STRING');
+  return value;
+}
+function choice<T extends string>(value: unknown, allowed: readonly T[]): T {
+  if (typeof value !== 'string' || !allowed.includes(value as T)) throw new Fault('INVALID_ENUM');
+  return value as T;
+}
+export function uuid(value: unknown): string {
+  const text = string(value, 36);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) throw new Fault('INVALID_ID');
+  return text.toLowerCase();
+}
+function strings(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 12) throw new Fault('INVALID_ARRAY');
+  return value.map(v => string(v, 64));
+}
+export function parseSpec(value: unknown): GameSpec {
+  const o = object(value, ['prompt', 'audience', 'genre', 'mechanics', 'controls', 'responsive', 'webview']);
+  if (typeof o.responsive !== 'boolean' || typeof o.webview !== 'boolean') throw new Fault('INVALID_BOOLEAN');
+  const controls = strings(o.controls).map(v => choice(v, ['keyboard', 'touch', 'pointer'] as const));
+  if (!controls.length) throw new Fault('CONTROLS_REQUIRED');
+  return { prompt: string(o.prompt, 500, 2), audience: choice(o.audience, ['default', 'kids', 'elderly', 'hardcore'] as const), genre: string(o.genre, 64), mechanics: strings(o.mechanics), controls, responsive: o.responsive, webview: o.webview };
+}
+export function parseArtifact(value: unknown): Artifact {
+  const o = object(value, ['html', 'method', 'provider', 'model', 'generationStatus', 'validationStatus']);
+  const html = string(o.html, MAX_HTML_BYTES);
+  if (new TextEncoder().encode(html).byteLength > MAX_HTML_BYTES) throw new Fault('ARTIFACT_TOO_LARGE', 413);
+  if (!/^\s*<!doctype html>/i.test(html) || !/<html[\s>]/i.test(html) || !/<\/html>\s*$/i.test(html)) throw new Fault('INVALID_HTML');
+  // Structure only; this does not establish playability or sanitize game code.
+  return { html, method: choice(o.method, methods), provider: o.provider === null ? null : string(o.provider, 128), model: o.model === null ? null : string(o.model, 128), generationStatus: choice(o.generationStatus, ['succeeded', 'failed'] as const), validationStatus: choice(o.validationStatus, ['unverified', 'passed', 'failed'] as const) };
+}
+export function parseEvent(value: unknown): GameEvent {
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > MAX_EVENT_BYTES) throw new Fault('EVENT_TOO_LARGE', 413);
+  const o = object(value, ['protocolVersion', 'eventId', 'sessionId', 'versionId', 'sequence', 'type', 'timestamp', 'data']);
+  if (o.protocolVersion !== 1) throw new Fault('PROTOCOL_MISMATCH');
+  if (!Number.isSafeInteger(o.sequence) || (o.sequence as number) < 0 || (o.sequence as number) >= 1000) throw new Fault('INVALID_SEQUENCE');
+  if (!Number.isSafeInteger(o.timestamp) || (o.timestamp as number) < 0) throw new Fault('INVALID_TIMESTAMP');
+  const type = choice(o.type, eventTypes);
+  const data = object(o.data, type === 'score_changed' ? ['score'] : type === 'game_error' ? ['message'] : []);
+  if (type === 'score_changed' && (typeof data.score !== 'number' || !Number.isFinite(data.score) || Math.abs(data.score) > 1e9)) throw new Fault('INVALID_SCORE');
+  if (type === 'game_error') string(data.message, 512);
+  return { protocolVersion: 1, eventId: uuid(o.eventId), sessionId: uuid(o.sessionId), versionId: uuid(o.versionId), sequence: o.sequence as number, type, timestamp: o.timestamp as number, data: type === 'score_changed' ? { score: data.score as number } : type === 'game_error' ? { message: data.message as string } : {} };
+}
