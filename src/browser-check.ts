@@ -30,7 +30,7 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
       env.CHROME_DEVEL_SANDBOX=helper;
     }else if(process.env.CHROME_DEVEL_SANDBOX)throw new Fault('BROWSER_SANDBOX_CONFIGURATION',503);
   }
-  const browser=await chromium.launch({headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
+  const browser=await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
   const abort=()=>void browser.close().catch(()=>{});deadline.addEventListener('abort',abort,{once:true});
   try {
     for(const width of [320,390]) {

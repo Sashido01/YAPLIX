@@ -44,6 +44,19 @@ jobs:
           npm test
       - name: Install browser profiles
         run: node scripts/browser-tests.mjs install --with-deps chromium webkit firefox
+      - name: Prepare existing packaged Chromium sandbox helper
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=/opt/google/chrome/chrome-sandbox
+          test -f "$helper" && test ! -L "$helper"
+          dpkg-query -S "$helper" | grep -Fx 'google-chrome-stable: /opt/google/chrome/chrome-sandbox'
+          expected=$(awk '$2 == "opt/google/chrome/chrome-sandbox" { print $1 }' /var/lib/dpkg/info/google-chrome-stable.md5sums)
+          actual=$(md5sum "$helper" | cut -d ' ' -f 1)
+          test -n "$expected" && test "$actual" = "$expected"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
       - name: Autonomous game and isolation browser tests
         run: npm run test:browser
       - name: Preserve browser failure diagnostics

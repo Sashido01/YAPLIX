@@ -42,9 +42,11 @@ function lock(value: boolean) {
   el<HTMLSelectElement>('versions').disabled=value||!current;el<HTMLButtonElement>('replay').disabled=value||!current;
   el('cancel').hidden=!value; document.body.classList.toggle('waiting',value);
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.disabled=value||button.dataset.view==='play'&&!current);
-  if(!value&&current&&document.body.dataset.screen==='play'&&matchMedia('(max-width:760px)').matches){
-    const scroller=document.querySelector<HTMLElement>('body>main')!,area=el('game').getBoundingClientRect();
-    scroller.scrollTop+=Math.max(0,area.bottom-scroller.getBoundingClientRect().bottom+8);
+  if(!value&&current&&document.body.dataset.screen==='play'){
+    const mobile=matchMedia('(max-width:760px)').matches;
+    const scroller=(mobile?document.querySelector('body>main'):document.scrollingElement) as HTMLElement;
+    const bottom=mobile?scroller.getBoundingClientRect().bottom:innerHeight;
+    scroller.scrollTop+=Math.max(0,el('game').getBoundingClientRect().bottom-bottom+8);
   }
 }
 async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false) {

@@ -21,7 +21,10 @@ Ubuntu: python3; при недостающих OS libraries:
 Production LIVE достаточно checker:install, DEMO не нужен Chromium.
 Ubuntu 23.10+ ограничивает user namespaces. Checker сохраняет Chromium sandbox:
 при наличии использует root-owned setuid helper `/opt/google/chrome/chrome-sandbox`
-из установленного Google Chrome (включая Ubuntu GitHub runner). Для другого
+из установленного Google Chrome. CI проверяет helper по реестру установленного
+пакета, затем выставляет root:root/4755 для существующего бинарного файла;
+AppArmor и sandbox остаются включёнными. Checker запускает полный project-local
+Chromium в headless mode. Для другого
 проверенного системного helper задайте `CHROME_DEVEL_SANDBOX`; owner должен быть
 root, setuid включён, запись группе/остальным запрещена. Если helper отсутствует,
 нужна поддержка sandbox со стороны ОС; LIVE безопасно отказывает. Не отключайте
