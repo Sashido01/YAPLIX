@@ -1,10 +1,13 @@
 import { resolve } from 'node:path';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, statSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseEvent, Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import { PROJECT_ROOT } from './store.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
+// Playwright creates its temporary browser profiles in the parent process.
+const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
+for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
 export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause' };
