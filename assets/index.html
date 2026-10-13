@@ -8,7 +8,7 @@
 <div class="feedback"><p id="message" role="status" aria-live="polite"></p><button id="cancel" class="quiet" hidden>Отменить ожидание</button></div>
 <div class="workspace">
 <section class="panel composer">
-<form id="create"><label for="prompt">Идея игры</label><textarea id="prompt" maxlength="500" minlength="2" required>Собери 3 груза и избегай ловушки</textarea><label for="mode">Режим создания</label><select id="mode"><option value="demo">DEMO — готовая игра, без ключей</option><option value="live">LIVE — модель создаёт HTML/JS</option></select><p id="mode-help" class="muted">DEMO использует авторскую игру «Звёздный курьер». Число в запросе задаёт цель. Это не LLM.</p><button id="generate" class="primary" type="submit">Создать игру</button></form>
+<form id="create"><label for="prompt">Идея игры</label><textarea id="prompt" maxlength="500" minlength="2" required>Собери 3 груза и избегай ловушки</textarea><label for="mode">Режим создания</label><select id="mode"><option value="demo">DEMO — без ключей</option><option value="live">LIVE — генерация LLM</option></select><p id="mode-help" class="muted">DEMO использует авторскую игру «Звёздный курьер». Число в запросе задаёт цель. Это не LLM.</p><button id="generate" class="primary" type="submit">Создать игру</button></form>
 <div id="library"><div class="divider"></div><h2>Мои игры</h2><p class="muted">Игры и версии сохраняются на сервере.</p><div id="games" class="list"></div></div>
 </section>
 <section class="panel player"><div class="player-top"><h2 id="game-title">Здесь будет ваша игра</h2><span id="provenance" class="badge">Пока пусто</span></div>
