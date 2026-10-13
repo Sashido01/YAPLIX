@@ -54,7 +54,11 @@ git push -u origin HEAD
 
 ## Проверки и безопасность
 
-Из корня проекта на Windows выполните python scripts/check_repo.py и python -m unittest discover -s scripts/tests -v; на Ubuntu замените python на python3. Это проверки основы репозитория. Тесты продукта появятся после выбора стека. Gitleaks и инструкции рабочего места — в [development-setup.md](docs/development-setup.md).
+Из корня проекта выполните python scripts/check_repo.py и python -m unittest
+discover -s scripts/tests -v; на Ubuntu замените python на python3.
+После npm ci и установки browser profiles выполните npm run check.
+Это typecheck, API/SQLite/adapter integration и Playwright Chromium/WebKit.
+Gitleaks, API-контракты и настройка — в [development-setup.md](docs/development-setup.md).
 
 Не добавляйте API-ключи, токены, пароли, .env, персональные данные, внутреннюю переписку и неразрешённые материалы кейсодателя. Private не делает хранение секретов безопасным. Настройки храните локально, шаблоны — без реальных данных. Проверяйте лицензии сторонних материалов. Об утечках сообщайте приватно по [SECURITY.md](SECURITY.md); историю автоматически не переписывайте.
 
