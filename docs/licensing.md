@@ -20,3 +20,11 @@ SHA 419c64968d487068a2fbed2e4bd99489cc734430, MIT, copyright 2026 SKZHPRVT.
 в tracked YAPLIX и внешний репозиторий не изменяется. При передаче сборки с
 библиотекой сохраняйте её LICENSE и уведомление. Лицензии Ollama и отдельно
 загруженной модели проверяются для конкретной поставки; веса в YAPLIX не включены.
+
+## QR и независимая проверка
+
+Runtime: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
+2.0.4, MIT, copyright Kazuhiko Arase; encoder работает только на сервере.
+Dev/test: [jsQR](https://github.com/cozmo/jsQR) 1.4.0, Apache-2.0, и pngjs 7.0.0,
+MIT, для независимого декодирования снимка QR. Пакеты закреплены lockfile;
+оригинальные LICENSE/NOTICE сохраняются в node_modules при установке.

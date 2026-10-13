@@ -97,6 +97,9 @@ test('BGen compiler and explicit Ollama transport generate code with previous HT
   assert.equal(bodies[0].stream, false); assert.ok(bodies[1].messages[1].content.includes(first.html));
   assert.ok(bodies[1].messages[1].content.includes(first.spec.prompt));
   assert.ok(bodies[0].messages[0].content.includes('yaplix_init'));
+  assert.ok(!bodies[0].messages[0].content.includes('bgen:input'));
+  assert.ok(!bodies[0].messages[0].content.includes('своих кнопок НЕ делай'));
+  assert.ok(bodies[0].messages[0].content.includes('OWN accessible buttons'));
   assert.ok(bodies[0].messages[1].content.includes(JSON.stringify(requested)));
 });
 

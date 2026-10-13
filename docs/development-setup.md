@@ -332,7 +332,7 @@ Git/npm. После обновления проверьте предыдущую
 
 ## LAN для телефона
 
-После `npm ci` и `npm run build` запустите `npm run lan` вместо `npm start`.
+После `npm ci` и `npm run build` выполните `npm run lan -- --list` вместо `npm start`.
 `--host` выбирает существующий частный IPv4, `--port` — свободный порт:
 
 ```sh
@@ -341,10 +341,28 @@ npm run lan -- --host 192.168.0.12 --port 3000
 
 Адрес/ключ выводятся только в локальном терминале. Передайте ключ доверенному
 участнику отдельным каналом; не добавляйте его в URL, Git, screenshot или HTML.
-Если задан YAPLIX_ACCESS_KEY в `.env`, используется он; иначе каждый запуск
-создаёт новый. API требует auth-cookie и точный Origin. Ctrl+C закрывает сервер
+Если задан YAPLIX_ACCESS_KEY в `.env`, используется он; иначе ключ сохраняется
+в `.local/lan-access.key` и повторно используется. API требует auth-cookie и точный Origin. Ctrl+C закрывает сервер
 и базу; cookie инвалидируется при перезапуске, игровые данные сохраняются.
 Ollama остаётся на loopback сервера. Никаких автоматических firewall правок.
+
+На компьютере откройте напечатанный LAN URL, введите ключ, нажмите
+«Диагностика» → «Показать QR». QR локальный и содержит только адрес/порт,
+без ключа и токенов. «Скопировать ссылку» имеет ручной fallback для HTTP.
+На телефоне в той же Wi-Fi сети сканируйте QR и введите ключ отдельно.
+VPN/Hyper-V/VirtualBox интерфейсы не выбираются автоматически: сопоставьте
+имя с Wi-Fi/Ethernet вашей сети. Смена IP/порта требует нового URL и QR.
+`HOST_NOT_AVAILABLE` — адрес не принадлежит компьютеру; `PORT_IN_USE` — выберите
+свободный порт либо остановите собственный сервер. Проверка API на компьютере
+не проверяет firewall/изоляцию Wi-Fi или доступность с телефона.
+
+`GET /api/diagnostics` требует LAN cookie и возвращает `ok`, `demoReady`,
+`missingAssets`, `mode`, `address`, `port`, `connectionUrl`, `accessRequired`,
+`liveConfigured`, `liveReady`, `llmState`, `modelReady`, provider/model/BGen revision.
+`llmState`: not_configured, ready, unreachable, model_missing, bgen_missing,
+not_verified (внешний BGen). `GET /api/connection/qr.svg` требует ту же cookie,
+точный Host/Origin и LAN mode, отдаёт SVG с no-store; local/HTTPS → 409.
+CLI doctor дополнительно проверяет доступность порта для нового запуска.
 
 ## HTTPS на сервере
 

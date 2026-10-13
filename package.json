@@ -25,12 +25,16 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
-    "hono": "4.13.13"
+    "hono": "4.13.13",
+    "qrcode-generator": "2.0.4"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",
     "@types/node": "24.19.2",
+    "@types/pngjs": "6.0.5",
     "esbuild": "0.28.2",
+    "jsqr": "1.4.0",
+    "pngjs": "7.0.0",
     "typescript": "7.0.2"
   }
 }

@@ -6,7 +6,7 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
   await page.locator('#prompt').fill('Собери 3 груза');await page.getByRole('button',{name:'Создать игру',exact:true}).click();
   await expect(page.locator('#message')).toContainText('Игра сохранена');
   const frame=page.frameLocator('#game iframe'),action=async(name:string)=>isMobile?frame.getByRole('button',{name,exact:true}).tap():frame.getByRole('button',{name,exact:true}).click();
-  await action('Старт');await action('Груз');
+  await action('Старт');await action('Вправо');
   const original=page.viewportSize()!;
   let stage='rotation';
   const mark=(value:string)=>{stage=value;};
@@ -19,11 +19,11 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
     for(const button of await frame.locator('.controls button').all()){const rect=await button.boundingBox();expect(rect!.width).toBeGreaterThanOrEqual(44);expect(rect!.height).toBeGreaterThanOrEqual(44);}
   }
   mark('focus');await page.setViewportSize(original);await page.getByRole('button',{name:'Игровой экран',exact:true}).click();
-  await action('Груз');await expect(frame.locator('#score')).toHaveText('2');
+  await action('Вправо');await expect(frame.locator('#score')).toHaveText('2');
   await page.screenshot({path:info.outputPath('mobile-game.png')});
   await page.getByRole('button',{name:'Обычный экран',exact:true}).click();
   if(original.width<=760)expect(await page.evaluate(()=>document.querySelector('main')!.getBoundingClientRect().bottom<=document.querySelector('.navigation')!.getBoundingClientRect().top)).toBe(true);
-  mark('offline touch');await context.setOffline(true);await action('Груз');await expect(frame.locator('#status')).toHaveText('Победа');await context.setOffline(false);
+  mark('offline touch');await context.setOffline(true);await action('Вправо');await expect(frame.locator('#status')).toHaveText('Победа');await context.setOffline(false);
   mark('library');await page.getByRole('button',{name:'Игры',exact:true}).click();await expect(page.locator('iframe')).toHaveCount(0);
   const first=page.locator('#games button').first();
   let reads=0;page.on('request',r=>{if(/\/api\/versions\/[^/]+$/.test(new URL(r.url()).pathname))reads++;});

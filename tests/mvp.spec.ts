@@ -9,16 +9,16 @@ test('user creates DEMO, wins, changes goal, selects old version, exports and ba
   await expect(page.locator('#message')).toHaveText('Игра сохранена. Можно играть.');
   const game = page.frameLocator('#game iframe');
   await game.getByRole('button', { name: 'Старт', exact: true }).click();
-  for (let i = 0; i < 3; i++) await game.getByRole('button', { name: 'Груз', exact: true }).click();
+  for (let i = 0; i < 3; i++) await game.getByRole('button', { name: 'Вправо', exact: true }).click();
   await expect(game.locator('#status')).toHaveText('Победа');
   await expect(page.locator('#analytics')).toContainText('Победы: 1');
   await page.locator('#change').fill('Теперь собери 5 грузов');
   await page.getByRole('button', { name: 'Создать следующую версию' }).click();
   await expect(page.locator('#message')).toContainText('Новая версия сохранена');
   await game.getByRole('button', { name: 'Старт', exact: true }).click();
-  for (let i = 0; i < 3; i++) await game.getByRole('button', { name: 'Груз', exact: true }).click();
+  for (let i = 0; i < 3; i++) await game.getByRole('button', { name: 'Вправо', exact: true }).click();
   await expect(game.locator('#status')).toHaveText('В полёте');
-  for (let i = 0; i < 2; i++) await game.getByRole('button', { name: 'Груз', exact: true }).click();
+  for (let i = 0; i < 2; i++) await game.getByRole('button', { name: 'Вправо', exact: true }).click();
   await expect(game.locator('#status')).toHaveText('Победа');
   await expect(page.locator('#analytics')).toContainText('Победы: 1');
   await expect(page.locator('#comparison')).toContainText('минимум пять');
@@ -26,7 +26,7 @@ test('user creates DEMO, wins, changes goal, selects old version, exports and ba
   await page.locator('#versions').selectOption({ index: 0 });
   await expect(game.locator('#status')).toHaveText('Готов к полёту');
   await game.getByRole('button', { name: 'Старт', exact: true }).click();
-  await game.getByRole('button', { name: 'Ловушка', exact: true }).click();
+  await game.getByRole('button', { name: 'Вниз', exact: true }).click();
   await expect(game.locator('#status')).toHaveText('Поражение');
   await expect(page.locator('#analytics')).toContainText('Поражения: 1');
   const exported = await page.request.get(await page.locator('#export').getAttribute('href') as string);
@@ -37,7 +37,7 @@ test('user creates DEMO, wins, changes goal, selects old version, exports and ba
   const separate = await standalone.newPage(); await separate.goto(pathToFileURL(path).href);
   expect(await separate.evaluate(() => document.characterSet)).toBe('UTF-8');
   await separate.getByRole('button', { name: 'Старт', exact: true }).click();
-  await separate.getByRole('button', { name: 'Ловушка', exact: true }).click();
+  await separate.getByRole('button', { name: 'Вниз', exact: true }).click();
   await expect(separate.locator('#status')).toHaveText('Поражение');
   await expect(separate.getByRole('button', { name: 'Перезапуск' })).toBeVisible();
   await standalone.close();
