@@ -1,4 +1,42 @@
 import { test, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+
+test('exported synthetic HTML starts offline from file, with touch/keyboard and responsive Canvas', async ({ page, context, request, isMobile }, testInfo) => {
+  await page.goto('/host');
+  const session = await page.evaluate(() => (window as any).testSession);
+  const version = await (await request.get(`/api/versions/${session.versionId}`)).json();
+  const response = await request.get(`/api/versions/${session.versionId}/export`);
+  const bytes = await response.body();
+  expect(createHash('sha256').update(bytes).digest('hex')).toBe(version.sha256);
+  expect(response.headers()['content-disposition']).toContain('attachment');
+  const path = testInfo.outputPath('synthetic-export.html');
+  writeFileSync(path, bytes, { flag: 'wx' });
+  const errors: string[] = []; const network: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('request', req => { if (/^https?:/.test(req.url())) network.push(req.url()); });
+  try {
+    await context.setOffline(true);
+    await page.goto(pathToFileURL(resolve(path)).href);
+    if (isMobile) {
+      await page.getByRole('button', { name: 'Start', exact: true }).tap();
+      for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Point', exact: true }).tap();
+    } else {
+      await page.keyboard.press('Enter');
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Space');
+    }
+    await expect(page.locator('#status')).toHaveText('Won');
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 568 });
+      await expect.poll(() => page.locator('canvas').evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(width - 32);
+      expect(await page.locator('canvas').evaluate(el => (el as HTMLCanvasElement).width === Math.round(el.getBoundingClientRect().width * devicePixelRatio))).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    expect(errors).toEqual([]); expect(network).toEqual([]);
+  } finally { unlinkSync(path); }
+});
 
 test('authored game works offline without parent: win and loss, fitting the viewport', async ({ page, context }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));

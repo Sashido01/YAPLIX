@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
-import { boundedText } from './bgen.ts';
+import { boundedText, requiredMethod } from './bgen.ts';
 import type { BGenAdapter } from './bgen.ts';
 import type { Store } from './store.ts';
 import { PROJECT_ROOT } from './store.ts';
@@ -34,23 +34,34 @@ export function createApp(store: Store, adapter?: BGenAdapter) {
   }
   app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 1 }));
   app.post('/api/games', async c => {
-    const body = object(await json(c.req.raw), ['spec', 'artifact']);
+    const body = object(await json(c.req.raw), ['spec', 'artifact', 'requiredMethod']);
+    const method = requiredMethod(body.requiredMethod);
+    if (method && body.artifact !== undefined) throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     const spec = parseSpec(body.spec);
     if (!body.artifact && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
-    const artifact = body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec);
+    const artifact = body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, undefined, method);
     return c.json(store.save(spec, artifact), 201);
   });
   app.get('/api/games/:gameId', c => c.json({ gameId: uuid(c.req.param('gameId')), versions: store.history(c.req.param('gameId')) }));
   app.post('/api/games/:gameId/versions', async c => {
-    const body = object(await json(c.req.raw), ['spec', 'previousVersionId', 'artifact']);
+    const body = object(await json(c.req.raw), ['spec', 'previousVersionId', 'artifact', 'requiredMethod']);
+    const method = requiredMethod(body.requiredMethod);
+    if (method && body.artifact !== undefined) throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     const previous = store.getVersion(uuid(body.previousVersionId));
     if (previous.gameId !== uuid(c.req.param('gameId'))) throw new Fault('PARENT_GAME_MISMATCH', 409);
     const spec = parseSpec(body.spec);
     if (!body.artifact && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
-    const artifact = body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous);
+    const artifact = body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous, method);
     return c.json(store.save(spec, artifact, previous.versionId), 201);
   });
   app.get('/api/versions/:versionId', c => c.json(store.getVersion(c.req.param('versionId'))));
+  app.get('/api/versions/:versionId/export', c => {
+    const version = store.getVersion(c.req.param('versionId'));
+    c.header('Content-Disposition', `attachment; filename="yaplix-${version.versionId}.html"`);
+    c.header('X-Content-SHA256', version.sha256);
+    c.header('Content-Security-Policy', "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; base-uri 'none'; form-action 'none'");
+    return c.body(version.html, 200, { 'Content-Type': 'text/html; charset=utf-8' });
+  });
   app.post('/api/versions/:versionId/sessions', async c => {
     object(await json(c.req.raw, 32), []);
     return c.json(store.session(c.req.param('versionId')), 201);

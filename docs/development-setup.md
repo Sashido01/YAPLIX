@@ -66,7 +66,7 @@ gitleaks dir --redact .
 
 В одном workflow находятся repository-checks (Ubuntu 24.04 и Windows) и secret-scan
 (Linux, Gitleaks). Обе OS выполняют исходные Python-проверки, npm ci, typecheck,
-25 platform/adapter integration tests и 15 browser tests (пять профилей).
+platform/adapter integration tests и browser tests (пять профилей).
 Триггеры: pull_request, push в main, ручной workflow_dispatch. На PR/push Action
 проверяет диапазон изменений из полной загруженной истории; ручной запуск
 сканирует историю текущего checkout. Это не равнозначно сканированию всех
@@ -86,10 +86,11 @@ API через тот же origin/proxy. Публичная авторизаци
 | Операция | Контракт |
 | --- | --- |
 | GET /api/health | ok по integrity/FK, schemaVersion |
-| POST /api/games | `{spec, artifact?}`; без artifact вызывает BGen generate; ответ GameVersion, 201 |
+| POST /api/games | `{spec, artifact?, requiredMethod?}`; без artifact вызывает BGen generate; ответ GameVersion, 201 |
 | GET /api/games/:gameId | gameId и история метаданных versions без HTML |
-| POST /api/games/:gameId/versions | `{spec, previousVersionId, artifact?}`; BGen iterate или mock import; 201 |
+| POST /api/games/:gameId/versions | `{spec, previousVersionId, artifact?, requiredMethod?}`; BGen iterate или mock import; 201 |
 | GET /api/versions/:versionId | полная GameVersion с HTML |
+| GET /api/versions/:versionId/export | exact HTML attachment; X-Content-SHA256 совпадает с GameVersion.sha256 |
 | POST /api/versions/:versionId/sessions | `{}`; sessionId, versionId, token, expiresAt, protocolVersion |
 | POST /api/sessions/:sessionId/events | один GameEvent + Authorization: Bearer session token; duplicate boolean |
 | GET /api/versions/:versionId/analytics | статистика; optional baselineVersionId query — сравнение |
@@ -114,6 +115,18 @@ Invoke-RestMethod "http://127.0.0.1:3000/api/versions/$($version.versionId)/anal
 Импорт artifact разрешает только mock + unverified. Реальный llm_code проходит
 через серверный BGen Adapter с явным provenance. Клиент не может сертифицировать
 свою игру как passed или переименовать fixture в LLM.
+requiredMethod допускает только `llm_code`; несовместим с artifact import.
+Для конкурсного запуска всегда указывать это поле. Пример запроса:
+
+```json
+{"spec":{"prompt":"Create a snake game with touch controls","audience":"default","genre":"snake","mechanics":["collect"],"controls":["touch","keyboard"],"responsive":true,"webview":true},"requiredMethod":"llm_code"}
+```
+
+Допустимый успех — GameVersion с UUID gameId/versionId, previousVersionId null
+для первого запуска, spec, html, sha256 (64 hex), createdAt (UTC),
+method=llm_code, provider/model непустые строки, generationStatus=succeeded,
+validationStatus=unverified. Это схема ответа, не наблюдённый live-результат.
+При нынешнем endpoint ожидается HTTP 503 `{"error":"BGEN_LIVE_CONTRACT_REQUIRED"}`.
 
 UI получает версию и сессию, вызывает `mountGame(container, html, {sessionId,
 versionId}, onEvent)` и держит token у родителя. onEvent ставит события в
@@ -142,7 +155,7 @@ unmount удаляет frame/listener. Срок токена 1 час; для с
     "protocolVersion": 1,
     "method": "llm_code",
     "provider": "openai",
-    "model": null
+    "model": "actual-model-id"
   }
 }
 ```
@@ -150,7 +163,8 @@ unmount удаляет frame/listener. Срок токена 1 час; для с
 method всегда один из llm_code/template_config/mock/fallback, соответствует
 реальному пути. Для cache сохранить **исходное** provenance с артефактом;
 для engine/default честно template_config/fallback, для Mock всегда mock.
-model/provider null, если неизвестны. ok сообщает итог генерации/анализатора,
+model/provider null, если неизвестны; строгий llm_code такой ответ отклоняет.
+ok сообщает итог генерации/анализатора,
 не результат браузерного испытания. Этот контракт ещё не принят BGen.
 
 Отдельно нужны: явный code-generation путь для обязательного условия кейса,
@@ -160,9 +174,79 @@ YAPLIX event bridge с автономным fallback. Эти изменения 
 Замечания переданы здесь как предложение к командному review; внешних сообщений
 участнику эта задача не отправляет.
 
+Для строгого режима предлагаем маленький read-only handshake
+`GET /api/capabilities` (пока отсутствует в BGen):
+
+```json
+{"protocolVersion":1,"revision":"<40 lowercase hex Git SHA>","codeGeneration":true,"tlsVerification":true,"previousCode":true}
+```
+
+revision — SHA развёрнутого сервиса. codeGeneration — поддержка требуемого пути,
+tlsVerification — проверка сертификатов **всех** разрешённых LLM/OAuth запросов,
+previousCode — HTML реально попадает в compiler/LLM. Это утверждения владельца,
+их сверяют с исходниками; endpoint не заменяет аудит TLS. Известный SHA 419c649
+небезопасен и отклоняется. Нельзя просто добавить true к старому коду.
+
+POST generate/iterate дополнительно получает requiredMethod=llm_code: пропустить
+жанровые шаблоны, запретить Mock/default/config fallback; при невозможности вернуть
+ошибку. Cache допускается только с сохранёнными исходными provenance/model.
+POST iterate получает previousCodeSha256; ответ должен вернуть этот же hash
+после проверки, что соответствующий HTML передан в CompileOptions.previousCode.
+Hash не означает, что модель успешно сохранила поведение; это проверяется отдельно.
+Без previousCode=true итерация блокируется до POST. Bridge v1 остаётся optional.
+
+## Live-запуск и демонстрация TASK-003
+
+После исправления/аудита BGen, из корня проекта:
+
+```powershell
+$env:BGEN_URL='https://your-generator.example'
+$env:BGEN_TIMEOUT_MS='120000'
+npm run demo:live
+```
+
+Не отключать TLS. BGEN_INIT_DATA, если требуется, задаётся только серверному
+процессу из локального защищённого источника. Скрипт не логирует initData или
+upstream error body. URL не должен содержать credentials/query/path.
+
+Команда создаёт отдельный `.local/live/<run>` с SQLite, evidence.json и exact HTML:
+snake (может быть шаблоном в legacy, поэтому здесь обязательно code mode),
+Signal Courier (зеркала, луч и запас энергии; отдельный сценарий), затем запрос
+изменения snake с пяти до восьми яблок. Все промпты сохраняются в evidence/spec.
+Это запланированные сценарии; ни один из них пока не получен от настоящей LLM.
+Статус generated_unverified означает только генерацию/хранение/hash, не playability.
+При отказе status=blocked, код процесса 1, частичные версии сохраняются честно.
+
+Для дальнейшей демонстрации: открыть run database существующим сервером через
+YAPLIX_DB, получить version/session через API, подключить mountGame в UI jeanhayl,
+испытать Start/управление/победу/поражение на пяти Playwright-профилях. У каждой
+реальной игры проверить её конкретные элементы и механику, не переиспользовать
+selectors авторской fixture без проверки. Скачать export; открыть файл в
+изолированном browser context с offline=true до загрузки, проверить тот же цикл,
+Canvas при 320/390 px, ошибки JS и запросы сети. Сверить SHA скачанного файла.
+Физический Android проверять отдельно при наличии устройства.
+
+Если артефакт отправляет bridge events, записывать только пришедшие события,
+проверить analytics и сравнение linked version с baselineVersionId. При отсутствии
+bridge оставить telemetry not_observed. Нулевые/null агрегаты не заменять
+синтетическими событиями. Реальную итерацию оценить по изменению поведения.
+До этого validationStatus остаётся unverified; автоматического присвоения passed нет.
+
+13 октября 2026: merge PR #5/main 3b5815d подтверждён, BGen SHA419c649 unchanged.
+HTTPS root/health 200, capabilities 404; demo:live сохранил blocked /
+BGEN_LIVE_CONTRACT_REQUIRED с 0 версий в локальном evidence. Первый сетевой запуск
+также отказал; никакой отказ не переключился на mock. Не отправлено ни одного
+generation/iterate POST. Блокеры SKZHPRVT: code mode/provenance/model, TLS и
+previousCode; jeanhayl: интегрированного UI в main пока нет. CI подтверждает
+synthetic интеграцию, а не live LLM.
+
 Ошибки адаптера: BGEN_AUTH, BGEN_RATE_LIMIT, BGEN_HTTP, BGEN_TIMEOUT,
 BGEN_NETWORK, BGEN_INVALID_JSON/RESPONSE/PROVENANCE/ARTIFACT, BGEN_PROVENANCE_REQUIRED,
 BGEN_PROVENANCE_CONFLICT; BODY_TOO_LARGE для размеров.
+Строгий режим дополнительно: BGEN_LIVE_CONTRACT_REQUIRED, BGEN_UNSAFE_CAPABILITIES,
+BGEN_AUDITED_REVISION_UNSAFE, BGEN_CAPABILITIES_HTTP/INVALID, BGEN_CODE_REQUIRED,
+BGEN_GENERATION_FAILED, BGEN_ITERATION_UNSUPPORTED/UNCONFIRMED;
+INSECURE_TLS_CONFIGURATION и INVALID_REQUIRED_METHOD для входной политики.
 API ошибки имеют `{error:code}`, без upstream body/секретов; неверные входы 400,
 лимиты 413/507, неизвестные сущности 404, конфликт событий 409, токен 401.
 
@@ -176,3 +260,14 @@ HTTP-сервером; его llm_code metadata синтетические, не
 Linux CI дополнительно dangling file symlink. Реальные BGen/LLM/WebView,
 физические устройства и демонстрационный Ubuntu ноутбук — NOT VERIFIED.
 Hosted CI оценивается по конкретному последнему SHA PR, не по этим локальным тестам.
+
+TASK-003 локально: 19 Python tests, typecheck, 40 unit/integration tests,
+20 Playwright tests в тех же пяти профилях — PASS. Regression runner использует
+синтетический HTTP BGen и сохраняет две игры + linked version, затем проверяет
+SQLite/export и отсутствие придуманных сессий. Проверены также redacted URL
+configuration errors и отказ до POST при unsafe TLS/неподдерживаемой итерации.
+На Windows sandbox ограничил завершение первого test server; повторный запуск
+с правами на остановку своих дочерних процессов завершился exit 0, 20 passed.
+Реальный endpoint проверен только HTTPS GET/preflight; live LLM, реальные игровые
+события/итерация и Android остаются NOT VERIFIED. Минимум готовности TASK-003
+не выполнен до исправления BGen и испытания настоящих артефактов.

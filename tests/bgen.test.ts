@@ -1,9 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { readFileSync, rmSync } from 'node:fs';
+import { resolve, relative, isAbsolute } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BGenAdapter } from '../src/bgen.ts';
-import { Store } from '../src/store.ts';
+import { Store, PROJECT_ROOT } from '../src/store.ts';
 import { createApp } from '../src/api.ts';
 import { artifact, html, spec } from './helpers.ts';
 
@@ -13,6 +17,140 @@ async function mockServer(handler: (req: IncomingMessage, res: ServerResponse) =
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   return { url, close: () => new Promise<void>((resolve, reject) => { server.closeAllConnections(); server.close(e => e ? reject(e) : resolve()); }) };
 }
+const capabilities = { protocolVersion: 1, revision: 'a'.repeat(40), codeGeneration: true, tlsVerification: true, previousCode: true };
+const codeResponse = { html, ok: true, fromCache: false, provider: 'openai', provenance: { protocolVersion: 1, method: 'llm_code', provider: 'openai', model: 'synthetic-test-model' } };
+test('malformed configuration never exposes URL credentials and adapter refuses global TLS bypass', async () => {
+  const privateUrl = 'https://test-user:synthetic-secret@';
+  assert.throws(() => new BGenAdapter({ url: privateUrl }), /^Error: INVALID_BGEN_URL$/);
+  await assert.rejects(promisify(execFile)(process.execPath, ['scripts/live-generation.ts'], { cwd: PROJECT_ROOT, env: { ...process.env, BGEN_URL: privateUrl } }), error => {
+    const failure = error as Error & { stderr: string; stdout: string };
+    assert.equal(failure.stderr.trim(), 'INVALID_BGEN_URL'); assert.equal(failure.stdout, '');
+    assert.equal(failure.stderr.includes('synthetic-secret'), false); return true;
+  });
+  const original = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  try {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    const adapter = new BGenAdapter({ url: 'https://example.test' });
+    await assert.rejects(adapter.generate(spec), /INSECURE_TLS_CONFIGURATION/);
+    await assert.rejects(adapter.liveCapabilities(), /INSECURE_TLS_CONFIGURATION/);
+  } finally { if (original === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED; else process.env.NODE_TLS_REJECT_UNAUTHORIZED = original; }
+});
+test('strict live mode preflights, persists code, exports bytes and confirms iteration source', async t => {
+  const bodies: Record<string, unknown>[] = [];
+  const server = await mockServer((req, res) => {
+    if (req.url === '/api/capabilities') { res.end(JSON.stringify(capabilities)); return; }
+    let text = ''; req.on('data', d => text += d); req.on('end', () => {
+      const body = JSON.parse(text); bodies.push(body);
+      res.end(JSON.stringify({ ...codeResponse, ...(body.previousCode ? { previousCodeSha256: body.previousCodeSha256 } : {}) }));
+    });
+  }); t.after(server.close);
+  const store = new Store(':memory:'); t.after(() => store.close());
+  const app = createApp(store, new BGenAdapter({ url: server.url }));
+  const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const firstResponse = await post('/api/games', { spec, requiredMethod: 'llm_code' });
+  assert.equal(firstResponse.status, 201); const first = await firstResponse.json();
+  const secondResponse = await post(`/api/games/${first.gameId}/versions`, { spec, previousVersionId: first.versionId, requiredMethod: 'llm_code' });
+  assert.equal(secondResponse.status, 201); const second = await secondResponse.json();
+  assert.equal(second.previousVersionId, first.versionId); assert.equal(second.gameId, first.gameId);
+  assert.equal(bodies[0].requiredMethod, 'llm_code'); assert.equal(bodies[1].previousCodeSha256, first.sha256);
+  const exported = await app.request(`/api/versions/${first.versionId}/export`);
+  assert.equal(await exported.text(), html); assert.equal(exported.headers.get('X-Content-SHA256'), first.sha256);
+  assert.match(exported.headers.get('Content-Disposition')!, /attachment/);
+  assert.match(exported.headers.get('Content-Security-Policy')!, /sandbox allow-scripts/);
+  assert.equal(first.validationStatus, 'unverified'); assert.equal(store.integrity(), true);
+});
+for (const [name, preflight, status, code] of [
+  ['missing contract', capabilities, 404, 'BGEN_LIVE_CONTRACT_REQUIRED'],
+  ['TLS bypass', { ...capabilities, tlsVerification: false }, 200, 'BGEN_UNSAFE_CAPABILITIES'],
+  ['templates only', { ...capabilities, codeGeneration: false }, 200, 'BGEN_UNSAFE_CAPABILITIES'],
+  ['unknown revision', { ...capabilities, revision: null }, 200, 'BGEN_UNSAFE_CAPABILITIES'],
+  ['audited unsafe revision', { ...capabilities, revision: '419c64968d487068a2fbed2e4bd99489cc734430' }, 200, 'BGEN_AUDITED_REVISION_UNSAFE'],
+  ['malformed contract', [], 200, 'BGEN_UNSAFE_CAPABILITIES'],
+] as const) test(`strict mode rejects ${name} before any generation POST`, async t => {
+  let posts = 0;
+  const server = await mockServer((req, res) => { if (req.method === 'POST') posts++; res.writeHead(status); res.end(JSON.stringify(preflight)); }); t.after(server.close);
+  await assert.rejects(new BGenAdapter({ url: server.url }).generate(spec, undefined, 'llm_code'), new RegExp(code));
+  assert.equal(posts, 0);
+});
+test('unsupported iteration is rejected before POST; capabilities bodies are bounded and timed', async t => {
+  const store = new Store(':memory:'); t.after(() => store.close()); const first = store.save(spec, artifact);
+  for (const [mode, code] of [['iterate', 'BGEN_ITERATION_UNSUPPORTED'], ['json', 'BGEN_CAPABILITIES_INVALID'], ['size', 'BODY_TOO_LARGE'], ['timeout', 'BGEN_TIMEOUT']] as const) {
+    let posts = 0;
+    const server = await mockServer((req, res) => {
+      if (req.method === 'POST') posts++;
+      if (mode === 'timeout') { res.writeHead(200); res.write('{'); return; }
+      res.end(mode === 'json' ? 'bad' : mode === 'size' ? 'x'.repeat(5000) : JSON.stringify({ ...capabilities, previousCode: false }));
+    });
+    try { await assert.rejects(new BGenAdapter({ url: server.url, timeoutMs: 100 }).generate(spec, first, 'llm_code'), new RegExp(code)); assert.equal(posts, 0); }
+    finally { await server.close(); }
+  }
+});
+test('synthetic demo runner preserves exact exports/lineage and stops before POST when iteration unsupported', async () => {
+  for (const previousCode of [false, true]) {
+    let posts = 0;
+    const server = await mockServer((req, res) => {
+      if (req.url === '/api/capabilities') { res.end(JSON.stringify({ ...capabilities, previousCode })); return; }
+      posts++; let body = ''; req.on('data', d => body += d); req.on('end', () => {
+        const request = JSON.parse(body);
+        res.end(JSON.stringify({ ...codeResponse, previousCodeSha256: request.previousCodeSha256 }));
+      });
+    });
+    let stdout = '';
+    try {
+      try {
+        ({ stdout } = await promisify(execFile)(process.execPath, ['scripts/live-generation.ts'], { cwd: PROJECT_ROOT, env: { ...process.env, BGEN_URL: server.url, BGEN_INIT_DATA: '', BGEN_TIMEOUT_MS: '1000' }, timeout: 10_000 }));
+        assert.equal(previousCode, true);
+      } catch (error) {
+        if (previousCode) throw error;
+        assert.equal((error as { code: number }).code, 1);
+        stdout = (error as { stdout: string }).stdout;
+      }
+      const result = JSON.parse(stdout);
+      assert.match(result.run, /^\.local\/live\/[0-9a-f-]{36}$/);
+      const run = resolve(PROJECT_ROOT, result.run), managed = resolve(PROJECT_ROOT, '.local/live');
+      const rel = relative(managed, run); assert.ok(rel && !isAbsolute(rel) && !rel.startsWith('..'));
+      try {
+        const evidence = JSON.parse(readFileSync(resolve(run, 'evidence.json'), 'utf8'));
+        assert.equal(evidence.status, previousCode ? 'generated_unverified' : 'blocked');
+        assert.equal(evidence.versions.length, previousCode ? 3 : 0); assert.equal(posts, previousCode ? 3 : 0);
+        assert.equal(evidence.browserValidation, 'not_run'); assert.equal(evidence.telemetry, 'not_observed');
+        const persisted = new Store(resolve(run, 'yaplix.sqlite'));
+        try {
+          if (previousCode) {
+            const [first, other, second] = evidence.versions;
+            assert.equal(second.previousVersionId, first.versionId); assert.equal(second.gameId, first.gameId); assert.notEqual(other.gameId, first.gameId);
+            for (const v of evidence.versions) { assert.equal(persisted.getVersion(v.versionId).html, readFileSync(resolve(run, `${v.versionId}.html`), 'utf8')); assert.equal(persisted.analytics(v.versionId).startedCount, 0); }
+          }
+          assert.equal(persisted.integrity(), true);
+        } finally { persisted.close(); }
+      } finally { rmSync(run, { recursive: true }); }
+    } finally { await server.close(); }
+  }
+});
+for (const [name, response, code] of [
+  ['template substitution', { ...codeResponse, provider: 'engine+openai+json', provenance: { ...codeResponse.provenance, method: 'template_config' } }, 'BGEN_CODE_REQUIRED'],
+  ['failed generation', { ...codeResponse, ok: false }, 'BGEN_GENERATION_FAILED'],
+  ['unknown model', { ...codeResponse, provenance: { ...codeResponse.provenance, model: null } }, 'BGEN_CODE_REQUIRED'],
+  ['mock substitution', { ...codeResponse, provenance: { ...codeResponse.provenance, provider: 'mock' } }, 'BGEN_CODE_REQUIRED'],
+] as const) test(`strict API rejects ${name} without saving a game`, async t => {
+  const server = await mockServer((req, res) => res.end(JSON.stringify(req.url === '/api/capabilities' ? capabilities : response))); t.after(server.close);
+  const store = new Store(':memory:'); t.after(() => store.close());
+  const app = createApp(store, new BGenAdapter({ url: server.url }));
+  const result = await app.request('/api/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec, requiredMethod: 'llm_code' }) });
+  assert.equal(result.status, 502); assert.deepEqual(await result.json(), { error: code });
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM games').get()?.n, 0);
+});
+test('strict iteration cannot silently ignore previous HTML; imports cannot bypass live policy', async t => {
+  const server = await mockServer((req, res) => res.end(JSON.stringify(req.url === '/api/capabilities' ? capabilities : codeResponse))); t.after(server.close);
+  const store = new Store(':memory:'); t.after(() => store.close()); const first = store.save(spec, artifact);
+  await assert.rejects(new BGenAdapter({ url: server.url }).generate(spec, first, 'llm_code'), /BGEN_ITERATION_UNCONFIRMED/);
+  const app = createApp(store);
+  for (const [method, expected] of [['llm_code', 'IMPORT_PROVENANCE_UNVERIFIED'], ['template_config', 'INVALID_REQUIRED_METHOD']]) {
+    const result = await app.request('/api/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec, artifact, requiredMethod: method }) });
+    assert.equal(result.status, 400); assert.deepEqual(await result.json(), { error: expected });
+  }
+  assert.equal(store.history(first.gameId).length, 1);
+});
 for (const [provider, method] of [['engine+openai+json', 'template_config'], ['engine+default', 'fallback'], ['engine+mock+json', 'mock']] as const) {
   test(`legacy BGen ${provider} is honestly labeled ${method}`, async t => {
     const server = await mockServer((_req, res) => res.end(JSON.stringify({ html, ok: true, fromCache: false, provider })));

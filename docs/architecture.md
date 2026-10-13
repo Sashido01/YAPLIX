@@ -1,4 +1,4 @@
-# Архитектура платформы (TASK-002)
+# Архитектура платформы (TASK-002 / TASK-003)
 
 ## Реализованная вертикаль
 
@@ -38,6 +38,10 @@ provider/model (null при неизвестных), время UTC, спосо�
 без HTML; конкретная версия возвращает артефакт JSON. Проверка структуры HTML
 не доказывает играбельность. Импорт API разрешён только для mock/unverified:
 клиент не может пометить авторскую тестовую игру как LLM или проверенную.
+`GET /api/versions/:versionId/export` выдаёт точный исходный UTF-8 HTML как
+attachment, с X-Content-SHA256 и ограничивающим CSP для HTTP-ответа. При сохранении
+файла HTTP CSP не сохраняется: автономный HTML по-прежнему недоверенный, его
+испытание проводится в изолированном браузере offline.
 
 Лимиты: HTML 200 000 UTF-8 bytes; всего 100 MB HTML и 10 000 версий;
 10 000 сессий; 100 000 событий; 1 000 событий на сессию. При исчерпании
@@ -79,8 +83,10 @@ Read-only аудит BGen HEAD `419c64968d487068a2fbed2e4bd99489cc734430`
   Исходный HTML до компилятора не доходит. Шаблонный путь также пересобирает игру.
 - `llm/providers/gigachat.ts` передаёт `tls: { rejectUnauthorized: false }`
   в OAuth и chat fetch. Это блокер безопасного production-подключения GigaChat.
-- Телеметрия BGen измеряет генерацию, не игровые сессии. Играбельность,
-  публикация конкретных артефактов и интеграция Railway здесь не подтверждены.
+- Телеметрия BGen измеряет генерацию, не игровые сессии. 13 октября 2026 HTTPS
+  `https://bgenserver-production.up.railway.app/` и `/api/health` вернули 200;
+  `/api/capabilities` — 404. Это подтверждает доступность, но не SHA развёрнутого
+  кода, наличие безопасного LLM, играбельность или происхождение игр.
 
 Наш адаптер ограничивает запрос/ответ, таймаут включая чтение body, запрещает
 redirect, HTTP кроме loopback и credentials в URL. Не переключается на Mock.
@@ -91,6 +97,31 @@ provider отклоняются с BGEN_PROVENANCE_REQUIRED: информаци�
 контракт; пример и ограничения находятся в [development-setup](development-setup.md).
 provider/model — утверждения генератора, не криптографическое доказательство.
 `ok` BGen соответствует generationStatus; playability остаётся unverified.
+
+Для конкурсного запроса UI передаёт `requiredMethod: "llm_code"`. До любого
+generation POST адаптер проверяет предложенный `/api/capabilities` v1: SHA
+revision, codeGeneration=true, tlsVerification=true, previousCode boolean.
+Известный небезопасный SHA 419c649 отклоняется даже при декларации TLS=true;
+новые SHA требуют review владельца и исходников. Декларация capabilities не
+доказывает проверку upstream TLS сама по себе. Передавать false/неизвестное
+значение вместо честного true обязательно, пока исправление не готово.
+Preflight ограничен 4096 bytes и 15 секундами, redirects запрещены.
+NODE_TLS_REJECT_UNAUTHORIZED=0 отклоняется и при прямом вызове адаптера.
+
+Строгий запрос требует succeeded + provenance llm_code + непустые provider/model.
+При iterate отправляются предыдущий HTML и его SHA-256; ответ должен подтвердить
+previousCodeSha256, capabilities.previousCode должен быть true. Это проверяемое
+утверждение сервиса о входе, не доказательство использования кода моделью.
+Нужны исправление CompileOptions в BGen и поведенческий браузерный тест.
+Ошибки не создают GameVersion. Обычные template_config/mock/fallback остаются
+доступны через прежний режим; запрещено выдавать их за конкурсный llm_code.
+
+`scripts/live-generation.ts` оркестрирует существующий API без второго UI или
+генератора: две независимые игры, затем изменение первой, SQLite и точный экспорт
+с readback/hash. При ошибке сохраняет partial evidence и выходит с кодом 1;
+отсутствие событий записывает как not_observed, проверку браузером — not_run.
+Артефакты и run database игнорируются Git. При нынешнем endpoint preflight
+останавливается до generation POST, версий нет. Полная цель TASK-003 не достигнута.
 
 ## Runtime и Mobile First
 
@@ -119,6 +150,9 @@ Origin после навигации тоже может оставаться op
 цикл, победа и поражение работают offline. Playwright проверяет Chromium desktop,
 Chromium mobile и WebKit mobile 320×568/390×844. Это эмуляция, не физические
 Android/iPhone и не доказательство качества реальных LLM-артефактов.
+TASK-003 дополнительно проверяет скачанный из API HTML как file:// при отключённой
+сети, touch tap на mobile, клавиатуру на desktop, изменение размера Canvas и
+devicePixelRatio. Это авторская synthetic fixture, а не полученная от модели игра.
 
 ## Повторное использование практик
 
