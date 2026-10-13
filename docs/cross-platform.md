@@ -150,15 +150,15 @@ QR encoder работает на сервере по запросу, его не
 
 | Метрика | Before TASK-007 | After TASK-007 |
 | --- | --- | --- |
-| Shell p75 ms | 619.30 | 646.50 |
-| Game launch p75 ms | 944.45 | 949.79 |
+| Shell p75 ms | 619.30 | 649.10 |
+| Game launch p75 ms | 944.45 | 958.21 |
 | Touch p75 ms | 5.90 | 5.50 |
-| API p75 ms | 2.14 | 2.98 |
-| Initial JS gzip bytes | 6065 | 6659 |
-| CSS gzip bytes | 1991 | 2107 |
-| Critical gzip bytes | 10274 | 11027 |
+| API p75 ms | 2.14 | 3.39 |
+| Initial JS gzip bytes | 6065 | 7018 |
+| CSS gzip bytes | 1991 | 2143 |
+| Critical gzip bytes | 10274 | 11422 |
 
 Добавлены provenance/share и lazy Telegram adapter. Размер вырос, budgets прежние
 и выполнены. Timing колебания не выдаются за ускорение. LLM latency/Chromium checker
 не входят в shell. Telegram SDK загружается только /telegram.
-После 40 циклов навигации осталось 0 iframe; heap after 2164696 bytes. Это CDP heap, не полный RAM.
+После 40 циклов навигации осталось 0 iframe; heap after 2174796 bytes. Это CDP heap, не полный RAM.

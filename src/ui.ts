@@ -8,6 +8,8 @@ const versions = new Map<string, GameVersion>(); // Bounded read cache, at most 
 const errors: Record<string, string> = {
   LLM_NOT_CONFIGURED:'LIVE не настроен. Добавьте серверный API key и откройте диагностику.',
   BROWSER_INSTALL_REQUIRED:'Для LIVE установите браузер проверки: npm run checker:install.',
+  BROWSER_SANDBOX_UNAVAILABLE:'Браузер проверки не смог запустить защищённую среду. Проверьте настройку Chromium sandbox по инструкции Ubuntu.',
+  BROWSER_SANDBOX_CONFIGURATION:'Системный Chromium sandbox helper не прошёл проверку. Проверьте CHROME_DEVEL_SANDBOX по инструкции Ubuntu.',
   LLM_MODEL_NOT_FOUND:'Модель отсутствует в Ollama. Установите выбранную модель.',
   LLM_BUSY:'Другая генерация ещё завершается. Повторите позже.',
   LLM_TIMEOUT:'Модель не ответила вовремя. Попробуйте уточнить запрос.',
@@ -40,6 +42,10 @@ function lock(value: boolean) {
   el<HTMLSelectElement>('versions').disabled=value||!current;el<HTMLButtonElement>('replay').disabled=value||!current;
   el('cancel').hidden=!value; document.body.classList.toggle('waiting',value);
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.disabled=value||button.dataset.view==='play'&&!current);
+  if(!value&&current&&document.body.dataset.screen==='play'&&matchMedia('(max-width:760px)').matches){
+    const scroller=document.querySelector<HTMLElement>('body>main')!,area=el('game').getBoundingClientRect();
+    scroller.scrollTop+=Math.max(0,area.bottom-scroller.getBoundingClientRect().bottom+8);
+  }
 }
 async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false) {
   if (busy) return; lock(true); action=new AbortController(); const controller=action;

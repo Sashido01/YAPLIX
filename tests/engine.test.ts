@@ -16,6 +16,13 @@ test('independent specification preserves arbitrary mechanics, audience and prev
  const request={...spec,prompt:'Арканоид: победа после 12 кирпичей; стрелками.',genre:'custom/new-genre',mechanics:['reflect','collect']};
  const store=new Store(':memory:');try{const first=store.save(spec,{html,method:'mock',provider:'synthetic',model:null,generationStatus:'succeeded',validationStatus:'unverified'});const messages=generationMessages(request,first);assert.ok(messages[1].content.includes(first.html));assert.ok(messages[1].content.includes(request.prompt));assert.ok(messages[1].content.includes(request.genre));assert.equal(messages.length,2);assert.equal(extractDocument('```html\n'+html+'\n```'),html.trim());assert.throws(()=>extractDocument(html+html),/LLM_INVALID_HTML/);assert.deepEqual(validateDocument(html),[]);}finally{store.close();}
 });
+test('sandbox configuration failure stops repairs and fallback without saving (synthetic)',async()=>{
+ let calls=0;const source=route(async()=>{calls++;return{code:html,model:'actual-free-model'};});
+ const engine=new GenerationEngine([source,{...source,route:'secondary'}],{repairs:2,check:async()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);}});
+ await assert.rejects(engine.generate(spec),error=>error instanceof GenerationFailure&&error.code==='BROWSER_SANDBOX_UNAVAILABLE'&&error.attempts.length===1);
+ assert.equal(calls,1);
+});
+
 test('bounded repair receives original request and exact failed HTML; only checked result is saved (synthetic)',async()=>{
  const messages:Message[][]=[];let checks=0;
  const engine=new GenerationEngine([route(async m=>{messages.push(structuredClone(m));return{code:html,model:'actual-free-model'};})],{check:async()=>{if(++checks===1)throw new Fault('BROWSER_DUPLICATE_START');return evidence();}});

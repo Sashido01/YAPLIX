@@ -29,6 +29,17 @@ Budgets прежние: JS 150 KB, CSS 30 KB, critical 250 KB; p75 target 3 s. L
 
 ## Реальная LLM и внешние шаги
 
+В TASK-007 проверен настоящий HTML5 Space Dodge через `openrouter/free`:
+`dots-studio/dots-3-note-preview:free` (~100 s), клавиатура/пауза, две обычные
+победы без изменения состояния или часов игры. Доработки через production UI:
+`cohere/north-mini-code:free` (~36 s), затем `poolside/laguna-s-2.1:free` (~43 s).
+Последняя исправила перекрытые фоном звёзды; touch двигает корабль, pause замораживает
+Canvas, 150 звёзд видимы, победа задана на 12 s. Exact export играет offline;
+хеш исходной версии сохранён. Модели выбирает free router, это не рейтинг качества.
+Первый набор трёх запросов не прошёл gate; один ответ доработки был неполным.
+Ошибки не сохранялись и не заменялись DEMO. Наличие одного успешного сценария
+не гарантирует качество каждого ответа бесплатных моделей.
+
 npm run demo:live сохраняет три ordinary game prompts, actual free model, time/
 attempts и exact HTML в ignored .local/live. Dynamic free router не сравнивает
 фиксированные модели и не обосновывает «лучшую». Проверяйте каждый HTML до win/loss

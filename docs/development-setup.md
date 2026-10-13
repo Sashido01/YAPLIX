@@ -19,6 +19,13 @@ git diff --check
 Ubuntu: python3; при недостающих OS libraries:
 `node scripts/browser-tests.mjs install --with-deps chromium webkit firefox`.
 Production LIVE достаточно checker:install, DEMO не нужен Chromium.
+Ubuntu 23.10+ ограничивает user namespaces. Checker сохраняет Chromium sandbox:
+при наличии использует root-owned setuid helper `/opt/google/chrome/chrome-sandbox`
+из установленного Google Chrome (включая Ubuntu GitHub runner). Для другого
+проверенного системного helper задайте `CHROME_DEVEL_SANDBOX`; owner должен быть
+root, setuid включён, запись группе/остальным запрещена. Если helper отсутствует,
+нужна поддержка sandbox со стороны ОС; LIVE безопасно отказывает. Не отключайте
+AppArmor или Chromium sandbox. [Документация Chromium](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
 Hook mode 100755 блокирует remote main; не заменяет server protection. Checker
 проверяет tracked files, UTF-8/LF/регистр ссылок. Gitleaks 8.24.3:
 `gitleaks git --redact --log-opts=--all .`, `gitleaks dir --redact .`.

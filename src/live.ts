@@ -43,6 +43,7 @@ export class GenerationEngine implements Generator {
             if(error instanceof CloudOutputFailure){actual=error.actualModel;code=error.partial;}
             lastCode=error instanceof Fault?error.code:'LLM_NETWORK_OR_RESPONSE';
             attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:actual?'rejected':'failed',errorCode:lastCode,elapsedMs:Math.round(performance.now()-begin)});
+            if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
             if(!actual||repair===this.repairs||lastCode==='BROWSER_INSTALL_REQUIRED')break;
             messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return concise complete HTML, below 250 lines, with little reasoning and no commentary.':'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
           }

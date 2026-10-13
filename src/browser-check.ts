@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseEvent, Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
@@ -17,7 +17,17 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
   if (!checkerReady()) throw new Fault('BROWSER_INSTALL_REQUIRED',503);
   const deadline=AbortSignal.any([signal,AbortSignal.timeout(18000)]);
   const env=Object.fromEntries(['PATH','Path','SystemRoot','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','DISPLAY','XDG_RUNTIME_DIR','LANG'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!]));
-  const browser=await chromium.launch({headless:true,chromiumSandbox:true,timeout:8000,env});
+  // Chromium's supported root-owned helper preserves its sandbox on Ubuntu's
+  // restricted user namespaces. Never change AppArmor or use --no-sandbox.
+  if(process.platform==='linux'){
+    const helper=process.env.CHROME_DEVEL_SANDBOX??'/opt/google/chrome/chrome-sandbox';
+    if(existsSync(helper)){
+      const info=statSync(helper);
+      if(!info.isFile()||info.uid!==0||(info.mode&0o4000)===0||(info.mode&0o022)!==0)throw new Fault('BROWSER_SANDBOX_CONFIGURATION',503);
+      env.CHROME_DEVEL_SANDBOX=helper;
+    }else if(process.env.CHROME_DEVEL_SANDBOX)throw new Fault('BROWSER_SANDBOX_CONFIGURATION',503);
+  }
+  const browser=await chromium.launch({headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
   const abort=()=>void browser.close().catch(()=>{});deadline.addEventListener('abort',abort,{once:true});
   try {
     for(const width of [320,390]) {
