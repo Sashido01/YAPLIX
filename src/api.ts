@@ -1,24 +1,45 @@
 import { Hono } from 'hono';
-import { readFile } from 'node:fs/promises';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
 import { boundedText, requiredMethod } from './bgen.ts';
 import type { Generator } from './bgen.ts';
 import { demoArtifact } from './demo.ts';
 import type { Store } from './store.ts';
-import { PROJECT_ROOT } from './store.ts';
-import { resolve } from 'node:path';
+import { AccessSessions } from './access.ts';
+import type { NetworkPolicy } from './access.ts';
+import { staticAssets } from './static.ts';
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) })) {
+const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy) {
   const app = new Hono();
+  if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
+  const staticFile = staticAssets();
+  const access = policy?.key ? new AccessSessions(policy.key, policy.mode === 'https') : undefined;
   app.use('*', async (c, next) => {
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('Cache-Control', 'no-store');
     c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
-    // Loopback service, same-origin UI only. Reject opaque sandbox/browser cross-site writes.
+    // Explicit network modes retain exact Host/origin and opaque-frame checks.
     const requestUrl = new URL(c.req.url);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(requestUrl.hostname) || c.req.header('Host') && c.req.header('Host')!.toLowerCase() !== requestUrl.host.toLowerCase()) throw new Fault('HOST_FORBIDDEN', 403);
+    const expected = policy?.origin ? new URL(policy.origin) : requestUrl;
+    if (policy?.origin ? requestUrl.host !== expected.host : !['localhost', '127.0.0.1', '[::1]'].includes(requestUrl.hostname)) throw new Fault('HOST_FORBIDDEN', 403);
+    if (c.req.header('Host') && c.req.header('Host')!.toLowerCase() !== expected.host.toLowerCase()) throw new Fault('HOST_FORBIDDEN', 403);
+    if (policy?.mode === 'https') {
+      if (c.req.header('X-Forwarded-Proto') !== 'https') throw new Fault('HTTPS_REQUIRED', 403);
+      c.header('Strict-Transport-Security', 'max-age=31536000');
+    }
     const origin = c.req.header('Origin');
-    if (origin && origin !== requestUrl.origin || c.req.header('Sec-Fetch-Site') === 'cross-site') throw new Fault('ORIGIN_FORBIDDEN', 403);
+    if (origin && origin !== expected.origin || c.req.header('Sec-Fetch-Site') === 'cross-site') throw new Fault('ORIGIN_FORBIDDEN', 403);
+    if (access) {
+      if (c.req.path === '/api/access' && c.req.method === 'POST') {
+        const body = object(await json(c.req.raw, 256), ['key']);
+        c.header('Set-Cookie', access.login(body.key)); return c.json({ ok: true });
+      }
+      if (!access.allowed(c.req.header('Cookie'))) {
+        if (c.req.path === '/' && c.req.method === 'GET') { c.header('Content-Security-Policy', UI_CSP); return staticFile(c, 'assets/access.html', 'text/html; charset=utf-8', false); }
+        if (!['/ui/style.css', '/runtime/access-ui.js'].includes(c.req.path)) throw new Fault('ACCESS_REQUIRED', 401);
+      }
+    }
     await next();
   });
   async function json(request: Request, max = 1_210_000): Promise<unknown> {
@@ -46,7 +67,8 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     if (method && body.artifact !== undefined) throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     const spec = parseSpec(body.spec);
     if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
-    const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, undefined, method);
+    const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, undefined, method, c.req.raw.signal);
+    if (c.req.raw.signal.aborted) throw new Fault('REQUEST_CANCELLED', 499);
     return c.json(store.save(spec, artifact), 201);
   });
   app.get('/api/games/:gameId', c => c.json({ gameId: uuid(c.req.param('gameId')), versions: store.history(c.req.param('gameId')) }));
@@ -60,7 +82,8 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     if (previous.gameId !== uuid(c.req.param('gameId'))) throw new Fault('PARENT_GAME_MISMATCH', 409);
     const spec = parseSpec(body.spec);
     if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
-    const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous, method);
+    const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous, method, c.req.raw.signal);
+    if (c.req.raw.signal.aborted) throw new Fault('REQUEST_CANCELLED', 499);
     return c.json(store.save(spec, artifact, previous.versionId), 201);
   });
   app.get('/api/versions/:versionId', c => c.json(store.getVersion(c.req.param('versionId'))));
@@ -89,12 +112,16 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   // Same-origin UI. srcdoc inherits parent CSP, so inline game code/styles must be
   // permitted here; the stricter GAME_CSP inside the opaque frame removes network.
   app.get('/', async c => {
-    c.header('Content-Security-Policy', "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
-    return c.html(await readFile(resolve(PROJECT_ROOT, 'assets/index.html'), 'utf8'));
+    c.header('Content-Security-Policy', UI_CSP);
+    return staticFile(c, 'assets/index.html', 'text/html; charset=utf-8', false);
   });
-  app.get('/ui/style.css', async c => c.body(await readFile(resolve(PROJECT_ROOT, 'assets/style.css'), 'utf8'), 200, { 'Content-Type': 'text/css; charset=utf-8' }));
-  for (const file of ['runtime', 'contracts', 'ui']) app.get(`/runtime/${file}.js`, async c => {
-    try { return c.body(await readFile(resolve(PROJECT_ROOT, `build/src/${file}.js`), 'utf8'), 200, { 'Content-Type': 'text/javascript; charset=utf-8' }); }
+  app.get('/ui/style.css', c => staticFile(c, 'assets/style.css', 'text/css; charset=utf-8'));
+  for (const file of ['ui', 'access-ui']) app.get(`/runtime/${file}.js`, async c => {
+    try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
+    catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
+  });
+  for (const file of ['runtime', 'contracts']) app.get(`/runtime/${file}.js`, async c => {
+    try { return await staticFile(c, `build/src/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });
   app.onError((error, c) => {

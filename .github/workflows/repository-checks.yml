@@ -45,9 +45,11 @@ jobs:
           npm run typecheck
           npm test
       - name: Install browser profiles
-        run: node scripts/browser-tests.mjs install --with-deps chromium webkit
+        run: node scripts/browser-tests.mjs install --with-deps chromium webkit firefox
       - name: Autonomous game and isolation browser tests
         run: npm run test:browser
+      - name: Mobile performance and compressed size budgets
+        run: npm run performance:smoke
 
   secret-scan:
     name: secret-scan

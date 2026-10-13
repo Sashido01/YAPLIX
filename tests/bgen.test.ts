@@ -225,3 +225,32 @@ test('invalid JSON, streamed output overflow, redirects and network failures do 
   const v = store.save(spec, artifact);
   await assert.rejects(new BGenAdapter({ url: 'http://localhost' }).generate({ ...spec, prompt: 'x'.repeat(490) }, v), /PROMPT_TOO_LARGE/);
 });
+
+
+test('client abort and server close cancel BGen preflight/body and never save cancelled output', async t => {
+  for (const stage of ['preflight', 'body', 'close'] as const) {
+    let reached!: () => void;
+    const started = new Promise<void>(done => reached = done);
+    const server = await mockServer((req, res) => {
+      if (req.url === '/api/capabilities' && stage !== 'preflight') { res.end(JSON.stringify(capabilities)); return; }
+      res.writeHead(200); res.write('{'); reached();
+    });
+    try {
+      const adapter = new BGenAdapter({ url: server.url }), controller = new AbortController();
+      const pending = adapter.generate(spec, undefined, 'llm_code', controller.signal);
+      const rejected = assert.rejects(pending, stage === 'close' ? /BGEN_TIMEOUT/ : /REQUEST_CANCELLED/);
+      await started;
+      if (stage === 'close') adapter.close(); else controller.abort();
+      await rejected;
+      // A subsequent operation on the same adapter must not inherit cancellation.
+      const already = new AbortController(); already.abort();
+      await assert.rejects(adapter.generate(spec, undefined, 'llm_code', already.signal), /REQUEST_CANCELLED/);
+    } finally { await server.close(); }
+  }
+  const store = new Store(':memory:'); t.after(() => store.close());
+  const liveController = new AbortController();
+  const live = createApp(store, { async generate() { liveController.abort(); return {...artifact,method:'llm_code',provider:'synthetic-test',model:'test'}; } });
+  const cancelled = await live.request('/api/games', { method:'POST', signal:liveController.signal, headers:{'Content-Type':'application/json'}, body:JSON.stringify({spec,mode:'live'}) });
+  assert.equal(cancelled.status,499);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM games').get()?.n, 0);
+});

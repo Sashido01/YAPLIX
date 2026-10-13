@@ -2,6 +2,9 @@ import { MAX_HTML_BYTES, parseEvent, uuid } from './contracts.ts';
 import type { GameEvent } from './contracts.ts';
 
 export const GAME_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+// Browser API compatibility for old generated bridges on explicit LAN HTTP.
+// getRandomValues is available outside secure contexts; never use Math.random.
+export const UUID_COMPAT = "if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=>{const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);}});";
 export interface RuntimeSession { sessionId: string; versionId: string }
 export function acceptMessage(message: MessageEvent, source: Window | null, session: RuntimeSession): GameEvent | null {
   if (!source || message.source !== source || message.origin !== 'null') return null;
@@ -22,7 +25,7 @@ export function mountGame(container: HTMLElement, html: string, session: Runtime
   frame.referrerPolicy = 'no-referrer';
   frame.style.cssText = 'width:100%;height:100%;border:0;display:block';
   // CSP is parsed before any attacker-controlled markup or script.
-  frame.srcdoc = `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${GAME_CSP}">` + html;
+  frame.srcdoc = `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${GAME_CSP}"><script>${UUID_COMPAT}</script>` + html;
   let windowStart = Date.now(), count = 0;
   const receive = (message: MessageEvent) => {
     if (Date.now() - windowStart >= 1000) { windowStart = Date.now(); count = 0; }
