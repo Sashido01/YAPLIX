@@ -32,7 +32,9 @@ TLS проверяется, redirects запрещены, HTTP только loop
 [live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
 (default 1), до трёх явно заданных routes. HTTP-ошибка не вызывает скрытого retry.
 Cloud default — openrouter/free, OpenRouter запрещает paid model/paid secondary.
-Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель.
+Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
+чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
+и может получить тот же один bounded repair, с требованием компактного HTML.
 
 HTML <=200000 UTF-8 bytes, ровно один документ. Static отклоняет external resources,
 опасные API, отсутствие mobile viewport/game contract. Затем [browser-check.ts](../src/browser-check.ts)

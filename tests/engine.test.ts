@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {GenerationEngine,configuredGenerator,GenerationFailure} from '../src/live.ts';
-import {CloudTransport,OllamaTransport,boundedText} from '../src/transport.ts';
+import {CloudTransport,OllamaTransport,boundedText,CloudOutputFailure} from '../src/transport.ts';
 import type {CodeTransport,Message} from '../src/transport.ts';
 import {extractDocument,validateDocument,generationMessages} from '../src/generation.ts';
 import {Store} from '../src/store.ts';
@@ -48,7 +48,7 @@ test('cloud protocol records actual model, preserves messages and never emits cr
  await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>{server.closeAllConnections();server.close();});
  const transport=new CloudTransport({base:'http://127.0.0.1:'+(server.address() as any).port+'/v1',key:'synthetic-test-key',model:'requested-model',temperature:0.2,maxTokens:4096});
  assert.equal((await transport.complete(generationMessages(spec),AbortSignal.timeout(2000))).model,'returned-model');assert.equal(bodies[0].model,'requested-model');assert.equal(bodies[0].max_tokens,4096);assert.equal(bodies[0].temperature,0.2);assert.equal(headers[0],'Bearer synthetic-test-key');assert.equal(await transport.readiness(AbortSignal.timeout(2000)),'ready');
- scenario='truncated';await assert.rejects(transport.complete([],AbortSignal.timeout(2000)),/LLM_INVALID_RESPONSE/);scenario='http';await assert.rejects(transport.complete([],AbortSignal.timeout(2000)),error=>String(error)==='Error: LLM_AUTH');scenario='redirect';await assert.rejects(transport.complete([],AbortSignal.timeout(2000)));
+ scenario='truncated';await assert.rejects(transport.complete([],AbortSignal.timeout(2000)),/LLM_OUTPUT_TRUNCATED/);scenario='http';await assert.rejects(transport.complete([],AbortSignal.timeout(2000)),error=>String(error)==='Error: LLM_AUTH');scenario='redirect';await assert.rejects(transport.complete([],AbortSignal.timeout(2000)));
  for(const base of ['http://remote.example/v1','https://key@host.test/v1','https://host.test/v1?key=secret'])assert.throws(()=>new CloudTransport({base,key:'synthetic',model:'x'}),/INSECURE_LLM_URL/);
 });
 test('response bodies are bounded and oversized content-length cancels the reader',async()=>{
@@ -57,4 +57,12 @@ test('response bodies are bounded and oversized content-length cancels the reade
 test('Ollama transport rejects model substitution and truncation without fallback',async t=>{
  let scenario='correct';const server=createServer((_q,r)=>r.end(JSON.stringify({done:true,done_reason:scenario==='truncated'?'length':'stop',model:scenario==='wrong'?'other':'test-model',message:{content:html}})));await new Promise<void>(d=>server.listen(0,'127.0.0.1',d));t.after(()=>{server.closeAllConnections();server.close();});
  const transport=new OllamaTransport({base:'http://127.0.0.1:'+(server.address() as any).port,model:'test-model'});assert.equal((await transport.complete([],AbortSignal.timeout(2000))).code,html);for(scenario of ['wrong','truncated'])await assert.rejects(transport.complete([],AbortSignal.timeout(2000)),/LLM_INVALID_RESPONSE/);
+});
+
+test('free router preserves actual truncated model, uses low reasoning and bounded compact repair',async t=>{
+ let calls=0;const bodies:any[]=[];
+ t.mock.method(globalThis,'fetch',async(_url:unknown,options:any)=>{bodies.push(JSON.parse(options.body));return Response.json({model:'actual-free',choices:[{finish_reason:++calls===1?'length':'stop',message:{content:calls===1?'<!DOCTYPE html><html>':html}}]});});
+ const cloud=new CloudTransport({base:'https://openrouter.ai/api/v1',model:'openrouter/free',key:'synthetic-test-key'});
+ const output=await new GenerationEngine([cloud],{check:evidence}).generate(spec);
+ assert.equal(calls,2);assert.deepEqual(bodies[0].reasoning,{effort:'low',exclude:true});assert.equal(output.generation!.attempts[0].model,'actual-free');assert.equal(output.generation!.attempts[0].errorCode,'LLM_OUTPUT_TRUNCATED');assert.ok(bodies[1].messages.at(-1).content.includes('budget was exhausted'));assert.equal(output.model,'actual-free');
 });

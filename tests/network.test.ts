@@ -67,25 +67,3 @@ test('production graceful shutdown via local IPC closes SQLite and survives upda
   try {await start();const url='http://127.0.0.1:'+port;const v=await(await fetch(url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();await stop();await start();assert.equal((await(await fetch(url+'/api/versions/'+v.versionId)).json()).sha256,v.sha256);await stop();}
   finally {child?.kill();rmSync(dir,{recursive:true});}
 });
-
-
-test('production HTTP client disconnect cancels upstream generation without saving a version', {timeout:15_000}, async()=>{
-  const dir=mkdtempSync('.local/network-cancel-');let started!:()=>void,disconnected!:()=>void;
-  const began=new Promise<void>(done=>started=done),ended=new Promise<void>(done=>disconnected=done);
-  const upstream=createServer((req,res)=>{
-    res.on('close',disconnected);res.writeHead(200);res.write('{');started();
-  });
-  await new Promise<void>(done=>upstream.listen(0,'127.0.0.1',done));
-  const listener=createServer();await new Promise<void>(done=>listener.listen(0,'127.0.0.1',done));const port=(listener.address() as any).port;await new Promise<void>(done=>listener.close(()=>done()));
-  const child=fork('src/server.ts',[],{cwd:PROJECT_ROOT,silent:true,env:{...process.env,PORT:String(port),YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',YAPLIX_DB:dir+'/data.sqlite',LIVE_PROVIDER:'cloud',CLOUD_MODEL:'synthetic-model',CLOUD_API_KEY:'synthetic-not-a-secret',CLOUD_BASE_URL:'http://127.0.0.1:'+(upstream.address() as any).port}});
-  const closed=new Promise<number|null>(done=>child.once('exit',done));
-  try{
-    await new Promise<void>((done,fail)=>{child.stdout!.once('data',()=>done());child.once('error',fail);child.once('exit',()=>fail(Error('START_FAILED')));});
-    const controller=new AbortController(),base='http://127.0.0.1:'+port;
-    const pending=fetch(base+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'}),signal:controller.signal});
-    const rejected=assert.rejects(pending,/abort/i);await began;controller.abort();await rejected;
-    await Promise.race([ended,new Promise<void>((_,reject)=>{const timer=setTimeout(()=>reject(Error('UPSTREAM_NOT_CANCELLED')),1500);timer.unref();})]);
-    assert.deepEqual((await(await fetch(base+'/api/games')).json()).games,[]);
-    child.send('shutdown');assert.equal(await closed,0);
-  }finally{child.kill();upstream.closeAllConnections();await new Promise<void>(done=>upstream.close(()=>done()));rmSync(dir,{recursive:true});}
-});

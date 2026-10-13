@@ -6,8 +6,20 @@ import { PNG } from 'pngjs';
 import { lanAddresses } from '../src/network.ts';
 import { productionServer } from './production-helper.ts';
 import { html } from './helpers.ts';
+import {spec} from './helpers.ts';
 
 test.beforeEach(({},info)=>{test.skip(!['chromium-desktop','chromium-320','webkit-390'].includes(info.project.name),'Production coverage on desktop Chromium and small Chromium/WebKit. Other profiles run full runtime/mobile suites.');});
+
+test('production HTTP disconnect cancels cloud body and stores no game',async()=>{
+ let started!:()=>void,disconnected!:()=>void;const began=new Promise<void>(done=>started=done),ended=new Promise<void>(done=>disconnected=done);
+ const upstream=createServer((_req,res)=>{res.on('close',disconnected);res.writeHead(200);res.write('{');started();});await new Promise<void>(done=>upstream.listen(0,'127.0.0.1',done));
+ const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'cloud',CLOUD_MODEL:'synthetic-model',CLOUD_API_KEY:'synthetic-not-a-secret',CLOUD_BASE_URL:'http://127.0.0.1:'+(upstream.address() as any).port});
+ try{
+  const controller=new AbortController();const pending=fetch(server.url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'}),signal:controller.signal});const rejected=expect(pending).rejects.toThrow(/abort/i);
+  await Promise.race([began,new Promise<void>((_,reject)=>setTimeout(()=>reject(Error('UPSTREAM_NOT_STARTED')),5000).unref())]);controller.abort();await rejected;
+  await Promise.race([ended,new Promise<void>((_,reject)=>setTimeout(()=>reject(Error('UPSTREAM_NOT_CANCELLED')),1500).unref())]);expect((await(await fetch(server.url+'/api/games')).json()).games).toEqual([]);
+ }finally{await server.stop();server.cleanup();upstream.closeAllConnections();await new Promise<void>(done=>upstream.close(()=>done()));}
+});
 
 test('real production LAN: authentication, QR independent decode, relative API, gameplay, restart and changed port', async({page,context},info)=>{
   const host=lanAddresses()[0]?.address;test.skip(!host,'No private IPv4 interface available on this runner.');

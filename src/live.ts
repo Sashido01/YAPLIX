@@ -1,6 +1,6 @@
 import { Fault, parseArtifact, parseSpec } from './contracts.ts';
 import type { Artifact, GenerationAttempt, GameSpec, GameVersion } from './contracts.ts';
-import { CloudTransport, OllamaTransport } from './transport.ts';
+import { CloudTransport, OllamaTransport, CloudOutputFailure } from './transport.ts';
 import type { CodeTransport, Generator } from './transport.ts';
 import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { generationMessages, extractDocument, validateDocument } from './generation.ts';
@@ -40,10 +40,11 @@ export class GenerationEngine implements Generator {
             return parseArtifact({html:code,method:'llm_code',provider:route.provider,model:actual,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts,fallback:route!==this.routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
           }catch(error){
             if(controller.signal.aborted)throw error;
+            if(error instanceof CloudOutputFailure){actual=error.actualModel;code=error.partial;}
             lastCode=error instanceof Fault?error.code:'LLM_NETWORK_OR_RESPONSE';
             attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:actual?'rejected':'failed',errorCode:lastCode,elapsedMs:Math.round(performance.now()-begin)});
             if(!actual||repair===this.repairs||lastCode==='BROWSER_INSTALL_REQUIRED')break;
-            messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
+            messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return concise complete HTML, below 250 lines, with little reasoning and no commentary.':'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
           }
         }
       }

@@ -22,6 +22,10 @@ export async function boundedText(response: Response, limit: number) {
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 export type Message = { role: 'system' | 'user' | 'assistant'; content: string };
+export class CloudOutputFailure extends Fault {
+  readonly actualModel:string;readonly partial:string;
+  constructor(model:string,partial:string){super('LLM_OUTPUT_TRUNCATED',502);this.actualModel=model;this.partial=partial.slice(0,200000);}
+}
 export interface CodeTransport {
   route: 'primary' | 'secondary' | 'local'; provider: string; model: string;
   complete(messages: Message[], signal: AbortSignal): Promise<{ code: string; model: string }>;
@@ -52,8 +56,9 @@ export class CloudTransport implements CodeTransport {
     try { return JSON.parse(await boundedText(response, 1_210_000)); } catch (error) { if (signal.aborted || error instanceof Fault) throw error; throw new Fault('LLM_INVALID_RESPONSE', 502); }
   }
   async complete(messages: Message[], signal: AbortSignal) {
-    const result = await this.request('chat/completions', signal, { model: this.model, messages, stream: false, [this.tokenField]: this.maxTokens, ...(this.temperature === undefined ? {} : { temperature: this.temperature }) });
+    const result = await this.request('chat/completions', signal, { model: this.model, messages, stream: false, [this.tokenField]: this.maxTokens, ...(this.provider==='openrouter'?{reasoning:{effort:'low',exclude:true}}:{}), ...(this.temperature === undefined ? {} : { temperature: this.temperature }) });
     const choice = result.choices?.[0];
+    if(!result.error&&choice?.finish_reason==='length'&&typeof result.model==='string'&&result.model.trim()&&result.model.length<=128)throw new CloudOutputFailure(result.model,typeof choice.message?.content==='string'?choice.message.content:'');
     if (result.error || choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string' || typeof result.model !== 'string' || !result.model.trim() || result.model.length > 128) throw new Fault('LLM_INVALID_RESPONSE', 502);
     // Free router intentionally reports the actual selected free model, not its router alias.
     return { code: choice.message.content, model: result.model };
