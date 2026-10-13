@@ -2,12 +2,13 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
 import { boundedText, requiredMethod } from './bgen.ts';
-import type { BGenAdapter } from './bgen.ts';
+import type { Generator } from './bgen.ts';
+import { demoArtifact } from './demo.ts';
 import type { Store } from './store.ts';
 import { PROJECT_ROOT } from './store.ts';
 import { resolve } from 'node:path';
 
-export function createApp(store: Store, adapter?: BGenAdapter) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) })) {
   const app = new Hono();
   app.use('*', async (c, next) => {
     c.header('X-Content-Type-Options', 'nosniff');
@@ -33,25 +34,33 @@ export function createApp(store: Store, adapter?: BGenAdapter) {
     return artifact;
   }
   app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 1 }));
+  app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 1, ...(await diagnostics() as object) }));
+  app.get('/api/games', c => c.json({ games: store.list() }));
+  app.post('/api/backups', async c => { object(await json(c.req.raw, 32), []); return c.json(await store.backup(), 201); });
+  function mode(value: unknown) { if (value !== undefined && value !== 'demo' && value !== 'live') throw new Fault('INVALID_MODE'); return value; }
   app.post('/api/games', async c => {
-    const body = object(await json(c.req.raw), ['spec', 'artifact', 'requiredMethod']);
-    const method = requiredMethod(body.requiredMethod);
+    const body = object(await json(c.req.raw), ['spec', 'artifact', 'requiredMethod', 'mode']);
+    const selected = mode(body.mode);
+    const method = requiredMethod(body.requiredMethod) ?? (selected === 'live' ? 'llm_code' : undefined);
+    if (selected === 'demo' && (method || body.artifact !== undefined)) throw new Fault('DEMO_CONTRACT_CONFLICT');
     if (method && body.artifact !== undefined) throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     const spec = parseSpec(body.spec);
-    if (!body.artifact && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
-    const artifact = body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, undefined, method);
+    if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
+    const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, undefined, method);
     return c.json(store.save(spec, artifact), 201);
   });
   app.get('/api/games/:gameId', c => c.json({ gameId: uuid(c.req.param('gameId')), versions: store.history(c.req.param('gameId')) }));
   app.post('/api/games/:gameId/versions', async c => {
-    const body = object(await json(c.req.raw), ['spec', 'previousVersionId', 'artifact', 'requiredMethod']);
-    const method = requiredMethod(body.requiredMethod);
+    const body = object(await json(c.req.raw), ['spec', 'previousVersionId', 'artifact', 'requiredMethod', 'mode']);
+    const selected = mode(body.mode);
+    const method = requiredMethod(body.requiredMethod) ?? (selected === 'live' ? 'llm_code' : undefined);
+    if (selected === 'demo' && (method || body.artifact !== undefined)) throw new Fault('DEMO_CONTRACT_CONFLICT');
     if (method && body.artifact !== undefined) throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     const previous = store.getVersion(uuid(body.previousVersionId));
     if (previous.gameId !== uuid(c.req.param('gameId'))) throw new Fault('PARENT_GAME_MISMATCH', 409);
     const spec = parseSpec(body.spec);
-    if (!body.artifact && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
-    const artifact = body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous, method);
+    if (!body.artifact && selected !== 'demo' && !adapter) throw new Fault('BGEN_NOT_CONFIGURED', 503);
+    const artifact = selected === 'demo' ? demoArtifact(spec) : body.artifact !== undefined ? importedArtifact(body.artifact) : await adapter!.generate(spec, previous, method);
     return c.json(store.save(spec, artifact, previous.versionId), 201);
   });
   app.get('/api/versions/:versionId', c => c.json(store.getVersion(c.req.param('versionId'))));
@@ -77,8 +86,14 @@ export function createApp(store: Store, adapter?: BGenAdapter) {
     const baseline = c.req.query('baselineVersionId');
     return c.json(baseline ? store.compare(c.req.param('versionId'), baseline) : store.analytics(c.req.param('versionId')));
   });
-  // Small browser integration library, no competing frontend. Build with npm run build.
-  for (const file of ['runtime', 'contracts']) app.get(`/runtime/${file}.js`, async c => {
+  // Same-origin UI. srcdoc inherits parent CSP, so inline game code/styles must be
+  // permitted here; the stricter GAME_CSP inside the opaque frame removes network.
+  app.get('/', async c => {
+    c.header('Content-Security-Policy', "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    return c.html(await readFile(resolve(PROJECT_ROOT, 'assets/index.html'), 'utf8'));
+  });
+  app.get('/ui/style.css', async c => c.body(await readFile(resolve(PROJECT_ROOT, 'assets/style.css'), 'utf8'), 200, { 'Content-Type': 'text/css; charset=utf-8' }));
+  for (const file of ['runtime', 'contracts', 'ui']) app.get(`/runtime/${file}.js`, async c => {
     try { return c.body(await readFile(resolve(PROJECT_ROOT, `build/src/${file}.js`), 'utf8'), 200, { 'Content-Type': 'text/javascript; charset=utf-8' }); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });

@@ -36,7 +36,7 @@ Hook запрещает **любой удалённый refs/heads/main**: об�
 
 Установка/запуск и команды продукта — в [README](../README.md). npm ci использует
 lockfile и проектный `.npmrc`; npm cache находится в `.local/npm-cache`.
-Приложение читает настройки из окружения процесса, а не автоматически из `.env`.
+npm start читает `.env`, если он существует; переменные процесса имеют приоритет.
 PORT по умолчанию 3000, YAPLIX_DB внутри `.local`, BGEN_URL опционален,
 BGEN_TIMEOUT_MS по умолчанию 30000, BGEN_INIT_DATA только server-side.
 Сохраните initData локально, не логируйте и обновляйте при истечении срока.
@@ -81,14 +81,17 @@ Actions закреплены SHA; Dependabot проверяет обновлен
 JSON body обязателен для POST. API принимает только loopback Host и same-origin
 Origin; непривязанный запрос из sandbox (Origin null) отклоняется. UI подключает
 API через тот же origin/proxy. Публичная авторизация и multi-user ownership
-пока отсутствуют — это локальная foundation.
+пока отсутствуют — это локальный MVP.
 
 | Операция | Контракт |
 | --- | --- |
+| GET /api/games | метаданные последних 50 игр, последняя версия каждой |
+| GET /api/diagnostics | integrity/FK/schema и безопасные сведения конфигурации |
+| POST /api/backups | `{}`; проверенный SQLite backup, filename/hash/schema |
 | GET /api/health | ok по integrity/FK, schemaVersion |
-| POST /api/games | `{spec, artifact?, requiredMethod?}`; без artifact вызывает BGen generate; ответ GameVersion, 201 |
+| POST /api/games | `{spec, mode?, artifact?, requiredMethod?}`; mode=demo — авторская игра, live — строгий LLM, без mode — legacy; ответ GameVersion, 201 |
 | GET /api/games/:gameId | gameId и история метаданных versions без HTML |
-| POST /api/games/:gameId/versions | `{spec, previousVersionId, artifact?, requiredMethod?}`; BGen iterate или mock import; 201 |
+| POST /api/games/:gameId/versions | `{spec, previousVersionId, mode?, artifact?, requiredMethod?}`; DEMO или LLM iteration либо mock import; 201 |
 | GET /api/versions/:versionId | полная GameVersion с HTML |
 | GET /api/versions/:versionId/export | exact HTML attachment; X-Content-SHA256 совпадает с GameVersion.sha256 |
 | POST /api/versions/:versionId/sessions | `{}`; sessionId, versionId, token, expiresAt, protocolVersion |
@@ -113,7 +116,7 @@ Invoke-RestMethod "http://127.0.0.1:3000/api/versions/$($version.versionId)/anal
 ```
 
 Импорт artifact разрешает только mock + unverified. Реальный llm_code проходит
-через серверный BGen Adapter с явным provenance. Клиент не может сертифицировать
+через серверный Ollama transport с BGen compiler или строгий BGen HTTP Adapter. Клиент не может сертифицировать
 свою игру как passed или переименовать fixture в LLM.
 requiredMethod допускает только `llm_code`; несовместим с artifact import.
 Для конкурсного запуска всегда указывать это поле. Пример запроса:
@@ -126,7 +129,7 @@ requiredMethod допускает только `llm_code`; несовмести�
 для первого запуска, spec, html, sha256 (64 hex), createdAt (UTC),
 method=llm_code, provider/model непустые строки, generationStatus=succeeded,
 validationStatus=unverified. Это схема ответа, не наблюдённый live-результат.
-При нынешнем endpoint ожидается HTTP 503 `{"error":"BGEN_LIVE_CONTRACT_REQUIRED"}`.
+При старом удалённом BGen endpoint ожидается HTTP 503 `{"error":"BGEN_LIVE_CONTRACT_REQUIRED"}`.
 
 UI получает версию и сессию, вызывает `mountGame(container, html, {sessionId,
 versionId}, onEvent)` и держит token у родителя. onEvent ставит события в
@@ -138,8 +141,8 @@ unmount удаляет frame/listener. Срок токена 1 час; для с
 После загрузки bridge посылает `yaplix_init` с protocolVersion=1 и IDs, без token.
 Игра отправляет `{channel:'yaplix', event:GameEvent}` через parent.postMessage;
 при отсутствии родителя просто пропускает отправку. Минимальный пример —
-[авторская fixture](../tests/fixtures/game.html). Это новый YAPLIX протокол,
-его внедрение в BGen ещё требуется; текущий BGen telemetry не считается игровым.
+[авторская fixture](../tests/fixtures/game.html). Это YAPLIX протокол; локальная LLM получает его контракт в промпте.
+Текущий BGen telemetry измеряет генерацию и не считается игровым.
 
 ## Предложение контракта для SKZHPRVT
 
@@ -271,3 +274,58 @@ configuration errors и отказ до POST при unsafe TLS/неподдер�
 Реальный endpoint проверен только HTTPS GET/preflight; live LLM, реальные игровые
 события/итерация и Android остаются NOT VERIFIED. Минимум готовности TASK-003
 не выполнен до исправления BGen и испытания настоящих артефактов.
+
+## TASK-004: локальный LIVE и обслуживание
+
+Единый UI открыт на `/`; build отдаёт `/runtime/ui.js`. DEMO всегда явно
+маркирован mock, provider=yaplix-authored-demo, model=null. Для LIVE установите
+Ollama/модель и pinned BGen по README; LIVE_PROVIDER=ollama выбирает только эту
+модель. POST /api/chat с stream=false возвращает полный ответ; проверяются done,
+model, размер, HTML и запрет внешних scripts/network. BGen compiler получает
+prompt/audience, полный GameSpec как требования и previousCode/previousPrompt
+в CompileOptions. При ошибке версия не сохраняется; шаблонной подмены нет.
+
+Встроенный backup использует SQLite online backup API, проверяет копию read-only
+по integrity_check, foreign_key_check, user_version=1 и каноническим SQL-определениям
+таблиц, ограничений и индексов, вычисляет SHA-256. Это
+согласованная копия даже при WAL; копирование только активного .sqlite не заменяет
+backup. Максимум 20 файлов backup-UUID.sqlite; имена принадлежат операции,
+существующие файлы не перезаписываются. Копия не сохраняет .env или модели.
+
+### Восстановление
+
+1. Остановите backend Ctrl+C, проверьте, что других YAPLIX процессов нет.
+2. `npm run verify:backup -- .local/backups/backup-UUID.sqlite <сохранённый SHA-256>`.
+   Команда ничего не записывает в копию; при несовпадении hash/схемы остановитесь.
+3. Сохраните текущее состояние: `npm run backup` (если база исправна), затем
+   переместите **целую** `.local/data` вместе с WAL/SHM в новую, ещё не существующую
+   `.local/recovery-<дата-время>`. Проверьте пути внутри клона. Не удаляйте оригинал.
+   Для нестандартного YAPLIX_DB переместите его отдельный каталог по тому же правилу.
+4. Создайте пустую `.local/data`, скопируйте проверенный backup как
+   `.local/data/yaplix.sqlite`. Старые WAL/SHM к новой базе не переносите.
+5. `npm run doctor`, `npm start`; откройте сохранённую игру, историю и экспорт.
+   При ошибке остановите backend, сохраните неудачную копию отдельным именем и
+   верните целый recovery-каталог. Автоматического restore через UI пока нет.
+
+Используйте native PowerShell Move-Item/Copy-Item/New-Item на Windows и mv/cp/mkdir
+на Ubuntu, только после проверки новых целевых имён; не смешивайте shells и
+не выполняйте recursive delete. Синтетический readback backup и restart проверяются
+тестами; реальные повреждённые пользовательские базы в этой задаче не восстанавливались.
+
+### Обновление без потери данных
+
+Остановите процесс и сделайте/проверьте backup. В чистом клоне на main:
+
+```sh
+git pull --ff-only origin main
+npm ci
+npm run bgen:install
+npm run build
+npm run doctor
+npm start
+```
+
+Если есть локальные изменения или ff-only не проходит, остановитесь и сохраните
+их в своей ветке; не применяйте reset/clean/force. `.local` и `.env` не заменяются
+Git/npm. После обновления проверьте предыдущую игру, версии, запуск и экспорт.
+Модель установлена отдельно и не удаляется обновлением приложения.

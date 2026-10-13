@@ -1,6 +1,6 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, backup } from 'node:sqlite';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Fault, parseArtifact, parseEvent, parseSpec, uuid } from './contracts.ts';
@@ -11,49 +11,64 @@ export const PROJECT_ROOT = existsSync(resolve(moduleParent, 'package.json')) ? 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 type Session = { session_id: string; version_id: string; token_hash: string; expires_at: number; last_sequence: number; last_timestamp: number | null; started_at: number | null; ended_at: number | null; outcome: string | null; score: number | null };
 type Metrics = { sessionCount: number; startedCount: number; completedCount: number; won: number; lost: number; meanDurationMs: number | null; meanScore: number | null };
+const SCHEMA_V1 = [
+  'CREATE TABLE games(game_id TEXT PRIMARY KEY, created_at TEXT NOT NULL) STRICT',
+  'CREATE TABLE versions(version_id TEXT PRIMARY KEY, game_id TEXT NOT NULL REFERENCES games(game_id), previous_version_id TEXT REFERENCES versions(version_id), html TEXT NOT NULL, bytes INTEGER NOT NULL CHECK(bytes<=200000), metadata TEXT NOT NULL, created_at TEXT NOT NULL) STRICT',
+  'CREATE INDEX versions_game ON versions(game_id, created_at)',
+  "CREATE TABLE sessions(session_id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES versions(version_id), token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, last_sequence INTEGER NOT NULL DEFAULT -1, last_timestamp INTEGER, started_at INTEGER, ended_at INTEGER, outcome TEXT CHECK(outcome IN ('game_won','game_lost')), score REAL) STRICT",
+  'CREATE INDEX sessions_version ON sessions(version_id)',
+  'CREATE TABLE events(event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(session_id), sequence INTEGER NOT NULL, payload TEXT NOT NULL, UNIQUE(session_id,sequence)) STRICT',
+];
+export function validSchema(db: DatabaseSync): boolean {
+  if (db.prepare('PRAGMA user_version').get()?.user_version !== 1) return false;
+  const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim();
+  const actual = db.prepare("SELECT sql FROM sqlite_schema WHERE substr(name,1,7) <> 'sqlite_' ORDER BY name").all().map(row => normalize(String(row.sql))).sort();
+  const expected = SCHEMA_V1.map(normalize).sort();
+  return actual.length === expected.length && actual.every((sql, i) => sql === expected[i]);
+}
+export function healthyDatabase(db: DatabaseSync): boolean {
+  return validSchema(db) && db.prepare('PRAGMA integrity_check').get()?.integrity_check === 'ok' && db.prepare('PRAGMA foreign_key_check').all().length === 0;
+}
+export function managedPath(path: string, createParents = true): string {
+  const managed = resolve(PROJECT_ROOT, '.local');
+  const target = resolve(PROJECT_ROOT, path);
+  const rel = relative(managed, target);
+  if (isAbsolute(rel) || rel.startsWith('..') || !rel) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  // lstat catches dangling file links too; exists/realpath alone cannot do that.
+  for (let part = target; relative(PROJECT_ROOT, part) !== ''; part = dirname(part)) {
+    if (dirname(part) === part) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+    try { if (lstatSync(part).isSymbolicLink()) throw new Fault('DB_LINK_FORBIDDEN'); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+  }
+  // Verify the nearest existing parent before recursive mkdir can follow a junction.
+  let parent = dirname(target);
+  while (!existsSync(parent)) parent = dirname(parent);
+  const nearest = relative(realpathSync(PROJECT_ROOT), realpathSync(parent));
+  if (isAbsolute(nearest) || nearest.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  if (createParents) mkdirSync(dirname(target), { recursive: true });
+  if (existsSync(dirname(target))) {
+    const actual = relative(realpathSync(PROJECT_ROOT), realpathSync(dirname(target)));
+    if (isAbsolute(actual) || actual.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  }
+  // Existing DB symlinks may point outside even when the directory is safe.
+  try { const r = relative(realpathSync(managed), realpathSync(target)); if (isAbsolute(r) || r.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT'); }
+  catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+  return target;
+}
 export class Store {
   db: DatabaseSync;
+  private backingUp = false;
   constructor(path = '.local/data/yaplix.sqlite') {
-    if (path !== ':memory:') {
-      const managed = resolve(PROJECT_ROOT, '.local');
-      const target = resolve(PROJECT_ROOT, path);
-      const rel = relative(managed, target);
-      if (isAbsolute(rel) || rel.startsWith('..') || !rel) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-      // lstat catches dangling file links too; exists/realpath alone cannot do that.
-      for (let part = target; relative(PROJECT_ROOT, part) !== ''; part = dirname(part)) {
-        if (dirname(part) === part) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-        try { if (lstatSync(part).isSymbolicLink()) throw new Fault('DB_LINK_FORBIDDEN'); }
-        catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
-      }
-      // Verify the nearest existing parent before recursive mkdir can follow a junction.
-      let parent = dirname(target);
-      while (!existsSync(parent)) parent = dirname(parent);
-      const nearest = relative(realpathSync(PROJECT_ROOT), realpathSync(parent));
-      if (isAbsolute(nearest) || nearest.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-      mkdirSync(dirname(target), { recursive: true });
-      const actual = relative(realpathSync(PROJECT_ROOT), realpathSync(dirname(target)));
-      if (isAbsolute(actual) || actual.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-      // Existing DB symlinks may point outside even when the directory is safe.
-      try { const r = relative(realpathSync(managed), realpathSync(target)); if (isAbsolute(r) || r.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT'); }
-      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
-      path = target;
-    }
+    if (path !== ':memory:') path = managedPath(path);
     this.db = new DatabaseSync(path);
     try {
       this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000;');
       const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
       if (version > 1) throw new Fault('SCHEMA_TOO_NEW', 500);
       if (version === 0) this.transaction(() => {
-        this.db.exec(`
-          CREATE TABLE games(game_id TEXT PRIMARY KEY, created_at TEXT NOT NULL) STRICT;
-          CREATE TABLE versions(version_id TEXT PRIMARY KEY, game_id TEXT NOT NULL REFERENCES games(game_id), previous_version_id TEXT REFERENCES versions(version_id), html TEXT NOT NULL, bytes INTEGER NOT NULL CHECK(bytes<=200000), metadata TEXT NOT NULL, created_at TEXT NOT NULL) STRICT;
-          CREATE INDEX versions_game ON versions(game_id, created_at);
-          CREATE TABLE sessions(session_id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES versions(version_id), token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, last_sequence INTEGER NOT NULL DEFAULT -1, last_timestamp INTEGER, started_at INTEGER, ended_at INTEGER, outcome TEXT CHECK(outcome IN ('game_won','game_lost')), score REAL) STRICT;
-          CREATE INDEX sessions_version ON sessions(version_id);
-          CREATE TABLE events(event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(session_id), sequence INTEGER NOT NULL, payload TEXT NOT NULL, UNIQUE(session_id,sequence)) STRICT;
-          PRAGMA user_version=1;
-        `);
+        this.db.exec(SCHEMA_V1.join(';\n') + '; PRAGMA user_version=1;');
       });
+      if (!validSchema(this.db)) throw new Fault('SCHEMA_INVALID', 500);
     } catch (e) { this.db.close(); throw e; }
   }
   transaction<T>(action: () => T): T {
@@ -62,11 +77,29 @@ export class Store {
     catch (e) { this.db.exec('ROLLBACK'); throw e; }
   }
   close() { this.db.close(); }
-  integrity() { return this.db.prepare('PRAGMA integrity_check').get()?.integrity_check === 'ok' && this.db.prepare('PRAGMA foreign_key_check').all().length === 0; }
+  integrity() { return healthyDatabase(this.db); }
   getVersion(id: string): GameVersion {
     const row = this.db.prepare('SELECT html,metadata FROM versions WHERE version_id=?').get(uuid(id));
     if (!row) throw new Fault('VERSION_NOT_FOUND', 404);
     return { ...JSON.parse(row.metadata as string), html: row.html } as GameVersion;
+  }
+  list() {
+    return this.db.prepare('SELECT metadata FROM versions WHERE rowid IN (SELECT MAX(rowid) FROM versions GROUP BY game_id) ORDER BY rowid DESC LIMIT 50').all().map(row => JSON.parse(row.metadata as string));
+  }
+  async backup() {
+    if (this.backingUp) throw new Fault('BACKUP_BUSY', 409);
+    this.backingUp = true;
+    try {
+      const filename = `backup-${randomUUID()}.sqlite`;
+      const target = managedPath(`.local/backups/${filename}`);
+      if (readdirSync(dirname(target)).filter(name => /^backup-[0-9a-f-]+\.sqlite$/.test(name)).length >= 20) throw new Fault('BACKUP_QUOTA', 507);
+      await backup(this.db, target);
+      const copy = new DatabaseSync(target, { readOnly: true });
+      try {
+        if (!healthyDatabase(copy)) throw new Fault('BACKUP_INVALID', 500);
+      } finally { copy.close(); }
+      return { filename, sha256: createHash('sha256').update(readFileSync(target)).digest('hex'), schemaVersion: 1, verified: true };
+    } finally { this.backingUp = false; }
   }
   history(id: string) {
     const gameId = uuid(id);

@@ -1,10 +1,12 @@
-# Архитектура платформы (TASK-002 / TASK-003)
+# Архитектура YAPLIX MVP (TASK-002–004)
 
 ## Реализованная вертикаль
 
 ```mermaid
 flowchart LR
-  UI[UI jeanhayl] --> API[Hono API]
+  UI[Встроенный UI / ui.ts] --> API[Hono API]
+  API --> Demo[Авторский DEMO]
+  API --> Local[BGen compiler + Ollama]
   API --> Adapter[BGen HTTP Adapter]
   Adapter --> BGen[BGen SKZHPRVT]
   API --> DB[(SQLite)]
@@ -15,11 +17,12 @@ flowchart LR
 
 Это один локальный процесс, а не набор сервисов. `src/api.ts` управляет записью
 игр/версий, сессиями и событиями; `src/store.ts` хранит HTML и метаданные;
-`src/bgen.ts` вызывает генератор. Полноценный UI остаётся за jeanhayl, генерация
-и доработка кода — за SKZHPRVT. Бренд YAPLIX сохранён.
+`src/bgen.ts` сохраняет HTTP-интеграцию, `src/live.ts` использует опубликованный
+BGen compiler и прямой явный Ollama transport. Минимальный UI assets/ui.ts встроен
+в YAPLIX и не требует отдельного репозитория. Бренд YAPLIX сохранён.
 
 Стек: Node 24.18+, TypeScript, Hono + Node adapter, встроенный `node:sqlite`,
-prepared SQL без ORM. Версия приложения 0.0.1 — внутренний foundation, без релиза.
+prepared SQL без ORM. Версия приложения 0.0.1 — локальный MVP, без публичного релиза.
 SQLite API на Node 24 пока experimental; используется только проверенный небольшой
 набор DatabaseSync/prepare/transaction. Синхронный SQL подходит ограниченной
 локальной демонстрации; production concurrency и auth — последующие задачи.
@@ -120,12 +123,13 @@ previousCodeSha256, capabilities.previousCode должен быть true. Это
 генератора: две независимые игры, затем изменение первой, SQLite и точный экспорт
 с readback/hash. При ошибке сохраняет partial evidence и выходит с кодом 1;
 отсутствие событий записывает как not_observed, проверку браузером — not_run.
-Артефакты и run database игнорируются Git. При нынешнем endpoint preflight
-останавливается до generation POST, версий нет. Полная цель TASK-003 не достигнута.
+Артефакты и run database игнорируются Git. При старом удалённом endpoint preflight
+останавливается до generation POST. TASK-004 предоставляет отдельный безопасный
+локальный путь; ограничения remote endpoint не обходятся.
 
 ## Runtime и Mobile First
 
-`mountGame` — маленькая библиотека для UI, не второй frontend. iframe sandbox
+`mountGame` — библиотека встроенного UI. iframe sandbox
 содержит только allow-scripts: origin opaque, без same-origin, popups, forms,
 top navigation и доступа к storage/DOM платформы. CSP предшествует HTML:
 default-src none, connect/frame/worker/object/form/base запрещены; inline script
@@ -161,3 +165,40 @@ Read-only README MyDevelop использован для принципов proj
 doctor/check/test, доказательных проверок и явного Git-манифеста; инфраструктура,
 данные и конфигурация других проектов не копировались, внешних локальных
 зависимостей нет. TASK-001 hooks и Python-проверки сохранены.
+
+## TASK-004: compiler-only LIVE, UI и backup
+
+`scripts/install-bgen.ts` клонирует pinned MIT BGen внутри .local. Перед импортом
+проверяются SHA, tracked source diff и отсутствие выхода через links. Импортируются
+только prompt/compiler и зависимости классификации/правил, analyze/extractor,
+analyze/security и utils/strip. Router, templates, GigaChat и HTTP server отсутствуют
+в import graph. Поэтому unsafe SHA запрещён для полного удалённого сервиса, но
+reviewed pure compiler modules этого SHA допустимы локально. Это явная интеграция
+готового prompt compiler, не исправление внешнего BGen и не скрытый template path.
+
+LocalCodeAdapter отправляет system/user BGen и GameSpec в Ollama /api/chat,
+stream=false, think=false. Возвращённые done/model/content проверяются; incomplete,
+oversized, внешние scripts и runtime-network отклоняются. HTTP допустим только
+на loopback, остальные URL требуют HTTPS; credentials/query/redirect и глобальный
+TLS bypass запрещены. Timeout покрывает body, одна генерация на adapter; нет
+автоматической смены модели/fallback. HTML извлекается штатным BGen extractor,
+не заменяется authored игрой, validation остаётся unverified.
+
+Для iteration previousCode/previousPrompt передаются именно в CompileOptions;
+новая версия ссылается на исходную и сохраняет новый hash. Contract message shape
+добавляется в prompt как инструкция модели, не внедряется в готовый HTML. Модель
+может ошибиться в игре/bridge — это требует наблюдения и следующего запроса на
+исправление. Статический security check и provenance не доказывают играбельность.
+
+UI пользуется только same-origin API и textContent для пользовательских строк.
+Родительский CSP разрешает inline scripts/styles из-за наследования CSP в srcdoc;
+GAME_CSP перед недоверенным HTML запрещает сеть и внешние ресурсы. Token остаётся
+в родителе. Replay создаёт новую сессию и iframe. События сохраняются serial queue
+с тремя idempotent retry; после ошибки UI сообщает несохранённое событие. Долговечной
+offline-очереди нет. Отсутствие событий не считается успешным прохождением игры.
+
+Online SQLite backup включает всю базу и проверяется read-only: integrity/FK и каноническая схема всех таблиц, ограничений и индексов
+со SHA-256. Имена UUID, лимит 20, одновременный backup на Store отклоняется. CLI verify
+требует сохранённый SHA и не изменяет копию. Restore вручную после остановки сервера
+с сохранением целого старого каталога; обновление main только ff-only с backup.
+SQLite schema остаётся 1; новый UI не создаёт параллельное хранилище.

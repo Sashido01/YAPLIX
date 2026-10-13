@@ -37,6 +37,7 @@ export async function boundedText(response: Response, max: number): Promise<stri
 }
 
 export interface BGenOptions { url: string; timeoutMs?: number; initData?: string }
+export interface Generator { generate(spec: GameSpec, previous?: GameVersion, requestedMethod?: 'llm_code'): Promise<Artifact> }
 function upstreamArtifact(value: unknown): Artifact {
   try { return parseArtifact(value); }
   catch { throw new Fault('BGEN_INVALID_ARTIFACT', 502); }
