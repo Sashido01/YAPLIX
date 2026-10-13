@@ -56,6 +56,11 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   }
   app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 1 }));
   app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 1, ...(await diagnostics() as object) }));
+  app.get('/api/connection/qr.svg', async c => {
+    if (policy?.mode !== 'lan' || !policy.origin) throw new Fault('LAN_QR_UNAVAILABLE', 409);
+    const { connectionQr } = await import('./qr.ts');
+    return c.body(connectionQr(policy.origin), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
+  });
   app.get('/api/games', c => c.json({ games: store.list() }));
   app.post('/api/backups', async c => { object(await json(c.req.raw, 32), []); return c.json(await store.backup(), 201); });
   function mode(value: unknown) { if (value !== undefined && value !== 'demo' && value !== 'live') throw new Fault('INVALID_MODE'); return value; }
@@ -116,7 +121,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return staticFile(c, 'assets/index.html', 'text/html; charset=utf-8', false);
   });
   app.get('/ui/style.css', c => staticFile(c, 'assets/style.css', 'text/css; charset=utf-8'));
-  for (const file of ['ui', 'access-ui']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['ui', 'access-ui', 'connection-ui']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });

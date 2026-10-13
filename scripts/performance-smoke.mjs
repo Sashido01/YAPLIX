@@ -14,9 +14,7 @@ const base=process.env.PERF_URL??'http://127.0.0.1:3230';
 browser=await chromium.launch();
 const runs=[];
 const spec={prompt:'Собери 3 груза',audience:'default',genre:'unknown',mechanics:[],controls:['touch','keyboard'],responsive:true,webview:true};
-let games=await(await fetch(base+'/api/games')).json();
-if(!games.games.length){await fetch(base+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})});games=await(await fetch(base+'/api/games')).json();}
-const artifact=await(await fetch(base+'/api/versions/'+games.games[0].versionId)).json();
+const artifact=await(await fetch(base+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();
 const embedded=tag=>[...artifact.html.matchAll(new RegExp('<'+tag+'(?:\\s[^>]*)?>([\\s\\S]*?)</'+tag+'>','gi'))].reduce((sum,m)=>sum+Buffer.byteLength(m[1]),0);
 const gameSize={htmlBytes:Buffer.byteLength(artifact.html),inlineJsBytes:embedded('script'),inlineCssBytes:embedded('style'),externalReferences:[...artifact.html.matchAll(/(?:src|href)=["'](https?:[^"']*)/gi)].map(m=>m[1])};
 const api=[];for(let i=0;i<10;i++){const start=performance.now();const r=await fetch(base+'/api/games');await r.json();api.push(performance.now()-start);}
@@ -32,7 +30,7 @@ try{for(let i=0;i<7;i++){
   await page.locator('#games button').first().tap();const game=page.frameLocator('#game iframe');await expect(game.getByRole('button',{name:'Старт',exact:true})).toBeVisible();const launch=performance.now()-begin;
   await game.getByRole('button',{name:'Старт',exact:true}).tap();const frame=page.frames().find(f=>f!==page.mainFrame());
   await frame.evaluate(()=>{window.touchLag=null;let start=0;document.addEventListener('pointerdown',()=>start=performance.now(),{capture:true});new MutationObserver(()=>{if(start)window.touchLag=performance.now()-start;}).observe(document.querySelector('#score'),{childList:true,subtree:true,characterData:true});});
-  await game.getByRole('button',{name:'Груз',exact:true}).tap();await expect(game.locator('#score')).toHaveText('1');
+  await game.getByRole('button',{name:'Вправо',exact:true}).tap();await expect(game.locator('#score')).toHaveText('1');
   const touch=await frame.evaluate(()=>window.touchLag);
   const frameTimes=await frame.evaluate(()=>new Promise(done=>{const periods=[];let before=performance.now();function tick(t){periods.push(t-before);before=t;if(periods.length<61)requestAnimationFrame(tick);else done(periods.slice(1));}requestAnimationFrame(tick);}));
   const metrics=await cdp.send('Performance.getMetrics');expect(errors).toEqual([]);

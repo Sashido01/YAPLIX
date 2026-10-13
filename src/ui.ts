@@ -11,7 +11,7 @@ const errors: Record<string, string> = {
   LLM_BUSY:'Другая генерация ещё завершается. Повторите позже.',
   LLM_TIMEOUT:'Модель не ответила вовремя. Попробуйте уточнить запрос.',
   LLM_INVALID_RESPONSE:'Модель вернула неполный ответ. Игра не сохранена.',
-  LLM_UNSAFE_ARTIFACT:'Модель вернула запрещённые зависимости. Уточните запрос.',
+  LLM_UNSAFE_ARTIFACT:'Код не прошёл проверку безопасности после попытки исправления моделью. Уточните запрос.',
   LLM_HTTP:'LLM вернула ошибку. Проверьте запуск модели и её ресурсы.',
   LLM_NETWORK_OR_RESPONSE:'Не удалось получить полный ответ LLM. Проверьте Ollama.',
   BGEN_LIVE_CONTRACT_REQUIRED:'Удалённый BGen пока не поддерживает безопасный LIVE-контракт.',
@@ -104,10 +104,12 @@ el('replay').addEventListener('click',()=>{if(current)void attempt(signal=>play(
 el('versions').addEventListener('change',()=>void attempt(async signal=>show(await readVersion(el<HTMLSelectElement>('versions').value,signal),signal)));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.addEventListener('click',()=>{const screen=button.dataset.view!;if(screen==='play'&&current&&!unmount)void attempt(async signal=>{view(screen);await play(current!,signal);});else view(screen);}));
 el('focus-game').addEventListener('click',()=>{const active=document.body.classList.toggle('game-focus');el('focus-game').textContent=active?'Обычный экран':'Игровой экран';});
-async function diagnose(){const data=await api('/api/diagnostics');el('system-info').textContent=`База: ${data.ok?'исправна':'ошибка'}. LIVE: ${data.liveConfigured?(data.provider??'BGen')+' / '+(data.model??'по API'):'не настроен'}. BGen library: ${data.bgenReady?'установлена':'для Ollama выполните npm run bgen:install'}.`;}
+let diagnosing=false;
+async function diagnose(){if(diagnosing)return;diagnosing=true;try{const path='/runtime/connection-ui.js';await (await import(path) as typeof import('./connection-ui.ts')).diagnose();}finally{diagnosing=false;}}
+el('system').addEventListener('toggle',()=>{if(el<HTMLDetailsElement>('system').open)void diagnose().catch(()=>{el('system-info').textContent='Статус не подтверждён. Проверьте сборку и доступность API.';});});
 el('diagnostics').addEventListener('click',()=>{el<HTMLDetailsElement>('system').open=true;void attempt(async()=>{await diagnose();el('system').scrollIntoView({block:'start'});});});
 el('backup').addEventListener('click',()=>void attempt(async signal=>{const copy=await api('/api/backups',{},undefined,signal);el('backup-result').textContent=`Копия проверена и сохранена в .local/backups/${copy.filename}. SHA-256: ${copy.sha256}`;}));
-window.addEventListener('offline',()=>{el('connection').hidden=false;});window.addEventListener('online',()=>{el('connection').hidden=true;});
+window.addEventListener('offline',()=>{el('connection').hidden=false;});window.addEventListener('online',()=>{void api('/api/health').catch(()=>{el('connection').hidden=false;});});
 try{prompt.value=sessionStorage.getItem('yaplix-draft')??prompt.value;}catch{}
 prompt.addEventListener('input',()=>{try{sessionStorage.setItem('yaplix-draft',prompt.value);}catch{}});
 window.visualViewport?.addEventListener('resize',()=>{document.body.dataset.keyboard=String(innerHeight-visualViewport!.height-visualViewport!.offsetTop>150);});

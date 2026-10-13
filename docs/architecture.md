@@ -184,6 +184,28 @@ TLS bypass запрещены. Timeout покрывает body, одна ген�
 автоматической смены модели/fallback. HTML извлекается штатным BGen extractor,
 не заменяется authored игрой, validation остаётся unverified.
 
+TASK-006 адаптирует именно exported HARD_RULES_BLOCK, OUTPUT_FORMAT_BLOCK и
+QUALITY_REMINDER закреплённого BGen: его host требует внешних bgen:input controls,
+запрещает собственные кнопки и предлагает бесконечный rAF. Эти целые блоки
+заменены контрактом YAPLIX (собственные controls, CSS world coordinates / DPR,
+background pause, события). Classifier, genre/audience/mechanics и iteration
+compiler сохраняются. Если ожидаемые блоки изменились, adapter fail-closed.
+Файлы внешнего BGen не редактируются, HTML всё равно полностью пишет модель.
+В compiler передаётся supported explicit theme="": полная пользовательская тема
+остаётся в raw prompt, но substring «победа» больше не добавляет «еда».
+Явный поддерживаемый GameSpec.genre имеет приоритет; для арканоида/кирпичей
+breakout rule и derived spec заменяют ошибочный shooter от слова «стрелками».
+Исходный запрос и previous HTML сохраняются дословно. Очевидные literal payload
+с лишним score в lifecycle events также направляются на ограниченный repair.
+
+TASK-006: security rejection (включая native dialogs) передаётся модели вместе
+с предыдущим ответом для одной попытки исправления. Общие timeout/abort/busy
+не сбрасываются; оба ответа проверяются одинаково. Повторное нарушение — ошибка,
+никакого ослабления sandbox/валидатора или сохранения unsafe HTML.
+Дополнительно проверяются обязательные маркеры bridge и visibilitychange для
+анимированных игр. Это статическая проверка присутствия, не доказательство
+корректной работы handlers; сохранённая provenance остаётся unverified.
+
 Для iteration previousCode/previousPrompt передаются именно в CompileOptions;
 новая версия ссылается на исходную и сохраняет новый hash. Contract message shape
 добавляется в prompt как инструкция модели, не внедряется в готовый HTML. Модель
@@ -206,11 +228,19 @@ SQLite schema остаётся 1; новый UI не создаёт паралл
 ## TASK-005: mobile shell, сетевые режимы и жизненный цикл
 
 Browser/WebView → один origin UI/API → серверный generator → исходный HTML.
-По умолчанию `networkPolicy` разрешает только loopback. LAN launcher выбирает
-существующий RFC1918 IPv4 интерфейс и печатает случайный URL-safe access key
+По умолчанию `networkPolicy` разрешает только loopback. LAN launcher перечисляет
+RFC1918 IPv4 интерфейсы и требует явный --host, проверяет наличие адреса/порт;
+после успешного listen печатает URL и постоянный URL-safe access key
 локально. HTTPS mode слушает loopback за reverse proxy, требует PUBLIC_URL,
 точный Host/Origin и X-Forwarded-Proto=https. Public URL не может содержать
 credentials, path/query/hash. Не доверяем произвольному forwarded IP для auth.
+
+connection-ui — отдельный ленивый bundle, загружаемый при диагностике; проверяет
+API/SQLite/сборку и фактическую модель Ollama. Сервер лениво импортирует
+qrcode-generator для authenticated QR SVG. Клиент отображает SVG через blob img,
+освобождает URL; начальный UI bundle не содержит QR encoder. QR не несёт секретов.
+DEMO — авторское пошаговое поле 6×5 с перемещением, сбором и столкновениями;
+рисование только по input/resize, без постоянного animation/polling loop.
 
 В LAN/HTTPS все data API, диагностика, экспорт и backup требуют cookie;
 без входа доступны только login HTML/CSS/JS. Ключ сверяется через constant-time

@@ -2,8 +2,10 @@ import { Store, managedPath, healthyDatabase } from '../src/store.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { configuredGenerator, LocalCodeAdapter, checkBGen, BGEN_REVISION } from '../src/live.ts';
-import { boundedText } from '../src/bgen.ts';
+import { configuredGenerator } from '../src/live.ts';
+import { liveReadiness, missingProductionFiles } from '../src/diagnostics.ts';
+import { networkPolicy } from '../src/access.ts';
+import { checkHost, checkPort } from '../src/network.ts';
 import { Fault } from '../src/contracts.ts';
 const command = process.argv[2];
 let store: Store | undefined;
@@ -19,16 +21,17 @@ try {
     console.log(JSON.stringify({ verified: true, sha256, schemaVersion: 1 }));
   } else if (command === 'backup') { store = new Store(process.env.YAPLIX_DB); console.log(JSON.stringify(await store.backup(), null, 2)); }
   else if (command === 'doctor') {
-    store = new Store(process.env.YAPLIX_DB);
-    const adapter = configuredGenerator(); let bgenReady = false, modelReady: boolean | null = null;
-    try { checkBGen(); bgenReady = true; } catch { /* Optional in DEMO. */ }
-    if (adapter instanceof LocalCodeAdapter) {
-      try { const response = await fetch(`${adapter.url}/api/tags`, { redirect: 'error', signal: AbortSignal.timeout(3000) }); const data = JSON.parse(await boundedText(response, 100_000)); modelReady = response.ok && data.models?.some((m: { name: string }) => m.name === adapter.model) === true; }
-      catch { modelReady = false; }
-    }
-    const ok = store.integrity();
-    console.log(JSON.stringify({ ok, nodeVersion: process.version, demoReady: ok, liveConfigured: Boolean(adapter), provider: adapter instanceof LocalCodeAdapter ? adapter.provider : adapter ? 'bgen' : null, model: adapter instanceof LocalCodeAdapter ? adapter.model : null, modelReady, bgenReady, bgenRevision: bgenReady ? BGEN_REVISION : null }, null, 2));
-    if (!ok || adapter instanceof LocalCodeAdapter && (!bgenReady || !modelReady)) process.exitCode = 1;
+    const failures: string[] = [], code = (e: unknown) => e instanceof Fault ? e.code : 'DATABASE_OR_CONFIGURATION_ERROR';
+    let mode: string | null = null, address: string | null = null, port: number | null = null;
+    try { const policy = networkPolicy(); mode = policy.mode; address = policy.host; port = policy.port; checkHost(policy); await checkPort(policy); } catch (e) { failures.push(code(e)); }
+    const missingAssets = missingProductionFiles(); if (missingAssets.length) failures.push('RUNTIME_BUILD_REQUIRED');
+    let databaseReady = false;
+    try { store = new Store(process.env.YAPLIX_DB); databaseReady = store.integrity(); if (!databaseReady) failures.push('DATABASE_INTEGRITY'); } catch (e) { failures.push(code(e)); }
+    let live: Awaited<ReturnType<typeof liveReadiness>> | undefined;
+    try { live = await liveReadiness(configuredGenerator()); if (live.liveConfigured && !live.liveReady) failures.push('LIVE_' + live.llmState.toUpperCase()); } catch (e) { failures.push(code(e)); }
+    const ok = failures.length === 0;
+    console.log(JSON.stringify({ ok, nodeVersion: process.version, mode, address, port, databaseReady, demoReady: databaseReady && !missingAssets.length, missingAssets, ...live, failures, note: 'Порт проверяется для нового запуска. PORT_IN_USE может означать уже запущенный сервер. Доступность телефона и firewall не проверены.' }, null, 2));
+    if (!ok) process.exitCode = 1;
   } else throw new Fault('USAGE: npm run doctor | npm run backup | npm run verify:backup -- path sha256');
 } catch (error) { console.error(error instanceof Fault ? error.code : 'MAINTENANCE_FAILED'); process.exitCode = 1; }
 finally { store?.close(); }
