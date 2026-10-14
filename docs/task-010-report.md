@@ -166,13 +166,23 @@ Memory probe оставил 1 iframe после 40 циклов; историч�
 Negative valid-HMAC/wrong-buildId включён; launcher+tunnel subset: 14 PASS;
 отдельный reviewed engine/recovery/bot subset: 52 PASS. npm audit --omit=dev:
 0 vulnerabilities. Независимый source security review не оставил P1/P2 findings.
-Counts разных запусков
-не складываются в один full-suite результат. Старый полный browser run имел
-216 PASS/155 intentional skips/1 FAIL из-за устаревшего metadata assertion;
-после исправления targeted generation/jobs run дал 11 PASS/7 skips. Полный
-current-head unit/browser rerun предстоит подтвердить hosted CI; ожидаемые counts
-не объявляются результатом. Current-head CI и post-merge smoke
-фиксируются после их выполнения. Source changes и единичный внешний ответ сами
+Counts разных запусков не складываются в один full-suite результат. После исправления
+устаревшего metadata assertion targeted generation/jobs run дал 11 PASS/7 skips.
+Следующий полный browser run: 216 PASS/155 intentional skips/1 FAIL — Chromium
+ERR_NO_BUFFER_SPACE на page.goto до открытия страницы. Изолированный повтор
+jobs/chromium-390: 2 PASS/1 intentional skip, включая упавший scenario; source/tests
+ради обхода ошибки не менялись. Полный current-head browser результат ещё должен
+подтвердить hosted CI. Current-head CI и post-merge smoke фиксируются после выполнения.
+
+Независимый чистый клон implementation commit `6faa02f` без `.env` и node_modules
+прошёл автоматический npm ci из project cache, build, HTTP readiness, persistent
+DEMO job, HTML export и явное сохранение authored game без duplicate version.
+Реальный `cmd.exe /d /c "YAPLIX.cmd --no-open"` в этом клоне завершился exit 0
+и переиспользовал тот же backend. Закрытие attached launcher не остановило backend;
+после проверки закрыты только собственные процессы. Это CMD automation, не physical
+double-click/device proof. Evidence: `.local/task-010/clean-clone-evidence.log`.
+
+Source changes и единичный внешний ответ сами
 по себе не являются PASS tests или готовностью конкурсной демонстрации.
 
 ## Не подтверждено
