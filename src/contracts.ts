@@ -1,7 +1,7 @@
 // Pure validators shared by the API and the browser bridge. No Node dependencies.
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_EVENT_BYTES = 4096;
-export const methods = ['llm_code', 'template_config', 'mock', 'fallback'] as const;
+export const methods = ['llm_code', 'template_config', 'mock', 'fallback','authored'] as const;
 export const eventTypes = ['game_ready', 'game_started', 'score_changed', 'game_won', 'game_lost', 'session_ended', 'game_error'] as const;
 export type GenerationMethod = typeof methods[number];
 export type EventType = typeof eventTypes[number];
@@ -21,7 +21,7 @@ export interface Artifact {
   model: string | null;
   generationStatus: 'succeeded' | 'failed';
   validationStatus: 'unverified' | 'passed' | 'failed';
-  generation?: { attempts: GenerationAttempt[]; fallback: boolean; elapsedMs: number; browser: { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause' } };
+  generation?: { attempts: GenerationAttempt[]; fallback: boolean; elapsedMs: number; browser: { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause';levels?:string[] } };
 }
 export interface GenerationAttempt { route: 'primary' | 'secondary' | 'local'; provider: string; requestedModel: string; model: string | null; outcome: 'accepted' | 'rejected' | 'failed'; errorCode: string | null; elapsedMs: number; requestMs?:number;validationMs?:number;outputTokens?:number;reasoningTokens?:number }
 export interface GameVersion extends Artifact {
@@ -89,10 +89,11 @@ export function parseArtifact(value: unknown): Artifact {
     const timing=(v:unknown)=>{if(!Number.isSafeInteger(v)||(v as number)<0||(v as number)>300000)throw new Fault('INVALID_GENERATION_METADATA');return v as number;};
     if(!Array.isArray(g.attempts)||!g.attempts.length||g.attempts.length>9||typeof g.fallback!=='boolean')throw new Fault('INVALID_GENERATION_METADATA');
     const attempts=g.attempts.map(v=>{const a=object(v,['route','provider','requestedModel','model','outcome','errorCode','elapsedMs','requestMs','validationMs','outputTokens','reasoningTokens']);const tokens:Partial<GenerationAttempt>={};for(const name of ['requestMs','validationMs'] as const){if(a[name]!==undefined)tokens[name]=timing(a[name]);}for(const name of ['outputTokens','reasoningTokens'] as const){if(a[name]!==undefined){if(!Number.isSafeInteger(a[name])||(a[name] as number)<0||(a[name] as number)>1000000)throw new Fault('INVALID_GENERATION_METADATA');tokens[name]=a[name] as number;}}return{route:choice(a.route,['primary','secondary','local'] as const),provider:string(a.provider,128),requestedModel:string(a.requestedModel,128),model:a.model===null?null:string(a.model,128),outcome:choice(a.outcome,['accepted','rejected','failed'] as const),errorCode:a.errorCode===null?null:string(a.errorCode,128),elapsedMs:timing(a.elapsedMs),...tokens};});
-    const b=object(g.browser,['profiles','offline','errors','scope']);
+    const b=object(g.browser,['profiles','offline','errors','scope','levels']);
+    const levels=['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'];if(b.levels!==undefined&&JSON.stringify(b.levels)!==JSON.stringify(levels))throw new Fault('INVALID_GENERATION_METADATA');
     if(JSON.stringify(b.profiles)!=='[320,390]'||b.offline!==true||b.errors!==0||b.scope!=='startup-input-pause'||artifact.method!=='llm_code'||artifact.validationStatus!=='passed')throw new Fault('INVALID_GENERATION_METADATA');
     const final=attempts.at(-1)!;if(final.outcome!=='accepted'||final.errorCode!==null||final.provider!==artifact.provider||final.model!==artifact.model)throw new Fault('INVALID_GENERATION_METADATA');
-    artifact.generation={attempts,fallback:g.fallback,elapsedMs:timing(g.elapsedMs),browser:{profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause'}};
+    artifact.generation={attempts,fallback:g.fallback,elapsedMs:timing(g.elapsedMs),browser:{profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',...(b.levels?{levels}:{})}};
   }
   return artifact;
 }

@@ -19,7 +19,10 @@ ID — положительное число, не @username. Публичный
 @YaplixBot, затем выполните `npm run telegram:id`. Read-only getUpdates показывает
 только числовые ID отправителей в приватном чате, без имён/сообщений и без добавления
 в allowlist. Выберите свой ID и впишите локально. Активный webhook может блокировать
-getUpdates; инструмент его не удаляет. Другой вариант — `/start` стороннему
+getUpdates; инструмент его не удаляет. Если свой backend уже получает updates,
+сначала штатно остановите только его poller/backend либо явно отключите получение
+через TELEGRAM_UPDATES=off при следующем запуске: два getUpdates consumer конфликтуют.
+Другой вариант — `/start` стороннему
 [@userinfobot](https://t.me/userinfobot), которому не нужны YaplixBot token/API-key.
 Не вставляйте token URL в browser/history/чат/скриншоты.
 
@@ -27,6 +30,36 @@ getUpdates; инструмент его не удаляет. Другой вар
 token accepted, HTTPS/allowlist presence и menu type, без вывода token. Без bot/IDs
 Mini App закрыт; подписанный неразрешённый ID не получает library/LLM. HMAC/age
 проверяет server, initDataUnsafe не доверяется. После server restart новый вход.
+
+## Бот без Mini App и туннеля
+
+Обычный запуск `YAPLIX.cmd`/`npm run app`/`npm start` с token и единственным owner
+запускает Bot API polling. `TELEGRAM_UPDATES=off` отключает его явно. Бот проверяет
+getMe/username и webhook, устанавливает команды. Он отвечает только своему owner
+в приватном чате: неизвестный ID не получает каталог/задания.
+
+| Команда / кнопка | Результат |
+| --- | --- |
+| /start, /help | Назначение YAPLIX, помощь и основные действия |
+| /games, «Играть», «Мои игры» | До 8 реальных сохранённых игр из текущей SQLite |
+| /new, «Создать игру» | Инструкция и открытие общего Mini App composer при доступном HTTPS |
+| /status, «Статус» | Фактические задания владельца/локальной owner-library |
+
+Без HTTPS бот остаётся текстовым и объясняет, что Mini App недоступна. Наличие
+Bot API связи не доказывает работу WebView или публичного адреса. Перед web_app
+кнопками проверяется текущий runtime endpoint: exact instance, ready и действующий
+lease; устаревший URL не используется. Меню настраивается с readback, когда HTTPS
+подтверждён; сброс в меню команд тоже читается обратно. Ошибка menu/commands API
+логируется, но текстовый poller продолжает работу; identity/webhook/consumer
+конфликты остаются блокирующими. Без HTTPS используется меню команд. Пользовательские игры не становятся
+публичными от запуска бота.
+
+Один consumer в checkout координируется transaction в отдельной
+`.local/telegram/consumer-HASH.sqlite`, независимо от game DB/порта. Это ownership
+и update offset, не вторая очередь генерации. Webhook или другой consumer не удаляются
+автоматически; внешние копии того же бота могут дать Telegram 409. Offset сохраняется
+до ответа: после crash ответ может потеряться, повтор не планируется. Exactly-once
+доставка не гарантируется. Не удаляйте state и не останавливайте неизвестный PID.
 
 ## Каталог, приватные ссылки и уведомления
 
@@ -166,6 +199,26 @@ Quick Tunnel. Не открывайте backend/Ollama на 0.0.0.0. [Update/bac
 По сравнению с LAN QR, публичный HTTPS QR открывает доступный внешний адрес из
 диагностики. Оба QR содержат только URL; они не передают access key, bot token,
 initData или session token. Наличие QR не доказывает доступность с Android/iPhone.
+
+Если сеть блокирует Quick Tunnel, альтернативой служит отдельно подготовленный
+HTTPS host с доменом/DNS под контролем владельца и reverse proxy, например Caddy.
+Пример Caddyfile для backend на том же host, при PORT=3000 и PUBLIC_URL выше:
+
+```caddyfile
+games.example.com {
+    reverse_proxy 127.0.0.1:3000 {
+        header_up Host games.example.com
+        header_up X-Forwarded-Proto https
+    }
+}
+```
+
+Это инструкция, Caddy/production deployment здесь не устанавливались и не проверялись.
+Владелец отдельно готовит DNS, сертификат и доступный HTTPS ingress по
+[официальному руководству Caddy](https://caddyserver.com/docs/caddyfile/patterns).
+Backend/Ollama остаются loopback, API — за key/Telegram auth; firewall автоматически
+не меняется. Затем подтвердите внешний /healthz своего instance, защищённый вход,
+menu readback и запуск с телефона. Локальный Caddyfile сам не делает LAN публичной.
 
 Synthetic SDK/HTTPS tests проверяют реальный HMAC, allowed/tampered/forbidden,
 shared UI/gameplay, header session при blocked cookies, theme/viewport/safe-area,

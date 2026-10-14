@@ -4,6 +4,11 @@ import type { GenerationAttempt } from './contracts.ts';
 export type TokenUsage={outputTokens?:number;reasoningTokens?:number};
 export interface GenerationContext {
   checkpoint?:string; maxCalls?:number;
+  blockedRoutes?:string[];
+  checkpointOrigin?:{provider:string;requestedModel:string;model:string};
+  cooldowns?:Record<string,{until:number;code:string}>;
+  cooldownRoute?(route:CodeTransport,until:number,code:string):void;
+  blockRoute?(route:CodeTransport,code:string):void;
   stage(stage:'generating'|'validating'|'repairing'):void;
   dispatch(route:CodeTransport):void;
   partial(code:string,model:string|null,usage?:TokenUsage):void;
@@ -59,11 +64,12 @@ export class CloudTransport implements CodeTransport {
   private base: URL; private key: string; private maxTokens: number; private temperature?: number; private tokenField: 'max_tokens' | 'max_completion_tokens';
   constructor(options: { base: string; key: string; model: string; route?: 'primary' | 'secondary'; maxTokens?: number; temperature?: number; tokenField?: 'max_tokens' | 'max_completion_tokens' }) {
     this.base = endpoint(options.base, false); this.key = options.key; this.model = options.model; this.route = options.route ?? 'primary';
-    this.provider = this.base.hostname === 'openrouter.ai' ? 'openrouter' : this.base.hostname;
+    const hostname=this.base.hostname.replace(/\.+$/,'');
+    this.provider = hostname === 'openrouter.ai' ? 'openrouter' : hostname;
     this.maxTokens = options.maxTokens ?? 12000; this.temperature = options.temperature; this.tokenField = options.tokenField ?? 'max_tokens';
     if (!this.key.trim() || /[\r\n]/.test(this.key) || this.key.length > 4096 || !this.model.trim() || this.model.length > 128 || this.provider.length > 128 || !Number.isSafeInteger(this.maxTokens) || this.maxTokens < 256 || this.maxTokens > 32000 || this.temperature !== undefined && (!Number.isFinite(this.temperature) || this.temperature < 0 || this.temperature > 2) || !['max_tokens','max_completion_tokens'].includes(this.tokenField)) throw new Fault('INVALID_LLM_CONFIGURATION');
     // This project's OpenRouter authorization is FREE ONLY, including secondary routes.
-    if (this.provider === 'openrouter' && (this.base.href !== 'https://openrouter.ai/api/v1/' || this.model !== 'openrouter/free')) throw new Fault('FREE_MODEL_REQUIRED');
+    if (this.provider === 'openrouter' && (this.base.href !== 'https://openrouter.ai/api/v1/' || !(this.model==='openrouter/free'||this.model.endsWith(':free')))) throw new Fault('FREE_MODEL_REQUIRED');
   }
   private async request(path: string, signal: AbortSignal, body?: object) {
     const response=await this.response(path,signal,body);
@@ -83,6 +89,16 @@ export class CloudTransport implements CodeTransport {
   }
   async complete(messages: Message[], signal: AbortSignal, context?:GenerationContext) {
     let budget=this.maxTokens;
+    // An explicit free ID must be present and have zero token pricing before
+    // every dispatch, including the legacy synchronous API. Fail closed.
+    if(this.provider==='openrouter'&&this.model!=='openrouter/free'){
+      const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(5000)]));
+      const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);
+      const zero=(value:unknown)=>value===0||typeof value==='string'&&/^0(?:\.0+)?$/.test(value);
+      if(!selected||!zero(selected.pricing?.prompt)||!zero(selected.pricing?.completion))throw new Fault('FREE_MODEL_REQUIRED',503);
+      const limit=selected.top_provider?.max_completion_tokens;
+      if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);
+    }
     if(context){
       try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
       catch(error){if(signal.aborted||error instanceof Fault&&['LLM_AUTH','LLM_MODEL_NOT_FOUND'].includes(error.code))throw error;}

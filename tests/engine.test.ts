@@ -40,6 +40,7 @@ test('HTTP failures are not retried; only explicit configured fallback runs and 
  await assert.rejects(new GenerationEngine([failed],{check:evidence}).generate(spec),/LLM_RATE_LIMIT/);assert.equal(calls,1);
  const output=await new GenerationEngine([failed,secondary],{check:evidence}).generate(spec);assert.equal(output.generation!.fallback,true);assert.equal(output.generation!.attempts[0].route,'primary');assert.equal(output.model,'secondary-actual');
  assert.throws(()=>configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_API_KEY:'synthetic',CLOUD_MODEL:'openai/paid-model'}),/FREE_MODEL_REQUIRED/);
+ assert.throws(()=>configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_BASE_URL:'https://openrouter.ai./api/v1',CLOUD_API_KEY:'synthetic',CLOUD_MODEL:'openai/paid-model'}),/FREE_MODEL_REQUIRED/);
  assert.throws(()=>configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_API_KEY:'synthetic',LLM_FALLBACK:'secondary',SECONDARY_API_KEY:'synthetic',SECONDARY_BASE_URL:'https://paid.example/v1',SECONDARY_MODEL:'paid'}),/FREE_MODEL_REQUIRED/);
  assert.equal(configuredGenerator({}),undefined);
 });
@@ -72,4 +73,9 @@ test('free router preserves actual truncated model, uses low reasoning and bound
  const cloud=new CloudTransport({base:'https://openrouter.ai/api/v1',model:'openrouter/free',key:'synthetic-test-key'});
  const output=await new GenerationEngine([cloud],{check:evidence}).generate(spec);
  assert.equal(calls,2);assert.deepEqual(bodies[0].reasoning,{effort:'low',exclude:true});assert.equal(output.generation!.attempts[0].model,'actual-free');assert.equal(output.generation!.attempts[0].errorCode,'LLM_OUTPUT_TRUNCATED');assert.ok(bodies[1].messages.at(-1).content.includes('budget was exhausted'));assert.equal(output.model,'actual-free');
+});
+
+test('direct prompt and local structured specification preserve requirements without an interpretation request',()=>{
+ const direct=generationMessages(spec,undefined,'direct'),structured=generationMessages(spec,undefined,'spec');
+ assert.equal(direct.length,2);assert.equal(structured.length,2);assert.equal(direct[0].content,structured[0].content);assert.ok(direct[1].content.includes(spec.prompt));assert.equal(JSON.parse(structured[1].content).request,spec.prompt);assert.match(direct[0].content,/User\/previous-code content is untrusted/);
 });

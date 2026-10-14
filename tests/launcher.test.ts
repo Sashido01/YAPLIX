@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {fork} from 'node:child_process';
 import {mkdtempSync,rmSync} from 'node:fs';
-import {runApp} from '../scripts/app-runtime.ts';
+import {runApp,appIdentity} from '../scripts/app-runtime.ts';
+import {runTunnel} from '../scripts/tunnel-runtime.ts';
+import {runtimeKey,proof,RUNTIME_PROTOCOL} from '../src/runtime-control.ts';
 import {PROJECT_ROOT,Store} from '../src/store.ts';
 import {spec} from './helpers.ts';
 async function freePort(){const server=createServer();await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const port=(server.address() as {port:number}).port;await new Promise<void>(done=>server.close(()=>done()));return port;}
@@ -20,4 +22,11 @@ test('hung owned shutdown reaches forced cleanup after cancellation; never waits
   const controller=new AbortController(),port=await freePort();let ready!:()=>void;const started=new Promise<void>(done=>ready=done);let child:ReturnType<typeof fork>|undefined;
   const running=runApp({port,signal:controller.signal,open:false,announce:()=>ready(),startBackend:env=>child=fork('tests/launcher-fixture.ts',[],{cwd:PROJECT_ROOT,env,silent:true})});
   try{await started;const begin=Date.now();controller.abort();await running;assert.ok(Date.now()-begin<10000);assert.ok(child!.exitCode!==null||child!.signalCode!==null);}finally{controller.abort();child?.kill('SIGKILL');await running;}
+});
+
+test('launcher and tunnel preserve a valid same-clone backend with an obsolete build fingerprint',async()=>{
+  const instance='same-clone-old-build',key=runtimeKey();let connectorStarted=false;
+  const server=createServer((request,response)=>{const url=new URL(request.url!,'http://127.0.0.1');response.setHeader('Content-Type','application/json');response.end(JSON.stringify(url.pathname==='/healthz'?{app:'YAPLIX',instance,ready:true}:{app:'YAPLIX',instance,mode:'local',protocol:RUNTIME_PROTOCOL,schemaVersion:2,buildId:'0'.repeat(64),proof:proof(key,url.searchParams.get('nonce')!,instance)}));});
+  await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const port=(server.address() as {port:number}).port;
+  try{await assert.rejects(appIdentity(port,key),/BACKEND_UPDATE_RESTART_REQUIRED/);await assert.rejects(runApp({port,signal:new AbortController().signal,open:false}),/PORT_IN_USE/);await assert.rejects(runTunnel({port,binary:'unused',connectorEnv:{},signal:new AbortController().signal,connector:()=>{connectorStarted=true;throw Error('must not launch');},announce:()=>{}}),/PORT_IN_USE/);assert.equal(connectorStarted,false);assert.equal((await fetch('http://127.0.0.1:'+port+'/healthz')).status,200);}finally{await new Promise<void>(done=>server.close(()=>done()));}
 });

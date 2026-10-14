@@ -6,7 +6,7 @@ import {createApp} from '../src/api.ts';
 import {html,spec} from './helpers.ts';
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Server-side Chromium checker is independent of the frontend browser profile.'));
 test('real checker accepts authored fixture at 320/390 and offline',async()=>{
- expect(await browserCheck(html,AbortSignal.timeout(18000))).toEqual({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause'});
+ expect(await browserCheck(html,AbortSignal.timeout(18000))).toEqual({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});
 });
 test('real checker rejects zero-height controls, fatal JS, autostart, duplicate start and network attempts',async()=>{
  test.setTimeout(45000);

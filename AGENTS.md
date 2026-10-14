@@ -29,7 +29,10 @@ offline HTML export, diagnostics, backup and update instructions. The generator
 and prompts are independently authored here. Do not fetch/read/use BGen or its
 old local checkout, templates, assets or docs as a reference. Do not modify external
 repositories. Preserve unknown ignored files. Cloud is primary; OpenRouter is
-FREE ONLY via openrouter/free. No paid or hidden fallback.
+FREE ONLY. TASK-010 permits concrete OpenRouter :free model IDs from the official
+catalog only at the exact https://openrouter.ai/api/v1 base, after explicitly zero
+prompt and completion prices are checked before dispatch. openrouter/free remains
+compatible, not the default random model selector. No paid or hidden fallback.
 TASK-009 permits Ollama Cloud as a distinct opt-in route with the owner's available
 account quota, explicit credentials and route configuration. Never buy credits or
 change plans automatically, infer paid entitlement, or transition there without
