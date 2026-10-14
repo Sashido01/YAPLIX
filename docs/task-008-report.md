@@ -35,6 +35,8 @@ Telegram API direct fetch тоже дал timeout. Причина огранич
 
 - Production build/typecheck; 42 Node tests, включая A–L, URL-then-exit, JSON redaction,
   heartbeat loss, lease expiry и повторный запуск.
+- Первый hosted Ubuntu run выявил связанность test connector timeout 600 ms и
+  backend readiness. Deadline backend отделён (15 s); current-head CI проверяется заново.
 - 19 Python repository/hook tests; repository checker и diff whitespace check.
 - Browser matrix: 167 passed / 145 intentional profile skips из 312, Chromium,
   Firefox, WebKit; 320/360/390/430, tablet/desktop, touch/rotation/reduced viewport,

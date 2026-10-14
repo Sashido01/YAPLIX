@@ -129,7 +129,8 @@ export async function runTunnel(options: TunnelOptions) {
       announce('Подтверждён совместимый YAPLIX на порту ' + options.port + '; используется существующий backend.');
     } else if (!options.check) {
       backend = observed(fork('src/server.ts', [], { cwd: PROJECT_ROOT, env: { ...env, PORT: String(options.port), YAPLIX_MODE: 'local', YAPLIX_HOST: '127.0.0.1', PUBLIC_URL: '', YAPLIX_ACCESS_KEY: '' }, stdio: ['ignore','pipe','pipe','ipc'], windowsHide: true }));
-      const deadline = Date.now() + Math.min(startupMs, 15_000);
+      // Backend readiness and connector URL are separate stages/deadlines.
+      const deadline = Date.now() + 15_000;
       while (Date.now() < deadline && !options.signal.aborted) {
         try { instance = await identity(); break; } catch {}
         if (backend.child.exitCode !== null || backend.child.signalCode !== null || backend.error()) break;
