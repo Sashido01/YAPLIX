@@ -9,7 +9,7 @@ import type {GameSpec} from '../src/contracts.ts';
 const adapter=configuredGenerator({...process.env,LLM_REPAIRS:'0',LLM_FALLBACK:'none',LLM_LOCAL_FALLBACK:'',LLM_TIMEOUT_MS:'60000'});
 if(!adapter)throw new Fault('LLM_NOT_CONFIGURED');
 if(!['openrouter','ollama.com','ollama'].includes(adapter.routes[0].provider))throw new Fault('BENCHMARK_PROVIDER_NOT_ALLOWED');
-const directory='.local/benchmarks/'+randomUUID();mkdirSync(directory,{recursive:true});const store=new Store(directory+'/data.sqlite'),jobs=new GenerationJobs(store,adapter);
+const directory='.local/benchmarks/'+randomUUID();mkdirSync(directory,{recursive:true});const store=new Store(directory+'/data.sqlite'),jobs=new GenerationJobs(store,adapter,undefined,true,{maxCalls:1,durationMs:70000});
 const spec:GameSpec={prompt:'Мини-игра: нажми 3 звезды, затем победа. Ошибочный тап на красный круг — поражение. Старт, пауза/продолжение, заново. Touch-кнопки от 44px, автономный HTML. Сохраняй ход игры после паузы.',audience:'default',genre:'unknown',mechanics:[],controls:['keyboard','touch','pointer'],responsive:true,webview:true};
 const began=Date.now();let result;
 try{

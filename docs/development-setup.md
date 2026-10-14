@@ -50,13 +50,18 @@ merge и smoke main. [Workflow](../CONTRIBUTING.md).
 | --- | --- |
 | PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
 | LIVE_PROVIDER | cloud default; ollama-cloud/ollama/none; no OpenRouter key отключает только LIVE |
-| CLOUD_BASE_URL / MODEL / API_KEY | exact OpenAI-compatible base / model ID / secret |
-| LLM_TIMEOUT_MS | 1000..300000, default 180000, общий deadline |
+| CLOUD_BASE_URL / MODEL / API_KEY | exact base / concrete model ID / secret; default model google/gemma-4-31b-it:free |
+| LLM_TIMEOUT_MS | 1000..300000, default 180000, один запуск engine |
+| LLM_REQUEST_TIMEOUT_MS | 1000..LLM_TIMEOUT_MS, default min(60000, LLM_TIMEOUT_MS), один transport request |
+| LLM_MAX_ATTEMPTS | 1..12, default 6, provider-call budget автоматического цикла; lifetime ≤12/job |
+| LLM_MAX_DURATION_MS | 1000..1800000, default 600000, durable deadline цикла включая ожидание |
+| LLM_RETRY_MS | 10..60000, default 2000, exponential backoff с cap 60000 |
 | LLM_MAX_TOKENS | 256..32000, default 12000; доступный completion cap из models API может снизить бюджет |
 | LLM_TOKEN_FIELD | max_tokens default или max_completion_tokens |
 | LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
 | LLM_REPAIRS | 0..2, default 1 |
-| LLM_FALLBACK | none default; explicit secondary/ollama-cloud/ollama |
+| LLM_PROMPT_STYLE | spec code default; direct явно передаёт естественный запрос; .env.example выбирает direct |
+| LLM_FALLBACK | none default; explicit secondary/ollama-cloud/openrouter/ollama |
 | OLLAMA_CLOUD_API_KEY / MODEL | оба обязательны для Ollama Cloud; fixed https://ollama.com/v1; exact ID из API |
 | LLM_LOCAL_FALLBACK | 1 добавляет необязательный local route после явно настроенного cloud |
 | SECONDARY_BASE_URL / MODEL / API_KEY | все три при secondary |
@@ -65,9 +70,15 @@ merge и smoke main. [Workflow](../CONTRIBUTING.md).
 | YAPLIX_ACCESS_KEY | random URL-safe 32..128 chars, shared team access |
 | TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS | server token / один положительный ID владельца для публичного HTTPS |
 | TELEGRAM_AUTH_MAX_AGE | 30..900 s, default 300; session TTL 1 h |
+| TELEGRAM_UPDATES | token + single owner включают одного poller; off явно отключает |
 
-OpenRouter exact base https://openrouter.ai/api/v1, model **openrouter/free**;
-платные OpenRouter модели запрещены. Ollama Cloud включается явно как secondary
+OpenRouter exact base https://openrouter.ai/api/v1, default model
+**google/gemma-4-31b-it:free**; разрешены concrete `:free` IDs из models API с явно
+нулевыми pricing.prompt и pricing.completion. Проверка выполняется до каждого
+provider dispatch, включая legacy synchronous API; отсутствие модели/нулевой цены
+блокирует вызов. `openrouter/free` сохраняет совместимость, не default selection.
+Платные OpenRouter модели запрещены. [Официальный каталог и pricing](https://openrouter.ai/docs/api/api-reference/models/get-model).
+Ollama Cloud включается явно как secondary
 или primary; generic nonfree secondary для OpenRouter primary блокируется.
 Для прямого Ollama Cloud используйте ID из [официального API](https://ollama.com/api/tags)
 и [документации](https://docs.ollama.com/cloud), server проверяет models API.
@@ -104,6 +115,8 @@ X-Yaplix-Telegram-Session. Events дополнительно session bearer. Ori
 | POST /api/access | `{key}` → HttpOnly cookie |
 | POST /api/telegram/auth | `{initData}` → Secure cookie + memory sessionToken |
 | GET /api/jobs | последние 50 заданий своего principal, без raw checkpoint |
+| GET /api/gallery | две авторские игры, без автоматической записи в library |
+| POST /api/gallery/:id | `{}` → сохранённая authored/unverified version по явному действию |
 | POST /api/jobs | `{spec,mode?,previousVersionId?,idempotencyKey,telegramConsent?}` → job summary 202 |
 | GET /api/jobs/:jobId | своё задание, исходный запрос/checkpoint/metadata |
 | POST /api/jobs/:jobId/cancel | `{}` → cancelled; запрос/черновик остаются |
@@ -138,18 +151,37 @@ Job idempotencyKey — 8..100 букв/цифр/`_`/`-`, уникален вну
 идентичного request возвращает job, другой request с тем же key даёт conflict.
 Telegram consent принимается только с signed Telegram session. Один worker,
 pending ≤20 глобально/≤3 на владельца, total ≤1000 jobs, checkpoints ≤100 MB
-суммарно/≤200000 bytes на job. До 6 provider calls за запуск и 12 за job.
+суммарно/≤200000 bytes на job. Default автоматический цикл — до 6 provider calls,
+до 4 запусков worker и 600 s суммарно с ожиданием; lifetime limit 12 calls/job.
+`Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
 Отдельный лимит фактических вызовов генерации к провайдерам — 6/min owner и 12/min
-global, включая repair и Continue. Неизвестный исход, rate/quota/auth/context
-отказы не повторяются скрыто; действия — [known errors](known-errors.md).
+global, включая repair и Continue. Recoverable ошибки получают bounded retry/fallback,
+а rate limit — Retry-After. Cooldown и scheduled retry хранятся в job metadata;
+неизвестный потенциально оплаченный исход не повторяется слепо по тому же route.
+Действия — [known errors](known-errors.md).
 
-Restart помечает generating/validating/repairing как needs_attention с
-`JOB_RESTART_UNCERTAIN`; queued может выполняться после запуска. Ручное продолжение
-просит полный документ по original spec/checkpoint, проходит static/browser gate;
+Restart восстанавливает generating/validating/repairing в пределах исходных
+deadline/бюджета, сохраняя `JOB_RESTART_UNCERTAIN`. Доступный разрешённый route
+может продолжить автоматически; неизвестный potentially billed route исключается.
+Старые recoverable needs_attention jobs без automatic metadata принимаются один
+раз в новый ограниченный цикл с lifetime cap 12. Cancelled/quota/auth/configuration
+отказы автоматически не возобновляются; сохранённый draft остаётся доступен.
+Полный checkpoint с подтверждённым origin сначала проходит validation без нового
+LLM POST. Остальные drafts переписываются в полный документ по original spec;
+буквальное resume с токена не обещается. Дополнительные recoveryState:
+retry_scheduled / waiting_for_provider / failed_permanent при прежней schema v2.
+Static/browser gate обязателен;
 playable version и completed job записываются одной SQLite transaction. Черновик
 не может получить passed сам по себе. Готовность не меняет активный iframe;
 переключение игры происходит по явному «Открыть»/«Играть».
+
+Quota/auth/model/context/output-budget отказ охлаждает route на 15 min, не покупает
+credits и позволяет другой явно настроенный route. При `429` cooldown соответствует
+Retry-After (если отсутствует — 60 s). Исчерпание automatic calls/runs/duration,
+отсутствие всех routes или обязательного Chromium оставляют needs_attention.
+Авторская gallery никогда не участвует в LIVE recovery; authored/unverified
+отличается от mock DEMO и от llm_code/passed. GET catalogue не заселяет user DB.
 
 Внутренний URL `/?game=UUID&version=UUID` (Telegram `/telegram?...`) требует обычную
 авторизацию; version должна принадлежать game. Это адресация общей owner-library,
@@ -159,6 +191,9 @@ playable version и completed job записываются одной SQLite tra
 
 npm run backup: согласованная SQLite online copy даже при WAL, integrity/FK/schema
 v2/SHA-256, до 20 обычных backup-файлов, без перезаписи. .env/модель не входят в backup.
+Это backup game DB, включая jobs; отдельный per-bot consumer/offset state из
+`.local/telegram` и локальные control/access keys в него не входят. Не удаляйте
+эти существующие файлы при update и не подменяйте unknown state пустым.
 `verify:backup` читает проверенные схемы v1 и v2, сообщает фактическую версию.
 
 Новая пустая база создаётся сразу с schema v2, без before-v2 snapshot.
@@ -210,9 +245,15 @@ Git/npm не заменяют .local/.env. Dirty/ff-only failure: сохрани
 без reset/clean/force. Проверьте прежние game/history/export hashes и задания.
 TASK-009 переводит schema v1 → v2 с protective snapshot; сохранность конкретной
 пользовательской базы проверяйте отдельно. LAN/QR — README, [HTTPS/Telegram](telegram.md).
+TASK-010 не добавляет schema migration: recovery budget/cooldown metadata помещаются
+в существующий JSON jobs. Старые HTML и validationStatus не переписываются.
 PORT_IN_USE — свой активный server или чужой процесс; остановите только свой либо
 смените порт. Doctor проверяет новый bind: активный server может давать PORT_IN_USE.
 После изменения .env перезапустите backend, build не перезагружает его.
+Launcher проверяет не только HMAC/schema, но и build identity загруженного backend,
+зафиксированную при старте. После update штатно закройте свой старый backend,
+затем запустите YAPLIX.cmd/app заново; same-schema старый процесс сохраняется,
+вместо ошибочного attach выводится занятый порт/необходимость restart.
 
 ## Надёжный временный Telegram runtime
 

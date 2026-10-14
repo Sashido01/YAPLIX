@@ -9,5 +9,9 @@ export interface GenerationJob {
   errorCode: string|null; retryAt: number|null; versionId: string|null; gameId: string|null;
   notificationClaimed: boolean; telegramConsent: boolean; telegramState: 'none'|'pending'|'sent'|'unavailable'|'unknown';
   outputTokens: number|null; reasoningTokens: number|null; elapsedMs: number;
+  recoveryState?:'retry_scheduled'|'waiting_for_provider'|'failed_permanent';
+  checkpointOrigin?:{provider:string;requestedModel:string;model:string};
+  routeCooldowns?:Record<string,{until:number;code:string}>;
+  automaticRuns?:number; automaticLimit?:number; deadlineAt?:number; blockedRoutes?:string[];
 }
 export type JobSummary = Omit<GenerationJob,'checkpoint'|'ownerId'|'idempotencyKey'> & {checkpointBytes:number};

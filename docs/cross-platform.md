@@ -174,3 +174,27 @@ Gzip начального JS: 7035 → 8870 bytes, CSS: 2143 → 2332, critical:
 Бюджеты 150000/30000/250000 bytes сохранены. Это browser laboratory profile,
 не physical Android/iOS PASS и не время успешной LLM генерации. Два отдельных
 одноразовых real OpenRouter pilots дали timeout без playable result; [границы](demo-readiness.md).
+
+## TASK-010: измерение 14 октября 2026
+
+Baseline `.local/performance/task010-baseline.json` и final
+`.local/performance/task010-reviewed.json`: по семь cold 390×844 DPR2 contexts,
+Slow 4G/CPU×4, прогретый server. LLM и browser validation вне shell timings.
+
+| Метрика | Baseline | Final |
+| --- | --- | --- |
+| Shell p75 ms | 618.8 | 638.9 |
+| Game launch p75 ms | 958.07 | 961.6983 |
+| Touch p75 ms | 5.4 | 5.2 |
+| API p75 ms | 3.08 | 3.2778 |
+| Initial JS gzip bytes | 8893 | 9348 |
+| CSS gzip bytes | 2332 | 2332 |
+| Critical gzip bytes | 13775 | 14318 |
+
+Загрузка games/gallery выполняется параллельно; промежуточная последовательная
+версия имела около 796 ms shell p75. Final выше исходного baseline на 20.1 ms;
+это не заявляется ускорением. Бюджеты 150000/30000/250000 B и timing goal 3 s
+сохранены. После 40 navigation cycles probe оставил 1 iframe; этот результат
+не равен историческому сценарию с 0 iframe и не доказывает отсутствие утечки.
+Physical Android/iOS/WebView, энергопотребление и произвольный generated game
+этим лабораторным профилем не проверены. [Реальные LLM и границы](task-010-report.md).

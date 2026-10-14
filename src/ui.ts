@@ -11,23 +11,25 @@ const errors: Record<string, string> = {
   BROWSER_INSTALL_REQUIRED:'Для LIVE установите браузер проверки: npm run checker:install.',
   BROWSER_SANDBOX_UNAVAILABLE:'Браузер проверки не смог запустить защищённую среду. Проверьте настройку Chromium sandbox по инструкции Ubuntu.',
   BROWSER_SANDBOX_CONFIGURATION:'Системный Chromium sandbox helper не прошёл проверку. Проверьте CHROME_DEVEL_SANDBOX по инструкции Ubuntu.',
-  LLM_MODEL_NOT_FOUND:'Модель отсутствует в Ollama. Установите выбранную модель.',
+  LLM_MODEL_NOT_FOUND:'Выбранная модель недоступна у провайдера. Проверьте серверную конфигурацию.',
   LLM_BUSY:'Другая генерация ещё завершается. Повторите позже.',
-  LLM_TIMEOUT:'Модель не ответила вовремя. Запрос и черновик сохранены; продолжение потребует нового вызова.',
+  LLM_TIMEOUT:'Модель не ответила вовремя. Запрос и черновик сохранены.',
   LLM_INVALID_RESPONSE:'Модель вернула неполный ответ. Игра не сохранена.',
-  LLM_OUTPUT_TRUNCATED:'Вывод обрезан. Запрос и полученный код сохранены; можно продолжить генерацию.',
+  LLM_OUTPUT_TRUNCATED:'Вывод обрезан. Запрос и полученный код сохранены для исправления.',
   LLM_QUOTA:'Квота провайдера исчерпана. Черновик сохранён. Проверьте квоту перед продолжением.',
   LLM_CONTEXT_LIMIT:'Контекст превышает лимит модели. Запрос и черновик сохранены; проверьте настройки модели.',
-  LLM_CONNECTION_INTERRUPTED:'Соединение с моделью прервано. Запрос и полученные части сохранены; можно продолжить генерацию.',
-  JOB_RESTART_UNCERTAIN:'Сервер перезапустился после отправки запроса. Черновик сохранён; автоматический повтор остановлен.',
+  LLM_CONNECTION_INTERRUPTED:'Соединение с моделью прервано. Запрос и полученные части сохранены.',
+  JOB_RESTART_UNCERTAIN:'Сервер перезапустился после отправки запроса. Сохранённый код проверяется; повторы ограничены.',
   JOB_RETRY_AFTER:'Провайдер просит подождать. Продолжение станет доступно после указанного времени.',
-  JOB_ATTEMPT_LIMIT:'Достигнут предел 12 запросов на задание. Исходный запрос и черновик сохранены.',
+  JOB_ATTEMPT_LIMIT:'Бюджет автоматических запросов исчерпан. Исходный запрос и черновик сохранены.',
+  JOB_DURATION_LIMIT:'Время автоматического восстановления истекло. Запрос и черновик сохранены.',
+  LLM_ROUTES_UNAVAILABLE:'Настроенные маршруты недоступны. Запрос и черновик сохранены; проверьте доступность провайдеров.',
   JOB_QUEUE_FULL:'Очередь заполнена. Дождитесь завершения одного из заданий.',
   LLM_UNSAFE_ARTIFACT:'Код не прошёл проверку безопасности после попытки исправления моделью. Уточните запрос.',
   LLM_HTTP:'LLM вернула ошибку. Проверьте запуск модели и её ресурсы.',
   LLM_NETWORK_OR_RESPONSE:'Не удалось получить полный ответ LLM. Проверьте подключение провайдера.',
   LLM_AUTH:'Провайдер не принял серверный API key.',
-  LLM_RATE_LIMIT:'Провайдер ограничил запросы. Подождите и повторите. Платная модель не включается.',
+  LLM_RATE_LIMIT:'Провайдер ограничил запросы. Автоматический повтор соблюдает время ожидания.',
   RATE_LIMIT:'Лимит генераций достигнут. Подождите минуту.',
   ACCESS_REQUIRED:'Доступ истёк. Обновите страницу и введите ключ сервера.',
   BACKUP_QUOTA:'Достигнут лимит копий. Сохраните нужные копии и освободите место по README.',
@@ -75,7 +77,8 @@ function view(screen: string) {
   if(screen!=='play'){document.body.classList.remove('game-focus');el('focus-game').textContent='Игровой экран';}
 }
 async function list(signal?:AbortSignal) {
-  const {games}=await api('/api/games',undefined,undefined,signal),container=el('games');container.replaceChildren();
+  const reserve=el('gallery'),[{games},catalog]=await Promise.all([api('/api/games',undefined,undefined,signal),reserve.childElementCount?Promise.resolve(null):api('/api/gallery',undefined,undefined,signal)]),container=el('games');container.replaceChildren();
+  if(catalog&&!reserve.childElementCount){for(const game of catalog.games){const button=document.createElement('button');button.textContent=game.title+' · офлайн';button.type='button';button.addEventListener('click',()=>void attempt(async signal=>{const version=await api('/api/gallery/'+game.id,{},undefined,signal);await show(version,signal);await list(signal);}));reserve.append(button);}}
   if(!games.length){container.textContent='Созданные игры появятся здесь.';return;}
   for(const v of games as (Omit<GameVersion,'html'>&{title?:string})[]) {
     const title=v.title??v.spec.prompt;
@@ -112,8 +115,9 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   const bytes=new TextEncoder().encode(version.html).length;
   el('artifact-info').textContent=`HTML: ${(bytes/1024).toFixed(1)} КБ.`+(bytes>100_000?' Большая игра: запуск и расход памяти могут увеличиться.':'');
   el('provenance').textContent=version.method==='mock'?'DEMO · без LLM':`${version.method} · ${version.model??'модель неизвестна'}`;
+  if(version.method==='authored')el('provenance').textContent='Авторская офлайн-игра · не LIVE';
   el('share').hidden=location.protocol!=='https:';
-  if(version.generation)el('provenance').textContent+=` · попыток: ${version.generation.attempts.length}${version.generation.fallback?' · резервный маршрут':''} · проверка запуска 320/390 px`;
+  if(version.generation)el('provenance').textContent+=` · попыток: ${version.generation.attempts.length}${version.generation.fallback?' · резервный маршрут':''} · запуск/пауза/offline 320/390 px · механики и финал не подтверждены`;
   el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;
   const download=el<HTMLAnchorElement>('export');download.href=`/api/versions/${version.versionId}/export`;download.removeAttribute('aria-disabled');
   const select=el<HTMLSelectElement>('versions');select.replaceChildren();select.disabled=busy;
@@ -149,13 +153,14 @@ window.addEventListener('offline',()=>{el('connection').hidden=false;});window.a
 try{prompt.value=sessionStorage.getItem('yaplix-draft')??prompt.value;}catch{}
 prompt.addEventListener('input',()=>{try{sessionStorage.setItem('yaplix-draft',prompt.value);}catch{}});
 window.visualViewport?.addEventListener('resize',()=>{document.body.dataset.keyboard=String(innerHeight-visualViewport!.height-visualViewport!.offsetTop>150);});
-const stageNames:Record<string,string>={queued:'В очереди',generating:'Генерация',validating:'Проверка',repairing:'Исправление',completed:'Готово',needs_attention:'Нужно действие',cancelled:'Отменено',failed:'Ошибка'};
+const stageNames:Record<string,string>={retry_scheduled:'Автоматический повтор',waiting_for_provider:'Ожидание провайдера',failed_permanent:'Нужно действие',queued:'В очереди',generating:'Генерация',validating:'Проверка',repairing:'Исправление',completed:'Готово',needs_attention:'Нужно действие',cancelled:'Отменено',failed:'Ошибка'};
 let polling=false,pollTimer:ReturnType<typeof setTimeout>|undefined,toast:JobSummary|undefined,closed=false;
 function openJob(job:JobSummary){if(job.versionId){el('jobs-panel').hidden=true;return attempt(async signal=>{await api('/api/jobs/'+job.jobId+'/notification',{},undefined,signal);if(toast?.jobId===job.jobId)dismissToast();await show(await readVersion(job.versionId!,signal),signal);message.textContent=job.previousVersionId?'Новая версия сохранена. Предыдущая доступна в списке.':'Игра сохранена. Можно играть.';});}}
 function renderJobs(jobs:JobSummary[]){
   const count=jobs.filter(j=>['queued','generating','repairing','validating'].includes(j.stage)).length;el('jobs-toggle').textContent='Задания'+(count?' ('+count+')':'');
   const container=el('jobs-list');container.replaceChildren();if(!jobs.length)container.textContent='Заданий пока нет.';
-  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=`${stageNames[job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`+(job.actualModel?' · '+job.actualModel:'');row.append(title,status);
+  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`+((job.actualModel??job.requestedModel)?' · '+(job.actualModel??job.requestedModel):'');row.append(title,status);
+    const failures=job.history.filter(attempt=>attempt.errorCode).slice(-3);if(failures.length){const reasons=document.createElement('p');reasons.className='muted';reasons.textContent='Предыдущие попытки: '+failures.map(attempt=>`${attempt.provider} / ${attempt.model??attempt.requestedModel}: ${errors[attempt.errorCode!]??attempt.errorCode}`).join(' · ');row.append(reasons);}
     if(job.errorCode){const error=document.createElement('p');error.textContent=(errors[job.errorCode]??`Черновик сохранён (${job.errorCode}).`)+(job.retryAt?' Повтор после '+new Date(job.retryAt).toLocaleTimeString()+'.':'');row.append(error);}
     const actions=document.createElement('div');actions.className='actions';const add=(label:string,work:()=>Promise<unknown>|void)=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>{button.disabled=true;void Promise.resolve().then(work).then(()=>pollJobs()).catch(error=>{message.textContent=error.message;button.disabled=false;});});actions.append(button);return button;};
       if(job.stage==='completed')add('Играть',()=>openJob(job));
@@ -178,6 +183,6 @@ document.addEventListener('visibilitychange',()=>{clearTimeout(pollTimer);if(!do
 window.addEventListener('pagehide',()=>{closed=true;clearTimeout(pollTimer);unmount?.();unmount=undefined;});window.addEventListener('pageshow',()=>{if(closed){closed=false;void pollJobs();}});
 async function boot(){
   if(document.body.dataset.entry==='telegram'){const path='/runtime/telegram-ui.js';telegramToken=await (await import(path) as typeof import('./telegram-ui.ts')).initializeTelegram();el('telegram-notify-label').hidden=false;}
-  await list();void pollJobs();const params=new URL(location.href).searchParams,selected=params.get('game');if(selected&&/^[0-9a-f-]{36}$/.test(selected))await attempt(async signal=>{const history=await api('/api/games/'+selected,undefined,undefined,signal);const requested=params.get('version');const latest=requested?history.versions.find((v:GameVersion)=>v.versionId===requested):history.versions.at(-1);if(!latest)throw new Error('Версия отсутствует в этой игре.');await show(await readVersion(latest.versionId,signal),signal);},false);
+  await list();void pollJobs();const params=new URL(location.href).searchParams,selected=params.get('game');if(params.get('view')==='create')view('create');if(selected&&/^[0-9a-f-]{36}$/.test(selected))await attempt(async signal=>{const history=await api('/api/games/'+selected,undefined,undefined,signal);const requested=params.get('version');const latest=requested?history.versions.find((v:GameVersion)=>v.versionId===requested):history.versions.at(-1);if(!latest)throw new Error('Версия отсутствует в этой игре.');await show(await readVersion(latest.versionId,signal),signal);},false);
 }
 void boot().then(()=>{document.body.dataset.ready='true';}).catch(error=>{message.textContent=error.message;document.body.dataset.ready='true';});

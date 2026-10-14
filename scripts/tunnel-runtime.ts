@@ -8,6 +8,7 @@ import { checkPort, persistentLanKey } from '../src/network.ts';
 import { managedPath, PROJECT_ROOT } from '../src/store.ts';
 import { proof, RUNTIME_PROTOCOL, runtimeKey } from '../src/runtime-control.ts';
 import { boundedText } from '../src/transport.ts';
+import {buildIdentity} from '../src/build-identity.ts';
 
 export class TunnelFailure extends Fault {
   readonly stage: string;
@@ -114,6 +115,7 @@ export async function runTunnel(options: TunnelOptions) {
     const nonce = randomBytes(32).toString('hex');
     const data = await request('/api/runtime/tunnel?nonce=' + nonce);
     if (data.app !== 'YAPLIX' || data.protocol !== RUNTIME_PROTOCOL || typeof data.instance !== 'string' || data.proof !== proof(controlKey, nonce, data.instance)) throw new Fault('BACKEND_NOT_READY');
+    if(data.buildId!==buildIdentity()||data.schemaVersion!==2)throw new Fault('BACKEND_UPDATE_RESTART_REQUIRED');
     const health = await request('/healthz');
     if (health.instance !== data.instance || health.ready !== true) throw new Fault('BACKEND_NOT_READY');
     return data.instance as string;

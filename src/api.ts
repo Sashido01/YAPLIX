@@ -18,6 +18,7 @@ import { PROJECT_ROOT } from './store.ts';
 import type { RuntimeControl } from './runtime-control.ts';
 import { RUNTIME_PROTOCOL } from './runtime-control.ts';
 import { GenerationJobs } from './jobs.ts';
+import {gallery,openGallery} from './gallery.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
@@ -112,6 +113,8 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return c.body(connectionQr(policy.origin,policy.mode==='https'), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
   });
   app.get('/api/games', c => c.json({ games: store.list() }));
+  app.get('/api/gallery',c=>c.json({games:gallery}));
+  app.post('/api/gallery/:id',async c=>{object(await json(c.req.raw,32),[]);return c.json(openGallery(store,c.req.param('id')),201);});
   app.post('/api/versions/:versionId/share',async c=>{object(await json(c.req.raw,32),[]);if(policy?.mode!=='https')throw new Fault('HTTPS_SHARE_REQUIRED',409);const version=store.getVersion(c.req.param('versionId'));return c.json({url:shareLink(policy.origin!,policy.key!,version.versionId),expiresIn:604800,scope:'read-only-artifact'});});
   app.get('/play/:versionId/:expires/:signature',c=>{
     if(policy?.mode!=='https'||!validShare(c.req.path,policy.key!))throw new Fault('SHARE_INVALID_OR_EXPIRED',403);

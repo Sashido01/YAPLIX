@@ -10,7 +10,7 @@ const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
 for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
-export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause' };
+export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause'; levels?:string[] };
 export class BrowserFailure extends Fault {
   readonly feedback:string;
   constructor(code:string,feedback:string){super(code,502);this.feedback=feedback.slice(0,512);}
@@ -72,14 +72,20 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
           await pause.tap();
           const capture=()=>frame.evaluate(()=>{const canvas=document.querySelector('canvas');return canvas?canvas.toDataURL():document.body.innerText;});
           const frozen=await capture();await page.waitForTimeout(250);if(await capture()!==frozen)throw new Fault('BROWSER_PAUSE_NOT_FROZEN',502);
-          await pause.tap();await page.waitForTimeout(100);
+          const resume=frame.getByRole('button',{name:/^(resume|continue|продолжить|возобновить)$/i}).filter({visible:true});
+          const markedResume=frame.locator('[data-yaplix-resume]').filter({visible:true});
+          if(await markedResume.count()===1)await markedResume.tap();else if(await resume.count()===1)await resume.tap();else await pause.tap();
+          let resumed=false;
+          for(const key of ['ArrowRight','ArrowUp','ArrowLeft','ArrowDown',' ']){await page.keyboard.press(key);await page.waitForTimeout(40);if(await capture()!==frozen||await terminal()){resumed=true;break;}}
+          if(!resumed&&!await input.isDisabled()){await input.tap();await page.waitForTimeout(100);resumed=await capture()!==frozen;}
+          if(!resumed)throw new BrowserFailure('BROWSER_RESUME_NOT_WORKING','After pause the game remained frozen despite resuming and real input. Make the marked pause control toggle, or provide a visible button marked data-yaplix-resume. Resume must retain the world/score and restart exactly one animation loop.');
         }
         const events=await page.evaluate(()=>(window as any).checkEvents);let started=false,ended=false,result=false;
         for(let i=0;i<events.length;i++){
           let event;try{event=parseEvent(events[i]);}catch{throw new Fault('BROWSER_EVENT_CONTRACT',502);}
           if(event.sessionId!==session.sessionId||event.versionId!==session.versionId||event.sequence!==i||ended||i===0&&event.type!=='game_ready')throw new Fault('BROWSER_EVENT_ORDER',502);
           if(event.type==='game_started'){if(started)throw new Fault('BROWSER_DUPLICATE_START',502);started=true;}
-          if(['score_changed','game_won','game_lost','session_ended'].includes(event.type)&&!started)throw new Fault('BROWSER_EVENT_ORDER',502);
+          if(['score_changed','game_won','game_lost','session_ended'].includes(event.type)&&!started)throw new BrowserFailure('BROWSER_EVENT_ORDER','Received '+event.type+' before game_started. Initial setup/reset must not emit score or terminal events. In the first Start handler report game_started BEFORE initializing any state that emits events. Keep restart after session_ended silent.');
           if(event.type==='game_won'||event.type==='game_lost'){if(result)throw new Fault('BROWSER_DUPLICATE_END',502);result=true;}
           if(event.type==='session_ended'){if(!result)throw new Fault('BROWSER_EVENT_ORDER',502);ended=true;}
           if(event.type==='game_error')throw new Fault('BROWSER_GAME_ERROR',502);
@@ -92,7 +98,7 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
       }catch(error){if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in generated code: '+exception:'A forbidden browser operation or console error occurred.');throw error;}
       finally{await context.close().catch(()=>{});}
     }
-    return {profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause'};
+    return {profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']};
   }catch(error){if(deadline.aborted)throw new Fault(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT',signal.aborted?499:504);if(error instanceof Fault)throw error;throw new Fault('BROWSER_STARTUP_FAILED',502);}
   finally{deadline.removeEventListener('abort',abort);await browser.close();}
 }

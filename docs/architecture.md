@@ -30,8 +30,11 @@ previous HTML, исходное описание и изменение. [transpo
 TLS проверяется, redirects запрещены, HTTP только loopback. Секреты только серверу.
 
 [live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
-(default 1), до трёх явно заданных routes. HTTP-ошибка не вызывает скрытого retry.
-Cloud default — openrouter/free, платные OpenRouter модели запрещены. Явные
+(default 1), до трёх явно заданных routes. Один transport request по умолчанию
+ограничен 60 s; jobs управляют bounded автоматическими retry и durable cooldown.
+Cloud default — google/gemma-4-31b-it:free. Concrete OpenRouter :free ID требует
+exact official base, наличие в models API и явно нулевые prompt/completion цены
+до dispatch; legacy openrouter/free совместим. Платные OpenRouter модели запрещены. Явные
 Ollama Cloud primary/secondary используют https://ollama.com/v1 и отдельные KEY/MODEL;
 local route опционален. Generic nonfree secondary для OpenRouter primary блокируется.
 Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
@@ -45,7 +48,9 @@ provider/requested/actual model, error, checkpoint и связь с version. О�
 Worker lease берётся после successful bind, heartbeat сохраняет exclusive ownership
 одной DB. Второй writer с этой DB блокируется. После crash подтверждённо отсутствующий
 PID позволяет immediate restart; живой/непроверяемый PID сохраняет lease до 60 s.
-До 6 provider calls за запуск и 12 за всё задание. Cloud SSE и local NDJSON checkpoint
+Default automatic cycle: до 6 provider calls суммарно, до 4 worker runs и 600 s
+включая ожидание. Manual Continue добавляет ограниченный бюджет, lifetime ≤12 calls.
+Cloud SSE и local NDJSON checkpoint
 записываются bounded порциями, usage/output/reasoning сохраняются, если возвращены.
 Legacy synchronous API получает полный ответ без streaming checkpoint.
 Provider/requested model фиксируются уже в queued. LIVE creation при настроенном
@@ -53,10 +58,17 @@ generator ограничено 6/min owner и 12/min global; отдельный 
 provider dispatch включает repair и ручное продолжение.
 
 Обрезанный output допускает bounded repair полного документа, не склейку частей.
-Неизвестный исход/rate/quota/auth/context/обрыв stream останавливают автоматические
-переходы; Retry-After блокирует ранний manual continue. При restart in-flight jobs
-становятся needs_attention, queued можно запускать. Продолжение использует original
-spec и записанный draft; provider не обещает resume с последнего токена. Проверенная
+Retry-After задаёт durable ожидание `waiting_for_provider`; retry_scheduled использует
+exponential backoff от 2 s с cap 60 s. Quota/auth/model/context/output-budget закрывают
+route на 15 min и позволяют явно настроенный альтернативный route. Неизвестный
+potentially billed timeout/stream interruption не повторяется слепо на том же route.
+Restart сохраняет исходные deadline/calls/cooldown и восстанавливает допустимые
+действия. Старые recoverable needs_attention без automatic metadata получают один
+bounded cycle с lifetime cap 12; cancelled/quota/auth/configuration отказы не принимаются.
+Полный checkpoint с подтверждённым origin сначала проверяется без POST;
+если нужен repair, он получает конкретные browser errors. Продолжение использует original
+spec и draft; provider не обещает resume с последнего токена. При исчерпании
+бюджета/ресурсов остаётся needs_attention + failed_permanent metadata. Проверенная
 version и completed job сохраняются одной transaction. Сбой оставляет job/draft,
 не игровую passed version. Legacy synchronous games/versions API сохранён.
 
@@ -73,6 +85,16 @@ overflow, порядок/уникальность events, JS/console errors; д�
 explicit fallback и scope browser evidence. Error API возвращает безопасные codes
 и attempts, не raw upstream error. Repair получает original request/failed HTML
 и ограниченную техническую обратную связь. DEMO/import маркируются mock/unverified.
+Quality prompt требует реальные transitions механик, конечную цель, поражение,
+restart, touch и read-only diagnostic state; наличие diagnostic JSON само по себе
+не доказывает gameplay. Две собственные gallery HTML в assets/games добавляются
+в library только по явному POST и сохраняются authored/unverified, отдельно от LIVE.
+`LLM_PROMPT_STYLE=direct` передаёт исходный естественный запрос, `spec` (code default)
+формирует specification. Общие contract/validation/security сохраняются. Generic
+browser evidence публикует только HTML_VALID, JS_EXECUTABLE, UI_VISIBLE,
+MOBILE_VERIFIED; отдельные gameplay/end/input correctness levels не выдаются.
+Pause проверяет замороженное изображение, resume — фактическое продолжение через
+видимую Resume/Continue или data-yaplix-resume, затем pause-toggle fallback.
 
 ## Runtime и доступ
 
@@ -94,6 +116,14 @@ Local loopback; LAN выбранный private IPv4 + key/cookie. HTTPS loopback
 публичный Telegram ограничен одним владельцем, несколько ID блокируют HTTPS startup.
 
 ## Telegram и shares
+
+TelegramBot получает updates в том же backend независимо от Mini App/tunnel.
+Token + single owner включают команды start/games/new/status/help; явный
+TELEGRAM_UPDATES=off выключает poller. Каталог читается из существующей DB,
+не подставляется из вымышленного списка. Webhook/consumer conflict не обходится.
+Один consumer и offsets координируются отдельно от game DB; offset фиксируется
+до отправки ответа, поэтому crash может потерять reply. Exactly-once доставки нет.
+Проверенный текущий HTTPS нужен для web_app кнопок; без него бот остаётся текстовым.
 
 Официальный SDK только на `/telegram`, lazy adapter и тот же frontend. Backend
 проверяет HMAC, auth age (default 300 s), TELEGRAM_ALLOWED_USER_IDS; initDataUnsafe

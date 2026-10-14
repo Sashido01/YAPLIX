@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { managedPath } from './store.ts';
 import { Fault } from './contracts.ts';
 import type { NetworkPolicy } from './access.ts';
+import {buildIdentity} from './build-identity.ts';
 
 export const RUNTIME_PROTOCOL = 1;
 export function runtimeKey() {
@@ -20,6 +21,7 @@ export function proof(key: string, nonce: string, instance: string) {
 }
 export class RuntimeControl {
   readonly instance = randomBytes(16).toString('hex');
+  private buildId=buildIdentity();
   private lease?: { id: string; expires: number };
   private original: NetworkPolicy;
   readonly policy: NetworkPolicy;
@@ -31,7 +33,7 @@ export class RuntimeControl {
   }
   identity(nonce: string) {
     if (!/^[a-f0-9]{64}$/.test(nonce)) throw new Fault('RUNTIME_NONCE_INVALID');
-    return { app: 'YAPLIX', protocol: RUNTIME_PROTOCOL, instance: this.instance, proof: proof(this.key, nonce, this.instance), mode: this.policy.mode };
+    return { app: 'YAPLIX', protocol: RUNTIME_PROTOCOL, instance: this.instance, proof: proof(this.key, nonce, this.instance), mode: this.policy.mode,buildId:this.buildId };
   }
   authorized(value = '') {
     return value.length === this.key.length && timingSafeEqual(Buffer.from(value), Buffer.from(this.key));
