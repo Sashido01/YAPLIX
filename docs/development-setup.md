@@ -57,7 +57,7 @@ merge и smoke main. [Workflow](../CONTRIBUTING.md).
 | OLLAMA_BASE_URL / MODEL | loopback 11434 / qwen2.5-coder:14b default |
 | YAPLIX_MODE / HOST / PUBLIC_URL | local loopback; explicit LAN/HTTPS |
 | YAPLIX_ACCESS_KEY | random URL-safe 32..128 chars, shared team access |
-| TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS | server token / числовые ID через запятую |
+| TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS | server token / один положительный ID владельца для публичного HTTPS |
 | TELEGRAM_AUTH_MAX_AGE | 30..900 s, default 300; session TTL 1 h |
 
 OpenRouter exact base https://openrouter.ai/api/v1, model **openrouter/free**;
@@ -133,3 +133,27 @@ v1 не меняет, old HTML/metadata сохраняются. LAN/QR — READM
 PORT_IN_USE — свой активный server или чужой процесс; остановите только свой либо
 смените порт. Doctor проверяет новый bind: активный server может давать PORT_IN_USE.
 После изменения .env перезапустите backend, build не перезагружает его.
+
+## Надёжный временный Telegram runtime
+
+После `npm run build` и `npm run tunnel:install`: `npm run tunnel -- --menu`.
+Совместимый `npm start` из этого же клона можно оставить работающим. Launcher
+проверяет HTTP ready и HMAC challenge; чужой/старый сервер не останавливает.
+Свободный порт: запускает backend сам, ждёт readiness и управляет только им.
+После обновления/.env изменений перезапустите backend, чтобы он загрузил новый код.
+
+Публичный `/healthz` не содержит конфигурацию; identity/ready проверяется через
+реальный HTTPS до menu button. Private `/api/runtime/tunnel` работает только на
+loopback с локальным control key для изменений; ключ не передаётся connector.
+Публичный HTTP и forwarded headers не могут управлять runtime. Telegram HTTPS
+требует единственного владельца, пока общая библиотека не имеет ownership.
+
+Ctrl+C сохраняет existing backend, закрывает свой backend и connector. После аварии
+публичный lease закрывается за 20 s; перезапустите свой backend, затем tunnel.
+URL-файл отражает только подтверждённую текущую сессию. Telegram reset требует сети;
+его отказ явно печатается. Публичного состояния «подключено» после shutdown нет.
+
+Журнал `.local/logs/tunnel.log` ограничен и фильтруется до записи. Ошибки процесса
+показывают exit code/signal/stderr. URL timeout 60 s, внешний health 45 s.
+`--protocol auto|http2|quic`, влияние DNS/VPN/proxy/Windows Firewall, Android и
+безопасный публичный сценарий описаны в [Telegram](telegram.md).

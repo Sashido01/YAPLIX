@@ -102,13 +102,18 @@ TELEGRAM_BOT_TOKEN и TELEGRAM_ALLOWED_USER_IDS. `npm run telegram:check` про
 
 ```sh
 npm run tunnel:install
-# Остановите свой npm start, затем:
-npm run tunnel
+# Backend может уже работать на этом порту.
+npm run tunnel -- --menu
 ```
 
 cloudflared закреплён version/SHA-256 и устанавливается только в `.local/tools`.
-Launcher запускает защищённый loopback server, печатает временный `/telegram` URL;
-Ctrl+C закрывает tunnel/server. `.env` PUBLIC_URL не заменяется. [Telegram/HTTPS](docs/telegram.md)
+Launcher проверяет идентичность/readiness уже работающего YAPLIX из этого клона
+или запускает свой backend. Публичный health должен подтвердить экземпляр до
+настройки меню и печати `/telegram` URL. Ctrl+C закрывает собственные процессы,
+сохраняет существующий совместимый backend и сбрасывает только своё меню. `.env` не меняется.
+Публичный Telegram сейчас требует ровно один ID владельца; общая библиотека
+не обеспечивает персональную изоляцию. Диагностика: `.local/logs/tunnel.log`;
+при сетевых сбоях доступен `--protocol http2` или `--protocol quic`. [Telegram/HTTPS](docs/telegram.md)
 объясняет BotFather, собственный user ID и постоянный production URL.
 
 В HTTPS кнопка «Поделиться» создаёт ссылку на одну неизменяемую версию на 7 дней;
@@ -129,6 +134,7 @@ npm run performance:smoke
 
 [API/backup/restore/update](docs/development-setup.md), [Windows/Ubuntu](docs/cross-platform.md),
 [архитектура](docs/architecture.md), [приёмка](docs/demo-readiness.md).
+[TASK-008: результаты runtime/tunnel и границы внешней проверки](docs/task-008-report.md).
 CI проверяет чистый checkout Windows/Ubuntu, synthetic transports, реальный Chromium
 preflight, 12 frontend profiles и секреты. Реальные LLM/физические клиенты отдельно.
 Задача завершена после hosted CI, merge, ff-only main и post-merge smoke.

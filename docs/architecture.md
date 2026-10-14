@@ -60,7 +60,8 @@ cache 3. Unmount удаляет iframe/listener. События — недове
 
 Local loopback; LAN выбранный private IPv4 + key/cookie. HTTPS loopback за proxy,
 точные Host/Origin/forwarded scheme, Secure cookie. Generation: 6/min на principal,
-12/min globally, один активный запрос. Общая team library без ownership/ролей.
+12/min globally, один активный запрос. Общая библиотека без ownership/ролей;
+публичный Telegram ограничен одним владельцем, несколько ID блокируют HTTPS startup.
 
 ## Telegram и shares
 
@@ -90,3 +91,18 @@ winRate=won/started. Без наблюдений средние null. Comparison
 Автоматического переобучения/эволюции нет. Online backup проверяет integrity/FK/schema
 и SHA-256; [restore/update](development-setup.md). Sandbox не гарантирует CPU/RAM
 изоляцию; exported HTML теряет HTTP CSP и проверяется offline отдельно.
+
+## Runtime / tunnel lifecycle
+
+`npm run tunnel -- --menu`: совместимый local backend этого клона проверяется
+HTTP readiness + HMAC nonce/protocol/instance через `/api/runtime/tunnel`.
+Control key только в `.local/runtime-control.key`, не в connector environment.
+Private loopback POST готовит закрытый HTTPS режим, устанавливает exact origin и
+lease heartbeat; без heartbeat через 20 s публичные запросы закрыты. Перед переходом
+в local launcher ждёт close connector. Local mode отвергает forwarded requests.
+Own backend закрывается по IPC disconnect; existing backend не получает kill.
+
+Публичный `/healthz` содержит только app/protocol/instance/ready. Внешний HTTPS
+должен вернуть именно этот экземпляр до меню Telegram. URL/process/health deadlines,
+bounded redacted process journal, conditional Telegram menu reset и повторный запуск
+описаны в [Telegram runtime](telegram.md). Client bundle не управляет процессами.

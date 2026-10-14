@@ -21,10 +21,12 @@ export class TelegramSessions {
   constructor(env:NodeJS.ProcessEnv=process.env){
     this.token=env.TELEGRAM_BOT_TOKEN??'';this.age=Number(env.TELEGRAM_AUTH_MAX_AGE??300);
     const ids=(env.TELEGRAM_ALLOWED_USER_IDS??'').split(',').map(s=>s.trim()).filter(Boolean);
-    if(ids.some(s=>!/^\d+$/.test(s)||!Number.isSafeInteger(Number(s)))||!Number.isSafeInteger(this.age)||this.age<30||this.age>900)throw new Fault('INVALID_TELEGRAM_CONFIGURATION');
+    if(ids.some(s=>!/^\d+$/.test(s)||!Number.isSafeInteger(Number(s))||Number(s)<=0)||!Number.isSafeInteger(this.age)||this.age<30||this.age>900)throw new Fault('INVALID_TELEGRAM_CONFIGURATION');
     this.allowed=new Set(ids.map(Number));
   }
   configured(){return Boolean(this.token&&this.allowed.size);}
+  singleOwner(){return Boolean(this.token&&this.allowed.size===1);}
+  multipleOwners(){return this.allowed.size>1;}
   login(raw:unknown){
     if(!this.configured())throw new Fault('TELEGRAM_NOT_CONFIGURED',503);
     const {userId}=validateInitData(raw,this.token,undefined,this.age);if(!this.allowed.has(userId))throw new Fault('TELEGRAM_USER_FORBIDDEN',403);
