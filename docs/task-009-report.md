@@ -85,7 +85,7 @@ MVP не поддерживаются. Неавторизованные запр
 | 19 | Миграция копий реальных v1 DB: сравнение содержимого всех старых строк + integrity/FK; originals read-only. |
 | 20 | tests/launcher.test.ts: start/reuse/foreign service/bounded hung-child cleanup. Clean-clone smoke и Windows/Ubuntu CI проверяются при доставке. |
 
-Локальные typecheck/build и 57 Node тестов проходят; полный первоначальный
+Локальные typecheck/build и 58 Node тестов проходят; полный первоначальный
 браузерный набор: 191 PASS / 145 осознанных SKIP на 12 профилях. Дополнительный
 controlled LIVE test запускается на Chromium 320/WebKit 390; итоговый current-head
 полный набор и Windows/Ubuntu/secret-scan подтверждаются в PR. Дополнительный
@@ -99,6 +99,14 @@ launcher/backend после smoke закрылись; фактический м�
 не автоматизировался. Staged diff и commit history прошли Gitleaks. npm audit CLI
 получил сетевой отказ; тот же официальный bulk advisory endpoint через Windows
 HTTPS ответил без advisories для четырёх production packages.
+
+Первый CI head `367d375` выявил слишком короткое ожидание в дополнительном
+controlled LIVE test: через 5 s задание ещё находилось в validating, раунд был
+сохранён. Fixture использует явный 15 s deadline всего конвейера, ожидание результата
+16 s и общий test budget 35 s, как существующие production LIVE tests.
+Продуктовые бюджеты/проверки sandbox не ослаблялись. Отдельная регрессия проверяет,
+что repair неполного finish-stop HTML получает исходный raw draft вместо пустого
+placeholder; только проверенный полный результат становится версией.
 
 Две реальные DB сохранены: основная — 14 games/32 versions/178 sessions/913 events;
 вторая — 1/1/2/8. SHA-256 содержимого старых таблиц одинаков до/после миграции

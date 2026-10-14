@@ -39,6 +39,11 @@ test('output length preserves checkpoint and uses bounded complete-document repa
   const engine=new GenerationEngine([route(async(messages,_signal,context)=>{seen.push(structuredClone(messages));calls++;if(calls===1){context!.partial('<!DOCTYPE html><html>','actual',{outputTokens:4000,reasoningTokens:500});throw new CloudOutputFailure('actual','<!DOCTYPE html><html>',{outputTokens:4000,reasoningTokens:500});}return{code:html,model:'actual',outputTokens:700,reasoningTokens:0};})],{check:evidence});const jobs=new GenerationJobs(store,engine);
   try{const result=await settled(jobs,jobs.create('owner','length-key',request).jobId);assert.equal(result.stage,'completed');assert.equal(result.history.length,2);assert.equal(result.history[0].errorCode,'LLM_OUTPUT_TRUNCATED');assert.equal(result.history[0].reasoningTokens,500);assert.equal(result.outputTokens,700);assert.ok(seen[1].at(-1)!.content.includes(spec.prompt));assert.ok(seen[1].at(-2)!.content.includes('<!DOCTYPE html><html>'));assert.equal(result.checkpoint.trim(),html.trim());assert.equal(calls,2);}finally{await jobs.close();store.close();}
 });
+test('finish stop with incomplete HTML repairs the actual raw draft, not an empty placeholder',async()=>{
+  const store=new Store(':memory:'),partial='<!DOCTYPE html><html><body><script>const score=0;';let calls=0;const messages:Message[][]=[];
+  const jobs=new GenerationJobs(store,new GenerationEngine([route(async m=>{messages.push(structuredClone(m));return{code:++calls===1?partial:html,model:'actual'};})],{check:evidence}));
+  try{const done=await settled(jobs,jobs.create('owner','incomplete-key',request).jobId);assert.equal(done.stage,'completed');assert.equal(calls,2);assert.equal(messages[1].at(-2)!.content,partial);assert.ok(messages[1].at(-1)!.content.includes(spec.prompt));assert.equal(done.history[0].errorCode,'LLM_INVALID_HTML');assert.equal(store.list().length,1);}finally{await jobs.close();store.close();}
+});
 
 for(const [status,code] of [[429,'LLM_RATE_LIMIT'],[402,'LLM_QUOTA'],[400,'LLM_CONTEXT_LIMIT']] as const)test(`controlled HTTP ${status}: draft and prompt survive without retry or unauthorized fallback`,async t=>{
   const store=new Store(':memory:');let calls=0,backup=0;

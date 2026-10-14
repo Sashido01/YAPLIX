@@ -45,6 +45,9 @@ export class GenerationEngine implements Generator {
           }catch(error){
             if(controller.signal.aborted){attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:'failed',errorCode:signal?.aborted?'REQUEST_CANCELLED':'LLM_TIMEOUT',elapsedMs:Math.round(performance.now()-begin),requestMs:requestMs||Math.round(performance.now()-begin),validationMs,...tokens});context?.attempt(attempts.at(-1)!);throw error;}
             if(error instanceof ProviderFailure){actual=error.actualModel;code=error.partial;tokens=error.usage;if(code)partial=code;context?.partial(code||partial,actual,tokens);if(error.retryAt)context?.retryAt?.(error.retryAt);}
+            // Extraction can throw before assigning code. Repair still needs the
+            // confirmed raw response, including an incomplete HTML document.
+            if(!code&&actual&&partial)code=partial;
             lastCode=error instanceof Fault?error.code:'LLM_NETWORK_OR_RESPONSE';
             attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:actual?'rejected':'failed',errorCode:lastCode,elapsedMs:Math.round(performance.now()-begin),requestMs:requestMs||Math.round(performance.now()-begin),validationMs,...tokens});context?.attempt(attempts.at(-1)!);
             if(context&&['RATE_LIMIT','LLM_QUOTA','LLM_RATE_LIMIT','LLM_AUTH','LLM_CONTEXT_LIMIT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_OUTPUT_BUDGET_TOO_SMALL'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,error instanceof Fault?error.status:502);
