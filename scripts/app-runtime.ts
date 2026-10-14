@@ -1,0 +1,32 @@
+import { fork, spawn } from 'node:child_process';
+import type {ChildProcess} from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { checkPort } from '../src/network.ts';
+import { Fault } from '../src/contracts.ts';
+import { PROJECT_ROOT } from '../src/store.ts';
+import { proof, runtimeKey, RUNTIME_PROTOCOL } from '../src/runtime-control.ts';
+import { boundedText } from '../src/transport.ts';
+export async function appIdentity(port:number,key:string){
+  const base='http://127.0.0.1:'+port,nonce=randomBytes(32).toString('hex');
+  const read=async(path:string)=>{const response=await fetch(base+path,{redirect:'error',signal:AbortSignal.timeout(1500)});if(!response.ok)throw new Fault('BACKEND_NOT_READY');return JSON.parse(await boundedText(response,4096));};
+  const identity=await read('/api/runtime/tunnel?nonce='+nonce);
+  if(identity.app!=='YAPLIX'||identity.protocol!==RUNTIME_PROTOCOL||identity.proof!==proof(key,nonce,identity.instance)||identity.mode!=='local'||identity.schemaVersion!==2)throw new Fault('BACKEND_NOT_READY');
+  const health=await read('/healthz');if(health.ready!==true||health.instance!==identity.instance)throw new Fault('BACKEND_NOT_READY');return identity.instance as string;
+}
+export async function runApp(options:{port:number;env?:NodeJS.ProcessEnv;signal:AbortSignal;open?:boolean;openBrowser?:(url:string)=>void;announce?:(text:string)=>void;startBackend?:(env:NodeJS.ProcessEnv)=>ChildProcess}){
+  if(!Number.isSafeInteger(options.port)||options.port<1||options.port>65535)throw new Fault('INVALID_PORT');
+  const key=runtimeKey(),url='http://127.0.0.1:'+options.port+'/',announce=options.announce??console.log;
+  let free=true;try{await checkPort({mode:'local',host:'127.0.0.1',port:options.port});}catch(error){if(!(error instanceof Fault)||error.code!=='PORT_IN_USE')throw error;free=false;}
+  if(!free){try{await appIdentity(options.port,key);}catch{throw new Fault('PORT_IN_USE: порт занят чужим, устаревшим или публичным сервером. Он сохранён; выберите PORT или перезапустите свой YAPLIX.');}announce('YAPLIX уже работает: '+url);if(options.open!==false)open(url,options.openBrowser);return{attached:true};}
+  const env={...options.env,PORT:String(options.port),YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',YAPLIX_ACCESS_KEY:''};
+  const child=options.startBackend?.(env)??fork('src/server.ts',[],{cwd:PROJECT_ROOT,env,stdio:['ignore','pipe','pipe','ipc'],windowsHide:true});
+  let error='';child.stderr?.on('data',()=>{error='BACKEND_START_FAILED: проверьте диагностику и настройки .env';});child.stdout?.on('data',()=>{});child.on('error',()=>{error='BACKEND_START_FAILED';});
+  const closed=new Promise<void>(done=>child.once('close',()=>done()));let cancelled!:()=>void;const aborted=new Promise<void>(done=>cancelled=done);const stop=()=>{if(child.connected)child.send('shutdown',()=>{});cancelled();};options.signal.addEventListener('abort',stop,{once:true});
+  try{
+    let ready=false;for(let i=0;i<100&&!options.signal.aborted;i++){if(child.exitCode!==null)break;try{await appIdentity(options.port,key);ready=true;break;}catch{}await delay(200);}
+    if(!ready){if(options.signal.aborted)return{attached:false};throw new Fault(error||'BACKEND_NOT_READY');}
+    announce('YAPLIX готов: '+url+' · DEMO без ключей. Остановка: Ctrl+C в этом окне.');if(options.open!==false)open(url,options.openBrowser);if(options.signal.aborted)stop();await Promise.race([closed,aborted]);return{attached:false};
+  }finally{options.signal.removeEventListener('abort',stop);if(child.exitCode===null&&child.signalCode===null){stop();let timer:ReturnType<typeof setTimeout>|undefined;const timeout=new Promise<boolean>(done=>{timer=setTimeout(()=>done(true),7000);});if(await Promise.race([closed.then(()=>false),timeout])){child.kill('SIGKILL');clearTimeout(timer);const forced=new Promise<boolean>(done=>{timer=setTimeout(()=>done(true),2000);});if(await Promise.race([closed.then(()=>false),forced]))throw new Fault('OWN_CHILD_CLOSE_TIMEOUT');}clearTimeout(timer);}}
+}
+function open(url:string,override?: (url:string)=>void){if(override){override(url);return;}const child=process.platform==='win32'?spawn('rundll32.exe',['url.dll,FileProtocolHandler',url],{stdio:'ignore',windowsHide:true}):spawn('xdg-open',[url],{stdio:'ignore'});child.on('error',()=>console.log('Откройте в браузере: '+url));child.unref();}

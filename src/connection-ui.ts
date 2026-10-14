@@ -17,7 +17,7 @@ export async function diagnose(token?:string) {
     const data: Status = await (await response('/api/diagnostics')).json();
     const states: Record<string,string> = {ready:'модель доступна',not_configured:'не настроен',unreachable:'провайдер недоступен',model_missing:'модель не найдена',authentication_failed:'API key не принят',browser_missing:'установите браузер: npm run checker:install',not_verified:'готовность модели не проверена'};
     el('system-info').textContent = `API: ответ получен. База: ${data.ok?'исправна':'ошибка'}. DEMO: ${data.demoReady===false?'нужна сборка / проверка базы':'доступен'}. LIVE: ${states[data.llmState??'not_configured']??'состояние неизвестно'}${data.model?' / '+data.model:''}. Режим: ${data.mode??'неизвестен'}.`;
-    if (data.mode !== 'lan' || !data.connectionUrl) {
+    if (!['lan','https'].includes(data.mode??'') || !data.connectionUrl) {
       el('lan-instructions').textContent = 'Для телефона запустите npm run lan -- --list, затем npm run lan -- --host <IPv4> --port 3000. Выберите адрес Wi-Fi/Ethernet вашей сети из списка; VPN и виртуальные адаптеры также могут присутствовать.';
       return;
     }
@@ -25,6 +25,7 @@ export async function diagnose(token?:string) {
     if (url.origin !== location.origin || url.search || url.hash || url.username || url.password) throw new Error('Адрес сервера не соответствует открытому подключению.');
     el('connection-details').hidden = false;
     (el('lan-url') as HTMLInputElement).value = url.href;
+    if(data.mode==='https'){el('lan-instructions').textContent='Публичный HTTPS: откройте адрес или QR на Android/iPhone из любой сети. Доступ защищён ключом сервера или авторизацией Telegram. Генерация остаётся приватной.';return;}
     el('lan-instructions').textContent = 'Телефон и компьютер — в одной Wi-Fi сети. Сканируйте QR или откройте ссылку; затем введите ключ из терминала компьютера. Если адрес не открывается, проверьте выбранный интерфейс, изоляцию клиентов Wi-Fi и разрешение доступа в firewall. Сервер не проверяет доступность телефона.';
   } catch (error) { el('system-info').textContent = 'Статус не подтверждён. '+(error as Error).message; }
 }

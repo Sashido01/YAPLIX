@@ -16,9 +16,10 @@ try {
     const sha256 = createHash('sha256').update(readFileSync(path)).digest('hex');
     if (sha256 !== expected) throw new Fault('BACKUP_HASH_MISMATCH');
     const copy = new DatabaseSync(path, { readOnly: true });
-    try { if (!healthyDatabase(copy)) throw new Fault('BACKUP_INVALID'); }
+    let schemaVersion;
+    try { if (!healthyDatabase(copy)) throw new Fault('BACKUP_INVALID');schemaVersion=Number(copy.prepare('PRAGMA user_version').get()?.user_version); }
     finally { copy.close(); }
-    console.log(JSON.stringify({ verified: true, sha256, schemaVersion: 1 }));
+    console.log(JSON.stringify({ verified: true, sha256, schemaVersion }));
   } else if (command === 'backup') { store = new Store(process.env.YAPLIX_DB); console.log(JSON.stringify(await store.backup(), null, 2)); }
   else if (command === 'doctor') {
     const failures: string[] = [], code = (e: unknown) => e instanceof Fault ? e.code : 'DATABASE_OR_CONFIGURATION_ERROR';

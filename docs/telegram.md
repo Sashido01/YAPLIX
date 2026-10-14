@@ -28,6 +28,31 @@ token accepted, HTTPS/allowlist presence и menu type, без вывода token
 Mini App закрыт; подписанный неразрешённый ID не получает library/LLM. HMAC/age
 проверяет server, initDataUnsafe не доверяется. После server restart новый вход.
 
+## Каталог, приватные ссылки и уведомления
+
+Mini App открывает тот же каталог «Игры». «Создать игру» сохраняет server job;
+можно играть дальше, а готовность показывает toast с явным «Открыть». Подписанная
+авторизация нужна и для `/telegram?game=UUID&version=UUID`; IDs адресуют сохранённую
+версию, но не дают доступа сами. Library пока общая, поэтому публичный Telegram
+по-прежнему ограничен одним владельцем. Share — отдельная readonly capability на
+один HTML, без доступа к jobs/library/generation.
+
+До создания задания откройте «Задания» и при желании отметьте «Сообщить в моём
+Telegram, когда я выйду из приложения». Согласие относится к этому заданию,
+по умолчанию выключено; обычный browser этого согласия не предоставляет. Нужны
+signed session, действующий HTTPS и доступ своего бота к приватному чату (напишите
+ему `/start`). После отсутствия job polling ≥30 s сервер может отправить сообщение
+с кнопкой конкретной game/version. Это признак отсутствия страницы, не доказательство
+закрытия клиента. Возврат в Mini App снова показывает сохранённое состояние.
+
+Отправка заранее помечается перед network dispatch: второй попытки при неизвестном
+ответе нет. Unavailable/timeout не удаляют игру; actual delivery не гарантируется,
+статус может быть unknown. Toast тоже claimed до показа и может не появиться после
+crash; центр заданий/библиотека сохраняют результат. Synthetic proof не заменяет
+проверку сообщения в реальном Telegram. Web Push вне открытого browser не реализован.
+`sent` означает проверенный ответ Bot API `ok:true` с message_id и ожидаемым chat.id,
+а не подтверждение прочтения сообщения на физическом телефоне.
+
 ## Временный HTTPS без домена
 
 [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
@@ -138,6 +163,9 @@ YAPLIX_ACCESS_KEY=your-32-or-more-url-safe-random-key
 
 npm start, затем `npm run telegram:menu` или BotFather. Этот режим независим от
 Quick Tunnel. Не открывайте backend/Ollama на 0.0.0.0. [Update/backup](development-setup.md).
+По сравнению с LAN QR, публичный HTTPS QR открывает доступный внешний адрес из
+диагностики. Оба QR содержат только URL; они не передают access key, bot token,
+initData или session token. Наличие QR не доказывает доступность с Android/iPhone.
 
 Synthetic SDK/HTTPS tests проверяют реальный HMAC, allowed/tampered/forbidden,
 shared UI/gameplay, header session при blocked cookies, theme/viewport/safe-area,

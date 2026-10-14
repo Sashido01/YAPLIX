@@ -7,6 +7,8 @@
     "node": ">=24.18.0 <25"
   },
   "scripts": {
+    "app": "node --env-file-if-exists=.env scripts/app.mjs",
+    "benchmark:generation": "node --env-file-if-exists=.env scripts/generation-benchmark.ts",
     "start": "node --env-file-if-exists=.env src/server.ts",
     "lan": "node --env-file-if-exists=.env scripts/lan.ts",
     "demo:live": "node --env-file-if-exists=.env scripts/live-generation.ts",

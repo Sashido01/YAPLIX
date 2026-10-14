@@ -19,11 +19,18 @@ const SCHEMA_V1 = [
   'CREATE INDEX sessions_version ON sessions(version_id)',
   'CREATE TABLE events(event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(session_id), sequence INTEGER NOT NULL, payload TEXT NOT NULL, UNIQUE(session_id,sequence)) STRICT',
 ];
+const SCHEMA_V2 = [
+  'CREATE TABLE generation_worker(slot INTEGER PRIMARY KEY CHECK(slot=1), instance TEXT NOT NULL, expires_at INTEGER NOT NULL, pid INTEGER NOT NULL CHECK(pid>0)) STRICT',
+  "CREATE TABLE generation_jobs(job_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, request TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('queued','generating','validating','repairing','completed','needs_attention','cancelled','failed')), attempts INTEGER NOT NULL CHECK(attempts BETWEEN 0 AND 12), checkpoint TEXT NOT NULL CHECK(length(CAST(checkpoint AS BLOB))<=200000), metadata TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, version_id TEXT REFERENCES versions(version_id), notified INTEGER NOT NULL DEFAULT 0 CHECK(notified IN (0,1)), UNIQUE(owner_id,idempotency_key)) STRICT",
+  'CREATE INDEX generation_jobs_owner ON generation_jobs(owner_id,created_at)',
+  'CREATE INDEX generation_jobs_status ON generation_jobs(status)',
+];
 export function validSchema(db: DatabaseSync): boolean {
-  if (db.prepare('PRAGMA user_version').get()?.user_version !== 1) return false;
+  const version = db.prepare('PRAGMA user_version').get()?.user_version;
+  if (version !== 1 && version !== 2) return false;
   const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim();
   const actual = db.prepare("SELECT sql FROM sqlite_schema WHERE substr(name,1,7) <> 'sqlite_' ORDER BY name").all().map(row => normalize(String(row.sql))).sort();
-  const expected = SCHEMA_V1.map(normalize).sort();
+  const expected = [...SCHEMA_V1,...(version===2?SCHEMA_V2:[])].map(normalize).sort();
   return actual.length === expected.length && actual.every((sql, i) => sql === expected[i]);
 }
 export function healthyDatabase(db: DatabaseSync): boolean {
@@ -64,11 +71,24 @@ export class Store {
     try {
       this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000;');
       const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-      if (version > 1) throw new Fault('SCHEMA_TOO_NEW', 500);
-      if (version === 0) this.transaction(() => {
-        this.db.exec(SCHEMA_V1.join(';\n') + '; PRAGMA user_version=1;');
-      });
+      if (version > 2) throw new Fault('SCHEMA_TOO_NEW', 500);
+      if (version === 0) {
+        if(this.db.prepare("SELECT 1 FROM sqlite_schema WHERE substr(name,1,7)<>'sqlite_' LIMIT 1").get())throw new Fault('SCHEMA_INVALID',500);
+        this.transaction(() => this.db.exec([...SCHEMA_V1,...SCHEMA_V2].join(';\n') + '; PRAGMA user_version=2;'));
+      }
       if (!validSchema(this.db)) throw new Fault('SCHEMA_INVALID', 500);
+      if (this.db.prepare('PRAGMA user_version').get()?.user_version === 1) {
+        if (!healthyDatabase(this.db)) throw new Fault('SCHEMA_INVALID',500);
+        // Preserve a verified pre-migration snapshot; never replace the user's DB.
+        if (path !== ':memory:') {
+          const snapshot=managedPath(`.local/backups/before-v2-${randomUUID()}.sqlite`);
+          this.db.prepare('VACUUM INTO ?').run(snapshot);
+          const copy=new DatabaseSync(snapshot,{readOnly:true});
+          try { if(!healthyDatabase(copy))throw new Fault('BACKUP_INVALID',500); } finally {copy.close();}
+        }
+        this.transaction(()=>this.db.exec(SCHEMA_V2.join(';\n')+'; PRAGMA user_version=2;'));
+        if (!validSchema(this.db)) throw new Fault('SCHEMA_INVALID',500);
+      }
     } catch (e) { this.db.close(); throw e; }
   }
   transaction<T>(action: () => T): T {
@@ -98,7 +118,7 @@ export class Store {
       try {
         if (!healthyDatabase(copy)) throw new Fault('BACKUP_INVALID', 500);
       } finally { copy.close(); }
-      return { filename, sha256: createHash('sha256').update(readFileSync(target)).digest('hex'), schemaVersion: 1, verified: true };
+      return { filename, sha256: createHash('sha256').update(readFileSync(target)).digest('hex'), schemaVersion: 2, verified: true };
     } finally { this.backingUp = false; }
   }
   history(id: string) {
@@ -108,16 +128,27 @@ export class Store {
     return this.db.prepare('SELECT metadata FROM versions WHERE game_id=? ORDER BY rowid').all(gameId).map(r => JSON.parse(r.metadata as string));
   }
   save(spec: GameSpec, artifact: Artifact, previousId?: string): GameVersion {
+    return this.transaction(()=>this.insertVersion(spec,artifact,previousId));
+  }
+  saveAndCompleteJob(jobId:string,ownerId:string,spec:GameSpec,artifact:Artifact,previousId?:string,workerInstance?:string):GameVersion {
+    return this.transaction(()=>{
+      if(workerInstance&&!this.db.prepare('SELECT 1 FROM generation_worker WHERE slot=1 AND instance=? AND expires_at>?').get(workerInstance,Date.now()))throw new Fault('JOB_WORKER_BUSY',409);
+      const row=this.db.prepare('SELECT status,version_id FROM generation_jobs WHERE job_id=? AND owner_id=?').get(uuid(jobId),ownerId);
+      if(!row||!['generating','validating','repairing'].includes(String(row.status)))throw new Fault('JOB_STATE',409);
+      const version=this.insertVersion(spec,artifact,previousId);
+      this.db.prepare("UPDATE generation_jobs SET status='completed',version_id=?,updated_at=? WHERE job_id=? AND owner_id=?").run(version.versionId,new Date().toISOString(),jobId,ownerId);
+      return version;
+    });
+  }
+  private insertVersion(spec:GameSpec,artifact:Artifact,previousId?:string):GameVersion {
     spec = parseSpec(spec); artifact = parseArtifact(artifact);
     const previous = previousId ? this.getVersion(previousId) : null;
     const version: GameVersion = { ...artifact, spec, gameId: previous?.gameId ?? randomUUID(), versionId: randomUUID(), previousVersionId: previous?.versionId ?? null, sha256: hash(artifact.html), createdAt: new Date().toISOString() };
-    this.transaction(() => {
       const count = this.db.prepare('SELECT COUNT(*) n,COALESCE(SUM(bytes),0) total FROM versions').get() as { n: number; total: number };
       if (count.n >= 10_000 || count.total + Buffer.byteLength(artifact.html) > 100_000_000) throw new Fault('ARTIFACT_QUOTA', 507);
       if (!previous) this.db.prepare('INSERT INTO games VALUES (?,?)').run(version.gameId, version.createdAt);
       const { html, ...metadata } = version;
       this.db.prepare('INSERT INTO versions VALUES (?,?,?,?,?,?,?)').run(version.versionId, version.gameId, version.previousVersionId, html, Buffer.byteLength(html), JSON.stringify(metadata), version.createdAt);
-    });
     return version;
   }
   session(versionId: string) {

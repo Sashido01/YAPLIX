@@ -1,3 +1,4 @@
+import {createAndOpen} from './ui-jobs-helper.ts';
 import { test, expect } from '@playwright/test';
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { managedPath } from '../src/store.ts';
@@ -15,7 +16,7 @@ test('user creates DEMO, wins, changes goal, selects old version, exports and ba
   // operations; per-assertion waits remain bounded at the normal five seconds.
   test.setTimeout(45000);
   await page.goto('/'); await page.getByRole('button', { name: 'Создать', exact: true }).click();
-  await page.getByRole('button', { name: 'Создать игру', exact: true }).click();
+  await createAndOpen(page);
   await expect(page.locator('#message')).toHaveText('Игра сохранена. Можно играть.');
   const game = page.frameLocator('#game iframe');
   await game.getByRole('button', { name: 'Старт', exact: true }).click();
@@ -23,7 +24,7 @@ test('user creates DEMO, wins, changes goal, selects old version, exports and ba
   await expect(game.locator('#status')).toHaveText('Победа');
   await expect(page.locator('#analytics')).toContainText('Победы: 1');
   await page.locator('#change').fill('Теперь собери 5 грузов');
-  await page.getByRole('button', { name: 'Создать следующую версию' }).click();
+  await createAndOpen(page,'Создать следующую версию');
   await expect(page.locator('#message')).toContainText('Новая версия сохранена');
   await game.getByRole('button', { name: 'Старт', exact: true }).click();
   for (let i = 0; i < 3; i++) await game.getByRole('button', { name: 'Вправо', exact: true }).click();
@@ -70,13 +71,13 @@ test('user creates DEMO, wins, changes goal, selects old version, exports and ba
 });
 
 test('LIVE without configuration gives an honest error and preserves the displayed game', async ({ page }) => {
-  await page.goto('/'); await page.getByRole('button', { name: 'Создать', exact: true }).click(); await page.getByRole('button', { name: 'Создать игру', exact: true }).click();
+  await page.goto('/'); await page.getByRole('button', { name: 'Создать', exact: true }).click(); await createAndOpen(page);
   await expect(page.locator('#message')).toContainText('Игра сохранена');
   const exported = await page.locator('#export').getAttribute('href');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
   await page.locator('#mode').selectOption('live');
-  await page.getByRole('button', { name: 'Создать игру', exact: true }).click();
-  await expect(page.locator('#message')).toContainText('LIVE не настроен');
+  await page.locator('#generate').click();await page.locator('#jobs-toggle').click();
+  await expect(page.locator('#jobs-list')).toContainText('LIVE не настроен');
   await expect(page.locator('#provenance')).toHaveText('DEMO · без LLM');
   expect(await page.locator('#export').getAttribute('href')).toBe(exported);
 });
