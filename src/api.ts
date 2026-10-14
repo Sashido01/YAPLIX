@@ -15,14 +15,18 @@ import { GAME_CSP } from './runtime.ts';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PROJECT_ROOT } from './store.ts';
+import type { RuntimeControl } from './runtime-control.ts';
+import { RUNTIME_PROTOCOL } from './runtime-control.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions()) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl) {
   const app = new Hono();
   if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
   const staticFile = staticAssets();
-  const access = policy?.key ? new AccessSessions(policy.key, policy.mode === 'https') : undefined;
+  if (policy?.mode === 'https' && telegram.multipleOwners()) throw new Fault('TELEGRAM_SINGLE_OWNER_REQUIRED');
+  let access = policy?.key ? new AccessSessions(policy.key, policy.mode === 'https') : undefined;
+  let accessKey = policy?.key;
   const limit=new RateLimit();
   const telegramCsp=UI_CSP.replace("script-src 'self' 'unsafe-inline'","script-src 'self' 'unsafe-inline' https://telegram.org").replace("frame-ancestors 'none'","frame-ancestors https://web.telegram.org https://*.web.telegram.org");
   const principal=(cookie?:string,header?:string)=>telegram.user(cookie,header)?.toString()??'owner';
@@ -32,6 +36,15 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
     // Explicit network modes retain exact Host/origin and opaque-frame checks.
     const requestUrl = new URL(c.req.url);
+    if (control && c.req.path === '/api/runtime/tunnel') {
+      if (requestUrl.hostname !== '127.0.0.1' || requestUrl.port !== String(policy!.port) || c.req.header('Origin') || c.req.header('X-Forwarded-Proto') || c.req.header('X-Forwarded-For') || c.req.header('Sec-Fetch-Site')) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
+      if (c.req.method === 'GET') return c.json(control.identity(c.req.query('nonce') ?? ''));
+      if (c.req.method !== 'POST' || !control.authorized(c.req.header('X-Yaplix-Control'))) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
+      return c.json(control.update(object(await json(c.req.raw, 512), ['action','lease','origin','key'])));
+    }
+    if (policy?.mode === 'local' && (c.req.header('X-Forwarded-Proto') || c.req.header('X-Forwarded-For'))) throw new Fault('HOST_FORBIDDEN', 403);
+    if (control && !control.active()) throw new Fault('TUNNEL_LEASE_EXPIRED', 503);
+    if (accessKey !== policy?.key) { accessKey = policy?.key; access = accessKey ? new AccessSessions(accessKey, policy?.mode === 'https') : undefined; }
     const expected = policy?.origin ? new URL(policy.origin) : requestUrl;
     if (policy?.origin ? requestUrl.host !== expected.host : !['localhost', '127.0.0.1', '[::1]'].includes(requestUrl.hostname)) throw new Fault('HOST_FORBIDDEN', 403);
     if (c.req.header('Host') && c.req.header('Host')!.toLowerCase() !== expected.host.toLowerCase()) throw new Fault('HOST_FORBIDDEN', 403);
@@ -42,9 +55,11 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     const origin = c.req.header('Origin');
     const publicNavigation=c.req.method==='GET'&&['/','/telegram'].includes(c.req.path)||c.req.method==='GET'&&c.req.path.startsWith('/play/');
     if (origin && origin !== expected.origin || c.req.header('Sec-Fetch-Site') === 'cross-site'&&!publicNavigation) throw new Fault('ORIGIN_FORBIDDEN', 403);
+    if (c.req.path === '/healthz' && c.req.method === 'GET') return c.json({ app: 'YAPLIX', protocol: RUNTIME_PROTOCOL, instance: control?.instance ?? null, ready: store.integrity() }, store.integrity() ? 200 : 503);
     const shared=policy?.mode==='https'&&c.req.method==='GET'&&validShare(c.req.path,policy.key!);
     if (access) {
       if(c.req.path==='/api/telegram/auth'&&c.req.method==='POST'){
+        if (!telegram.singleOwner()) throw new Fault('TELEGRAM_SINGLE_OWNER_REQUIRED', 403);
         if(policy?.mode!=='https')throw new Fault('TELEGRAM_HTTPS_REQUIRED',409);
         limit.take('telegram-login',30);
         const body=object(await json(c.req.raw,10000),['initData']);const session=telegram.login(body.initData);

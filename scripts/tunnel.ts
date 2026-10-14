@@ -1,8 +1,8 @@
-import {spawn,fork} from 'node:child_process';
+import {runTunnel,explain} from './tunnel-runtime.ts';
+import {telegramMenu} from './telegram-menu.ts';
 import {existsSync,readFileSync,writeFileSync,chmodSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {managedPath,PROJECT_ROOT} from '../src/store.ts';
-import {persistentLanKey,checkPort} from '../src/network.ts';
 import {missingProductionFiles} from '../src/diagnostics.ts';
 import {TelegramSessions} from '../src/telegram.ts';
 import {Fault} from '../src/contracts.ts';
@@ -35,29 +35,21 @@ try {
   if(missingProductionFiles().length)throw new Fault('RUNTIME_BUILD_REQUIRED');
   if(!new TelegramSessions().configured())throw new Fault('TELEGRAM_NOT_CONFIGURED');
   const port=Number(process.env.PORT??3000);if(!Number.isSafeInteger(port)||port<1||port>65535)throw new Fault('INVALID_PORT');
-  await checkPort({mode:'local',host:'127.0.0.1',port});
-  const key=persistentLanKey();
-  if(process.argv.includes('--check')){console.log(JSON.stringify({ready:true,port,version,note:'No tunnel created.'}));}
-  else {
-   // The connector has no LLM/bot credentials and writes no global configuration.
-   const ownHome=managedPath('.local/tunnel-home/config.yml').replace(/[\\/]config\.yml$/,'');
-   const ownTemp=managedPath('.local/tmp/tunnel.tmp').replace(/[\\/]tunnel\.tmp$/,'');
-   const env={...Object.fromEntries(['PATH','Path','SystemRoot'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!])),HOME:ownHome,USERPROFILE:ownHome,LOCALAPPDATA:ownHome,TEMP:ownTemp,TMP:ownTemp};
-   const connector=spawn(path,['tunnel','--no-autoupdate','--url','http://127.0.0.1:'+port],{cwd:PROJECT_ROOT,env,stdio:['ignore','pipe','pipe'],windowsHide:true});
-   let server:ReturnType<typeof fork>|undefined,menu:ReturnType<typeof fork>|undefined,stopped=false;
-   const stop=()=>{if(stopped)return;stopped=true;connector.kill();menu?.kill();server?.send('shutdown');};
-   process.on('SIGINT',stop);process.on('SIGTERM',stop);process.on('message',message=>{if(message==='shutdown')stop();});
-   try{
-    const origin=await new Promise<string>((done,fail)=>{const timer=setTimeout(()=>fail(new Fault('TUNNEL_START_TIMEOUT')),60000);let tail='';const read=(bytes:Buffer)=>{tail=(tail+bytes.toString()).slice(-5000);const match=tail.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com\b/);if(match){clearTimeout(timer);done(match[0]);}};connector.stdout.on('data',read);connector.stderr.on('data',read);connector.once('error',()=>{clearTimeout(timer);fail(new Fault('TUNNEL_START_FAILED'));});connector.once('exit',()=>{clearTimeout(timer);fail(new Fault('TUNNEL_CLOSED'));});});
-    writeFileSync(managedPath('.local/tunnel-url.txt'),origin+'/telegram\n');
-    const serverEnv={...process.env,YAPLIX_MODE:'https',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:origin,YAPLIX_ACCESS_KEY:key};
-    server=fork('src/server.ts',[],{cwd:PROJECT_ROOT,env:serverEnv,stdio:['ignore','pipe','pipe','ipc']});
-    server.stdout!.on('data',bytes=>process.stdout.write(bytes));server.stderr!.on('data',()=>console.error('YAPLIX server reported an error; run npm run doctor locally for diagnosis.'));
-    console.log('Temporary Mini App URL: '+origin+'/telegram\nSet this URL in @BotFather /setmenubutton. Ctrl+C closes the tunnel. Local .env PUBLIC_URL is unchanged.');
-    if(process.argv.includes('--menu'))menu=fork('scripts/telegram-setup.ts',['menu'],{cwd:PROJECT_ROOT,env:serverEnv});
-    connector.once('exit',stop);server.once('exit',stop);server.once('error',stop);
-    await new Promise<void>(done=>server!.once('exit',()=>done()));
-   }finally{stop();process.disconnect?.();}
-  }
+  const sessions=new TelegramSessions();
+  if(!sessions.singleOwner())throw new Fault('TELEGRAM_SINGLE_OWNER_REQUIRED');
+  const protocol=process.argv.includes('--protocol')?process.argv[process.argv.indexOf('--protocol')+1]:'auto';
+  if(!['auto','http2','quic'].includes(protocol))throw new Fault('TUNNEL_PROTOCOL_INVALID');
+  const ownHome=managedPath('.local/tunnel-home/config.yml').replace(/[\\/]config\.yml$/,'');
+  const ownTemp=managedPath('.local/tmp/tunnel.tmp').replace(/[\\/]tunnel\.tmp$/,'');
+  // Explicit system proxy variables only; the connector never gets bot/LLM keys.
+  const names=['PATH','Path','SystemRoot','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'];
+  const connectorEnv={...Object.fromEntries(names.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!])),HOME:ownHome,USERPROFILE:ownHome,LOCALAPPDATA:ownHome,TEMP:ownTemp,TMP:ownTemp};
+  const stop=new AbortController(),shutdown=()=>stop.abort();
+  process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);process.on('disconnect',shutdown);
+  process.on('message',message=>{if(message==='shutdown')shutdown();});
+  const menu=telegramMenu();
+  try { await runTunnel({port,binary:path,connectorEnv,protocol:protocol as 'auto'|'http2'|'quic',signal:stop.signal,menu:process.argv.includes('--menu'),check:process.argv.includes('--check'),menuUpdate:menu.update,menuClear:menu.clear}); }
+  finally {process.off('SIGINT',shutdown);process.off('SIGTERM',shutdown);process.off('disconnect',shutdown);process.disconnect?.();}
+
  }
-}catch(error){console.error(error instanceof Fault?error.code:'TUNNEL_FAILED');process.exitCode=1;}
+}catch(error){console.error(explain(error));process.exitCode=1;}

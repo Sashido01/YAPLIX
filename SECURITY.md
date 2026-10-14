@@ -49,6 +49,14 @@ TLS verification/redirect deny, OpenRouter openrouter/free only, paid secondary
 или resource exhaustion. Не открывайте MVP как anonymous multi-tenant service.
 Telegram HMAC/age/allowlist до library/LLM; initDataUnsafe не доверяется.
 HttpOnly Secure cookie/memory header token не в игре/storage/URL. Generation 6/min
-на principal, 12/min global. Shared library без personal ownership. Share 7 дней
+на principal, 12/min global. Shared library без personal ownership: публичный Telegram допускает ровно один
+ID владельца; несколько разных ID блокируют публичный HTTPS startup. Share 7 дней
 для одной version без API/backup, key rotation отзывает cap.
 Quick Tunnel — явный временный protected HTTPS ingress; Cloudflare видит HTTP traffic.
+
+Runtime control требует loopback, отсутствие browser/proxy headers и локальный
+secret key для изменений. Перед отправкой ключа launcher проверяет HMAC nonce
+совместимого backend. Public `/healthz` не раскрывает env, DB paths или diagnostics.
+После потери supervisor lease закрывает public access; local mode отвергает
+forwarded traffic. Journal фильтрует secrets до записи и ограничивает объём.
+Невозможность подтвердить внешний health блокирует menu button.

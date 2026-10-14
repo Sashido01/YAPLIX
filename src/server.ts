@@ -5,6 +5,8 @@ import { Store } from './store.ts';
 import { networkPolicy } from './access.ts';
 import { checkHost, portError } from './network.ts';
 import { liveReadiness, missingProductionFiles } from './diagnostics.ts';
+import { RuntimeControl, runtimeKey } from './runtime-control.ts';
+import { TelegramSessions } from './telegram.ts';
 
 if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Error('TLS verification must be enabled');
 const policy = networkPolicy(), { port } = policy;
@@ -12,10 +14,12 @@ checkHost(policy);
 if (missingProductionFiles().length) { console.error('RUNTIME_BUILD_REQUIRED: npm run build'); process.exit(1); }
 const store = new Store(process.env.YAPLIX_DB);
 const adapter = configuredGenerator();
+const telegram = new TelegramSessions();
+const control = new RuntimeControl(policy, runtimeKey(), () => telegram.singleOwner());
 const app = createApp(store, adapter, async () => {
   const missingAssets = missingProductionFiles();
   return { demoReady: store.integrity() && missingAssets.length === 0, missingAssets, mode: policy.mode, address: policy.host, port, connectionUrl: policy.mode === 'lan' ? policy.origin + '/' : null, accessRequired: Boolean(policy.key), ...(await liveReadiness(adapter)), nodeVersion: process.version };
-}, policy);
+}, policy, telegram, control);
 const server = serve({ fetch: app.fetch, hostname: policy.host, port }, () => {
   console.log(`YAPLIX ${policy.origin ?? `http://127.0.0.1:${port}`}/ (${policy.mode})`);
   if (policy.mode === 'lan' && process.env.YAPLIX_PRINT_LAN_KEY === '1') {
@@ -41,5 +45,6 @@ function stop() {
 }
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
+process.on('disconnect', stop);
 // Uses the same graceful path on Windows without a remote shutdown endpoint.
 process.on('message', message => { if (message === 'shutdown') stop(); });

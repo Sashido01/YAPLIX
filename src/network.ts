@@ -24,7 +24,7 @@ export async function checkPort(policy: NetworkPolicy) {
   });
 }
 export function persistentLanKey(env: NodeJS.ProcessEnv = process.env) {
-  if (env.YAPLIX_ACCESS_KEY !== undefined) return env.YAPLIX_ACCESS_KEY;
+  if (env.YAPLIX_ACCESS_KEY) return env.YAPLIX_ACCESS_KEY;
   const path = managedPath('.local/lan-access.key');
   if (!existsSync(path)) {
     try { writeFileSync(path, randomBytes(32).toString('base64url') + '\n', { flag: 'wx', mode: 0o600 }); }

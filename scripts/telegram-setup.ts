@@ -1,5 +1,6 @@
 import { Fault } from '../src/contracts.ts';
 import { boundedText } from '../src/transport.ts';
+import { telegramMenu } from './telegram-menu.ts';
 const command=process.argv[2]??'check';
 try {
   const token=process.env.TELEGRAM_BOT_TOKEN;
@@ -19,7 +20,11 @@ try {
     console.log(JSON.stringify({bot:'@'+me.username,privateSenderUserIds:ids,note:'Send /start to your own bot first, then identify your ID. No messages/content are printed or users admitted. Active webhook may prevent getUpdates.'}));
   }else if(command==='menu'){
     const url=new URL(process.env.PUBLIC_URL??'');if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash||url.pathname!=='/')throw new Fault('TELEGRAM_HTTPS_REQUIRED');
-    await call('setChatMenuButton',{menu_button:{type:'web_app',text:'Открыть YAPLIX',web_app:{url:new URL('/telegram',url).href}}});
+    const response=await fetch(new URL('/healthz',url),{redirect:'error',signal:AbortSignal.timeout(15000)});
+    if(!response.ok){await response.body?.cancel();throw new Fault('PUBLIC_HEALTH_FAILED');}
+    const health=JSON.parse(await boundedText(response,2048));
+    if(health.app!=='YAPLIX'||health.protocol!==1||health.ready!==true)throw new Fault('PUBLIC_HEALTH_FAILED');
+    await telegramMenu().update(url.origin);
     console.log(JSON.stringify({bot:'@'+me.username,menuConfigured:true,url:new URL('/telegram',url).href}));
   }else if(command==='check'){
     const menu=await call('getChatMenuButton');
