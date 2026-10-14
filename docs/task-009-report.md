@@ -88,7 +88,17 @@ MVP не поддерживаются. Неавторизованные запр
 Локальные typecheck/build и 57 Node тестов проходят; полный первоначальный
 браузерный набор: 191 PASS / 145 осознанных SKIP на 12 профилях. Дополнительный
 controlled LIVE test запускается на Chromium 320/WebKit 390; итоговый current-head
-полный набор и Windows/Ubuntu/secret-scan подтверждаются в PR.
+полный набор и Windows/Ubuntu/secret-scan подтверждаются в PR. Дополнительный
+controlled LIVE test прошёл на Chromium 320/WebKit 390 с настоящей browser
+validation: текущие iframe/touch/счёт сохранены до и после проверки новой версии.
+
+Чистый независимый Git-клон commit `537d460`, без `.env`, DB и node_modules,
+прошёл первый автоматический запуск app entry, установку из project npm cache,
+production build, HTTP readiness, completed DEMO job и HTML export. Собственные
+launcher/backend после smoke закрылись; фактический мышиный double-click отдельно
+не автоматизировался. Staged diff и commit history прошли Gitleaks. npm audit CLI
+получил сетевой отказ; тот же официальный bulk advisory endpoint через Windows
+HTTPS ответил без advisories для четырёх production packages.
 
 Две реальные DB сохранены: основная — 14 games/32 versions/178 sessions/913 events;
 вторая — 1/1/2/8. SHA-256 содержимого старых таблиц одинаков до/после миграции
