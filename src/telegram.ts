@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual, randomBytes, createHash } from 'node:crypto';
 import { Fault } from './contracts.ts';
+import { boundedText } from './transport.ts';
 
 export function validateInitData(raw:unknown,token:string,now=Math.floor(Date.now()/1000),maxAge=300){
   if(typeof raw!=='string'||!raw||raw.length>8192||!token)throw new Fault('TELEGRAM_AUTH_INVALID',401);
@@ -27,6 +28,11 @@ export class TelegramSessions {
   configured(){return Boolean(this.token&&this.allowed.size);}
   singleOwner(){return Boolean(this.token&&this.allowed.size===1);}
   multipleOwners(){return this.allowed.size>1;}
+  async notifyReady(owner:string,gameId:string,versionId:string,origin?:string):Promise<'sent'|'unavailable'|'unknown'>{
+    if(!this.singleOwner()||!/^\d+$/.test(owner)||!this.allowed.has(Number(owner))||!origin||!origin.startsWith('https://'))return'unavailable';
+    const url=new URL('/telegram',origin);url.searchParams.set('game',gameId);url.searchParams.set('version',versionId);
+    try{const response=await fetch(`https://api.telegram.org/bot${this.token}/sendMessage`,{method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:Number(owner),text:'Ваша игра YAPLIX готова.',reply_markup:{inline_keyboard:[[{text:'Открыть игру',web_app:{url:url.href}}]]}})});if(!response.ok){await response.body?.cancel();return'unavailable';}const data=JSON.parse(await boundedText(response,16000));if(data.ok===false)return'unavailable';return data.ok===true&&Number.isSafeInteger(data.result?.message_id)&&data.result.message_id>0&&data.result?.chat?.id===Number(owner)?'sent':'unknown';}catch{return'unknown';}
+  }
   login(raw:unknown){
     if(!this.configured())throw new Fault('TELEGRAM_NOT_CONFIGURED',503);
     const {userId}=validateInitData(raw,this.token,undefined,this.age);if(!this.allowed.has(userId))throw new Fault('TELEGRAM_USER_FORBIDDEN',403);

@@ -17,14 +17,18 @@ import { resolve } from 'node:path';
 import { PROJECT_ROOT } from './store.ts';
 import type { RuntimeControl } from './runtime-control.ts';
 import { RUNTIME_PROTOCOL } from './runtime-control.ts';
+import { GenerationJobs } from './jobs.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs) {
   const app = new Hono();
   if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
   const staticFile = staticAssets();
   if (policy?.mode === 'https' && telegram.multipleOwners()) throw new Fault('TELEGRAM_SINGLE_OWNER_REQUIRED');
+  // Legacy synchronous API users do not acquire a worker until they use jobs.
+  // The production server supplies its coordinator and starts it after bind.
+  const jobManager=()=>jobs??=new GenerationJobs(store,adapter);
   let access = policy?.key ? new AccessSessions(policy.key, policy.mode === 'https') : undefined;
   let accessKey = policy?.key;
   const limit=new RateLimit();
@@ -38,7 +42,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     const requestUrl = new URL(c.req.url);
     if (control && c.req.path === '/api/runtime/tunnel') {
       if (requestUrl.hostname !== '127.0.0.1' || requestUrl.port !== String(policy!.port) || c.req.header('Origin') || c.req.header('X-Forwarded-Proto') || c.req.header('X-Forwarded-For') || c.req.header('Sec-Fetch-Site')) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
-      if (c.req.method === 'GET') return c.json(control.identity(c.req.query('nonce') ?? ''));
+      if (c.req.method === 'GET') return c.json({...control.identity(c.req.query('nonce') ?? ''),schemaVersion:2});
       if (c.req.method !== 'POST' || !control.authorized(c.req.header('X-Yaplix-Control'))) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
       return c.json(control.update(object(await json(c.req.raw, 512), ['action','lease','origin','key'])));
     }
@@ -88,12 +92,24 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     if (artifact.method !== 'mock' || artifact.validationStatus !== 'unverified') throw new Fault('IMPORT_PROVENANCE_UNVERIFIED');
     return artifact;
   }
-  app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 1 }));
-  app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 1, ...(await diagnostics() as object) }));
+  app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 2 }));
+  app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 2, ...(await diagnostics() as object) }));
+  const owner=(c:{req:{header(name:string):string|undefined}})=>principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session'));
+  app.get('/api/jobs',c=>c.json({jobs:jobManager().list(owner(c))}));
+  app.get('/api/jobs/:jobId',c=>c.json(jobManager().get(owner(c),c.req.param('jobId'))));
+  app.post('/api/jobs',async c=>{
+    const body=object(await json(c.req.raw,12000),['spec','mode','previousVersionId','idempotencyKey','telegramConsent']);
+    const consent=body.telegramConsent===true;if(body.telegramConsent!==undefined&&typeof body.telegramConsent!=='boolean')throw new Fault('INVALID_JOB_REQUEST');
+    if(consent&&!telegram.user(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session')))throw new Fault('TELEGRAM_CONSENT_REQUIRES_SESSION',403);
+    return c.json(jobManager().create(owner(c),body.idempotencyKey,{spec:parseSpec(body.spec),mode:mode(body.mode)??'live',...(body.previousVersionId?{previousVersionId:uuid(body.previousVersionId)}:{}),telegramConsent:consent}),202);
+  });
+  app.post('/api/jobs/:jobId/cancel',async c=>{object(await json(c.req.raw,32),[]);return c.json(jobManager().cancel(owner(c),c.req.param('jobId')));});
+  app.post('/api/jobs/:jobId/continue',async c=>{object(await json(c.req.raw,32),[]);return c.json(jobManager().continue(owner(c),c.req.param('jobId')));});
+  app.post('/api/jobs/:jobId/notification',async c=>{object(await json(c.req.raw,32),[]);return c.json({claimed:jobManager().claim(owner(c),c.req.param('jobId'))});});
   app.get('/api/connection/qr.svg', async c => {
-    if (policy?.mode !== 'lan' || !policy.origin) throw new Fault('LAN_QR_UNAVAILABLE', 409);
+    if (!['lan','https'].includes(policy?.mode??'') || !policy?.origin) throw new Fault('LAN_QR_UNAVAILABLE', 409);
     const { connectionQr } = await import('./qr.ts');
-    return c.body(connectionQr(policy.origin), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
+    return c.body(connectionQr(policy.origin,policy.mode==='https'), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
   });
   app.get('/api/games', c => c.json({ games: store.list() }));
   app.post('/api/versions/:versionId/share',async c=>{object(await json(c.req.raw,32),[]);if(policy?.mode!=='https')throw new Fault('HTTPS_SHARE_REQUIRED',409);const version=store.getVersion(c.req.param('versionId'));return c.json({url:shareLink(policy.origin!,policy.key!,version.versionId),expiresIn:604800,scope:'read-only-artifact'});});

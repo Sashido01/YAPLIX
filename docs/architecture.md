@@ -31,10 +31,34 @@ TLS проверяется, redirects запрещены, HTTP только loop
 
 [live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
 (default 1), до трёх явно заданных routes. HTTP-ошибка не вызывает скрытого retry.
-Cloud default — openrouter/free, OpenRouter запрещает paid model/paid secondary.
+Cloud default — openrouter/free, платные OpenRouter модели запрещены. Явные
+Ollama Cloud primary/secondary используют https://ollama.com/v1 и отдельные KEY/MODEL;
+local route опционален. Generic nonfree secondary для OpenRouter primary блокируется.
 Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
 чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
 и может получить тот же один bounded repair, с требованием компактного HTML.
+
+UI отправляет request в [jobs.ts](../src/jobs.ts), а не держит HTTP генерацию до
+конца. SQLite хранит original spec, owner, idempotency key, stage, attempts,
+provider/requested/actual model, error, checkpoint и связь с version. Один worker,
+очередь 20/3, total 1000, ≤100 MB checkpoints суммарно и ≤200000 bytes на job;
+Worker lease берётся после successful bind, heartbeat сохраняет exclusive ownership
+одной DB. Второй writer с этой DB блокируется. После crash подтверждённо отсутствующий
+PID позволяет immediate restart; живой/непроверяемый PID сохраняет lease до 60 s.
+До 6 provider calls за запуск и 12 за всё задание. Cloud SSE и local NDJSON checkpoint
+записываются bounded порциями, usage/output/reasoning сохраняются, если возвращены.
+Legacy synchronous API получает полный ответ без streaming checkpoint.
+Provider/requested model фиксируются уже в queued. LIVE creation при настроенном
+generator ограничено 6/min owner и 12/min global; отдельный такой же лимит
+provider dispatch включает repair и ручное продолжение.
+
+Обрезанный output допускает bounded repair полного документа, не склейку частей.
+Неизвестный исход/rate/quota/auth/context/обрыв stream останавливают автоматические
+переходы; Retry-After блокирует ранний manual continue. При restart in-flight jobs
+становятся needs_attention, queued можно запускать. Продолжение использует original
+spec и записанный draft; provider не обещает resume с последнего токена. Проверенная
+version и completed job сохраняются одной transaction. Сбой оставляет job/draft,
+не игровую passed version. Legacy synchronous games/versions API сохранён.
 
 HTML <=200000 UTF-8 bytes, ровно один документ. Static отклоняет external resources,
 опасные API, отсутствие mobile viewport/game contract. Затем [browser-check.ts](../src/browser-check.ts)
@@ -58,6 +82,12 @@ contentWindow/origin null, IDs/protocol/size/sequence. Parent держит HTTP 
 игре передаются только session/version IDs. Queue 128, message rate 60/s, version
 cache 3. Unmount удаляет iframe/listener. События — недоверенная клиентская статистика.
 
+Job polling обновляет только центр/каталог/toast, сохраняет активный игровой realm
+при навигации между разделами и не выбирает новую игру. Явное «Открыть»/смена версии
+или pagehide закрывают прежний realm. В background polling прекращается; jobs
+продолжаются на сервере. Toast server claim предшествует показу: повторный toast
+не планируется, crash может оставить результат только в центре/каталоге.
+
 Local loopback; LAN выбранный private IPv4 + key/cookie. HTTPS loopback за proxy,
 точные Host/Origin/forwarded scheme, Secure cookie. Generation: 6/min на principal,
 12/min globally, один активный запрос. Общая библиотека без ownership/ролей;
@@ -75,11 +105,24 @@ pagehide снимает listeners. [Настройка HTTPS](telegram.md).
 Share — подписанная server key HTTPS-ссылка на одну immutable version, TTL 7 дней,
 не авторизует API/history/backup/sessions. HTML под opaque CSP/no-store/no-referrer.
 Key rotation отзывает ссылки. `/telegram?game=UUID` требует обычный signed вход.
+`/?game=UUID&version=UUID` и Telegram equivalent выбирают сохранённую версию только
+после обычной авторизации; game/version association проверяется клиентом. Ссылки
+не дают multi-tenant изоляцию общей библиотеки и не передают HTML/ключи.
+
+Telegram notification разрешено согласившимся signed users. После отсутствия job
+polling ≥30 s сервер пробует отправить кнопку конкретной game/version через своего
+бота, только при HTTPS/single owner. Claim записывается до network dispatch; после
+unknown delivery повтор не выполняется. Это at-most-once attempt, не гарантия
+доставки или exactly-once distributed notification. Web Push вне страницы нет.
 
 ## Данные и Evolution
 
-Schema v1: games/versions/sessions/events, FK/WAL/prepared SQL. TASK-007 не меняет
-схему и не переписывает старые HTML/metadata. Старые versions без generation evidence
+Schema v2: прежние games/versions/sessions/events плюс generation_jobs/generation_worker,
+FK/WAL/prepared SQL. TASK-009 мигрирует исправную v1 transaction с защитной
+проверенной `.local/backups/before-v2-UUID.sqlite` копией. Старые HTML/metadata
+не переписываются; пустая новая DB создаётся сразу в v2 без migration snapshot.
+[Restore/update](development-setup.md) учитывает v1/v2 и snapshots.
+TASK-007 до этой миграции сохранял schema v1. Старые versions без generation evidence
 валидны. Title библиотеки берётся из первого prompt, не repair instructions.
 Лимиты: 100 MB HTML, 10000 versions/sessions, 100000 events, 1000 events/session.
 Session token SHA-256, TTL 1 h. eventId/payload retry идемпотентен; изменённый payload

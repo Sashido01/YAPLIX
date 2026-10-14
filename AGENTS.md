@@ -1,6 +1,10 @@
 # YAPLIX workflow
 
 Work only in this repository. Preserve user data, secrets, dirty changes and history.
+Before investigating recurring errors, read [known solutions](docs/known-errors.md),
+then verify that the current code and evidence still support the proposed fix.
+Update that compact repository guide with observed failures and verified remedies;
+do not treat an unverified network hypothesis or synthetic test as external proof.
 Before a task, inspect status, sync main with `git pull --ff-only`, then create a
 short-lived `codex/` feature branch. Never start from an obsolete feature branch.
 
@@ -26,6 +30,10 @@ and prompts are independently authored here. Do not fetch/read/use BGen or its
 old local checkout, templates, assets or docs as a reference. Do not modify external
 repositories. Preserve unknown ignored files. Cloud is primary; OpenRouter is
 FREE ONLY via openrouter/free. No paid or hidden fallback.
+TASK-009 permits Ollama Cloud as a distinct opt-in route with the owner's available
+account quota, explicit credentials and route configuration. Never buy credits or
+change plans automatically, infer paid entitlement, or transition there without
+that configuration. OpenRouter remains free-only.
 Implement the minimal UI here when no integrated UI exists.
 
 Report MAIN, MERGED, RUN, VERIFIED, MVP, LIVE, DOCS and NEXT. Synthetic tests,

@@ -104,7 +104,7 @@ after 0–1 на повтор, 50–56 ms. rAF интервалы измерит
 DEMO: HTML 4378 bytes, встроенный JS 2522, CSS 880, внешних зависимостей нет.
 Размеры конкретного LLM HTML и inference latency приведены в demo-readiness;
 они не входят во время загрузки оболочки. Память и CPU произвольного LLM-кода
-не гарантируются opaque iframe. Закрытие экрана удаляет игровой realm/listener;
+не гарантируются opaque iframe. Явное открытие другой игры или pagehide удаляет прежний realm/listener;
 bounded UI cache хранит максимум три версии, очередь максимум 128 событий.
 
 Бюджеты: JS ≤150000, CSS ≤30000, критические ресурсы ≤250000 bytes gzip.
@@ -162,3 +162,15 @@ QR encoder работает на сервере по запросу, его не
 и выполнены. Timing колебания не выдаются за ускорение. LLM latency/Chromium checker
 не входят в shell. Telegram SDK загружается только /telegram.
 После 40 циклов навигации осталось 0 iframe; heap after 2176576 bytes. Это CDP heap, не полный RAM.
+
+## TASK-009: измерение 14 октября 2026
+
+Тот же cold mobile profile: 390×844, DPR 2, Slow 4G/CPU ×4, прогретый server,
+семь новых uncached contexts. Начальный замер по stdout `performance:smoke` дал
+interactive p75 664.6 ms; финальный `.local/performance/task009-final.json` — 645.6 ms.
+Baseline использовал ранее накопленный каталог, post-run — новый изолированный
+fixture-каталог: это наблюдаемые timings, а не причинное доказательство оптимизации.
+Gzip начального JS: 7035 → 8870 bytes, CSS: 2143 → 2332, critical: 11439 → 13752.
+Бюджеты 150000/30000/250000 bytes сохранены. Это browser laboratory profile,
+не physical Android/iOS PASS и не время успешной LLM генерации. Два отдельных
+одноразовых real OpenRouter pilots дали timeout без playable result; [границы](demo-readiness.md).

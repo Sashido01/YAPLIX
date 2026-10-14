@@ -1,3 +1,4 @@
+import {createAndOpen} from './ui-jobs-helper.ts';
 import { test, expect } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -30,9 +31,9 @@ test('real production LAN: authentication, QR independent decode, relative API, 
   try {
     expect((await page.request.get(server.url+'/api/connection/qr.svg')).status()).toBe(401);
     await page.goto(server.url);await page.locator('#access-key').fill('wrong');await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.locator('#access-message')).toContainText('Ключ не принят');
-    await page.locator('#access-key').fill(key);await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.locator('#generate')).toBeVisible();
+    await page.locator('#access-key').fill(key);await page.getByRole('button',{name:'Войти',exact:true}).click();await page.getByRole('button',{name:'Создать',exact:true}).click();await expect(page.locator('#generate')).toBeVisible();
     const decoded=await decode();expect(decoded).toBe(server.url+'/');expect(decoded).not.toContain(key);expect(new URL(decoded).search).toBe('');expect(new URL(decoded).hash).toBe('');
-    await page.getByRole('button',{name:'Создать игру',exact:true}).click();await expect(page.locator('#message')).toContainText('Игра сохранена');
+    await createAndOpen(page);await expect(page.locator('#message')).toContainText('Игра сохранена');
     const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Старт',exact:true}).click();
     await game.getByRole('button',{name:'Вправо',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
     await game.getByRole('button',{name:'Влево',exact:true}).click();await game.getByRole('button',{name:'Вправо',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
@@ -62,7 +63,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
   const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'15000'});
   try {
-    await page.goto(server.url);await page.locator('#mode').selectOption('live');await page.getByRole('button',{name:'Создать игру',exact:true}).click();
+    await page.goto(server.url);await page.getByRole('button',{name:'Создать',exact:true}).click();await page.locator('#mode').selectOption('live');if(scenario==='success'||scenario==='repair')await createAndOpen(page);else {await page.locator('#generate').click();await page.locator('#jobs-toggle').click();}
     if(scenario==='success'||scenario==='repair'){
       // The real server-side checker is included in the 15-second generation
       // deadline above. Wait for that contract, rather than a five-second poll.
@@ -70,7 +71,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
       const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
-      await expect(page.locator('#message')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'провайдера'}[scenario]);
+      await expect(page.locator('#jobs-list')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Соединение с моделью'}[scenario]);
       await expect(page.locator('#generate')).toBeEnabled();expect((await(await page.request.get(server.url+'/api/games')).json()).games).toHaveLength(0);expect(calls).toBe(scenario==='unsafe'?2:scenario==='unavailable'?0:1);
     }
   } finally {await server.stop();server.cleanup();mock.closeAllConnections();await new Promise<void>(done=>mock.close(()=>done()));}

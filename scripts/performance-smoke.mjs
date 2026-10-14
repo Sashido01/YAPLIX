@@ -3,13 +3,14 @@ import {writeFileSync} from 'node:fs';
 import {gzipSync} from 'node:zlib';
 import {fork} from 'node:child_process';
 import {mkdirSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
 mkdirSync('.local/performance',{recursive:true});
 const label=process.argv[2]??'current';
 if(!/^[a-z][a-z0-9-]{0,32}$/.test(label))throw Error('INVALID_PERFORMANCE_LABEL');
 let child, browser;
 process.on('exit',()=>child?.kill());
 try {
-if(!process.env.PERF_URL){child=fork('src/server.ts',[],{silent:true,env:{...process.env,PORT:'3230',YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',LIVE_PROVIDER:'none',YAPLIX_DB:'.local/performance/data.sqlite'}});await new Promise((done,fail)=>{child.stdout.once('data',done);child.once('error',fail);child.once('exit',()=>fail(Error('PERFORMANCE_SERVER_FAILED')));});}
+if(!process.env.PERF_URL){child=fork('src/server.ts',[],{silent:true,env:{...process.env,PORT:'3230',YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',LIVE_PROVIDER:'none',YAPLIX_DB:'.local/performance/run-'+randomUUID()+'.sqlite'}});await new Promise((done,fail)=>{child.stdout.once('data',done);child.once('error',fail);child.once('exit',()=>fail(Error('PERFORMANCE_SERVER_FAILED')));});}
 const base=process.env.PERF_URL??'http://127.0.0.1:3230';
 browser=await chromium.launch();
 const runs=[];
@@ -41,7 +42,7 @@ const memoryContext=await browser.newContext({viewport:{width:390,height:844},is
 await memoryCDP.send('Performance.enable');await memoryPage.goto(base);if(await memoryPage.getByRole('button',{name:'Игры',exact:true}).count())await memoryPage.getByRole('button',{name:'Игры',exact:true}).click();
 const heap=async()=>{await memoryCDP.send('HeapProfiler.collectGarbage');return(await memoryCDP.send('Performance.getMetrics')).metrics.find(m=>m.name==='JSHeapUsedSize').value;};
 const heapBefore=await heap(),samples=[];
-for(let i=0;i<40;i++){await memoryPage.locator('#games button').first().click();await expect(memoryPage.frameLocator('#game iframe').getByRole('button',{name:'Старт',exact:true})).toBeVisible();if(await memoryPage.getByRole('button',{name:'Игры',exact:true}).count())await memoryPage.getByRole('button',{name:'Игры',exact:true}).click();else await memoryPage.evaluate(()=>document.querySelector('#game').replaceChildren());await expect(memoryPage.locator('iframe')).toHaveCount(0);if((i+1)%10===0)samples.push({cycles:i+1,heapBytes:await heap()});}
+for(let i=0;i<40;i++){await memoryPage.locator('#games button').first().click();await expect(memoryPage.frameLocator('#game iframe').getByRole('button',{name:'Старт',exact:true})).toBeVisible();if(await memoryPage.getByRole('button',{name:'Игры',exact:true}).count())await memoryPage.getByRole('button',{name:'Игры',exact:true}).click();else await memoryPage.evaluate(()=>document.querySelector('#game').replaceChildren());await expect(memoryPage.locator('iframe')).toHaveCount(1);if((i+1)%10===0)samples.push({cycles:i+1,heapBytes:await heap()});}
 const memoryCycles={cycles:40,samples,heapBefore,heapAfter:await heap(),remainingIframes:await memoryPage.locator('iframe').count()};await memoryContext.close();await browser.close();
 const p75=a=>a.toSorted((a,b)=>a-b)[Math.ceil(a.length*.75)-1];
 const output={label,browser:browser.version(),conditions:{viewport:'390x844',DPR:2,cpuThrottle:4,network:'150ms RTT; 1.6Mbps down; 750kbps up',warmup:'server warm; fresh uncached browser context per run',repeats:7},assets,gameSize,memoryCycles,apiMs:api,runs,p75:{interactiveMs:p75(runs.map(x=>x.interactiveMs)),gameLaunchMs:p75(runs.map(x=>x.gameLaunchMs)),touchMs:p75(runs.map(x=>x.touchMs)),apiMs:p75(api)}};
@@ -49,5 +50,5 @@ const critical=assets.filter(a=>a.path==='/'||runs[0].initialResources.includes(
 
 } finally {
   await browser?.close();
-  if(child){const exited=new Promise(done=>child.once('exit',done));child.send('shutdown');const force=setTimeout(()=>child?.kill(),7000);await exited;clearTimeout(force);child=undefined;}
+  if(child&&child.exitCode===null&&child.signalCode===null){const exited=new Promise(done=>child.once('exit',done));if(child.connected)child.send('shutdown');const force=setTimeout(()=>child?.kill('SIGKILL'),7000);await exited;clearTimeout(force);child=undefined;}
 }

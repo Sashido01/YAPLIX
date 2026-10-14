@@ -1,17 +1,24 @@
 # Приёмка YAPLIX
 
-13 октября 2026. Репетиция по текущей main после merge. Browser tests, реальные LLM,
-hosted CI и физические устройства имеют разные границы.
+Историческая проверка TASK-007: 13 октября 2026. Сценарий ниже актуализирован для
+TASK-009; новые результаты tests/реальных вызовов фиксируются отдельным отчётом.
+Browser tests, реальные LLM, hosted CI и физические устройства имеют разные границы.
 
 ## Сценарий 3–5 минут
 
-1. Чистый клон, npm ci/build/start без ключей: DEMO лабиринт.
-2. Старт/движение/победа; Replay/поражение, library/new version/old version.
+1. Чистый клон, YAPLIX.cmd или npm run app без ключей: каталог и DEMO лабиринт.
+2. Задание → явное «Открыть» → Старт/движение/победа; Replay/поражение,
+   library/new version/old version. Генерация другой игры не прерывает текущий раунд.
 3. Exact HTML export, offline управление; restart server сохраняет историю.
 4. Backup/verify hash/schema, diagnosis; LAN QR + separate access key.
 5. LIVE cloud: обычное описание, настоящий HTML/JS, actual model/attempts,
    input/pause/outcome; доработка полного предыдущего HTML следующей версией.
 6. Telegram после HTTPS/menu: signed вход, общая library и тот же gameplay.
+7. Центр заданий после возврата/restart: запрос и записанный draft сохранены;
+   неизвестный dispatched результат требует явного продолжения. Rate/quota/stream/
+   truncation fixtures должны подтверждать соответствующие [границы](known-errors.md).
+8. Toast не переключает игру; скрытый результат остаётся в центре/каталоге.
+   Telegram notification проверяется только после согласия, separately от UI toast.
 
 ## Автоматизация
 
@@ -40,6 +47,15 @@ Canvas, 150 звёзд видимы, победа задана на 12 s. Exact 
 Ошибки не сохранялись и не заменялись DEMO. Наличие одного успешного сценария
 не гарантирует качество каждого ответа бесплатных моделей.
 
+В TASK-009 ограниченный pilot `benchmark:generation` выполнил два раздельных
+запроса `openrouter/free`, каждый с deadline 60 s, одним dispatch и без repair/fallback.
+Оба завершились `LLM_TIMEOUT`: первая попытка сообщила `cohere/north-mini-code:free`,
+вторая actual model не сообщила. Играбельных версий нет, output/reasoning usage
+не получен, Time to First Playable Game отсутствует. Исходные prompts/jobs сохранены
+в изолированных benchmark SQLite; доступного частичного HTML не было. Этот pilot
+проверяет сохранение намерения, но не доказывает качество/скорость успешной генерации.
+Ollama Cloud inference в этой проверке не выполнялся: credentials отсутствуют.
+
 npm run demo:live сохраняет три ordinary game prompts, actual free model, time/
 attempts и exact HTML в ignored .local/live. Dynamic free router не сравнивает
 фиксированные модели и не обосновывает «лучшую». Проверяйте каждый HTML до win/loss
@@ -49,9 +65,14 @@ Bot token проверяет telegram:check, независимо от Mini App 
 Android/iPhone/WebView/keyboard/safe-area/download требуют человеческой репетиции.
 Hosted CI этого не подтверждает.
 
+Аудит TASK-009 сопоставляет реализованный сценарий с требованиями предоставленного
+задания. Официальный документ кейса Билайна для независимой сверки не предоставлен;
+полное соответствие официальному кейсу пока **не проверено**.
+
 ## Данные
 
-Перед update проверенный backup, no old HTML/metadata rewrite. Schema v1 неизменна.
+Перед update проверенный backup, no old HTML/metadata rewrite. TASK-009 добавляет
+schema v2 с protective before-v2 snapshot; [restore/update](development-setup.md).
 Приёмка сравнивает исходные rows/hashes/history/events, открывает старые игры,
 скачивает exact HTML. Old validationStatus сохраняется, passed задним числом не
 назначается. Новые версии только добавляются; failure не записывается.

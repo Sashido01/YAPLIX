@@ -1,3 +1,4 @@
+import {createAndOpen} from './ui-jobs-helper.ts';
 import {test,expect} from '@playwright/test';
 import {createApp} from '../src/api.ts';
 import {Store} from '../src/store.ts';
@@ -20,7 +21,7 @@ for(const identity of ['allowed','tampered','forbidden'] as const)test('Telegram
   await page.evaluate(()=>{const app=(window as any).Telegram.WebApp;app.viewportHeight=420;app.themeParams.bg_color='#334455';(window as any).tgEvents.viewportChanged();(window as any).tgEvents.themeChanged();});
   expect(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--app-height'))).toBe('420px');
   await context.clearCookies(); // Header session supports Telegram clients blocking third-party cookies.
-  await page.locator('#generate').click();await expect(page.locator('#message')).toContainText('Игра сохранена');expect(store.list()).toHaveLength(1);
+  await page.getByRole('button',{name:'Создать',exact:true}).click();await createAndOpen(page);await expect(page.locator('#message')).toContainText('Игра сохранена');expect(store.list()).toHaveLength(1);
   const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Старт',exact:true}).click();await game.getByRole('button',{name:'Вправо',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
   await page.locator('#share').click();await expect(page.locator('#share-url')).toBeVisible();const url=await page.locator('#share-url').inputValue();expect(new URL(url).pathname).toMatch(/^\/play\//);
   expect(await page.evaluate(()=>Object.keys(localStorage))).toEqual([]);expect(await page.evaluate(()=>document.documentElement.outerHTML)).not.toContain(raw);expect(errors).toEqual([]);expect(liveCalls).toBe(0);
