@@ -212,7 +212,9 @@ export async function runTunnel(options: TunnelOptions) {
       const path = managedPath('.local/tunnel-url.txt');
       if (existsSync(path) && readFileSync(path, 'utf8') === origin + '/telegram\n') unlinkSync(path);
     }
-    announce('Туннель отключён. ' + (backend ? 'Собственный backend завершён.' : 'Существующий backend не остановлен.'));
-    journal('disconnected', 'Owned children closed; attached backend preserved', secrets);
+    if (!options.check) {
+      announce('Туннель отключён. ' + (backend ? 'Собственный backend завершён.' : 'Существующий backend не остановлен.'));
+      journal('disconnected', 'Owned children closed; attached backend preserved', secrets);
+    }
   }
 }
