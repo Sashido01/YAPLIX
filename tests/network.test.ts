@@ -6,6 +6,7 @@ import { fork } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { networkPolicy, AccessSessions } from '../src/access.ts';
+import { runtimeKey } from '../src/runtime-control.ts';
 import { createApp } from '../src/api.ts';
 import { Store, PROJECT_ROOT } from '../src/store.ts';
 import { spec, event } from './helpers.ts';
@@ -66,4 +67,25 @@ test('production graceful shutdown via local IPC closes SQLite and survives upda
   const stop=async()=>{child!.send('shutdown');assert.equal(await closed,0);child=undefined;assert.match(output,/SQLite closed/);};
   try {await start();const url='http://127.0.0.1:'+port;const v=await(await fetch(url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();await stop();await start();assert.equal((await(await fetch(url+'/api/versions/'+v.versionId)).json()).sha256,v.sha256);await stop();}
   finally {child?.kill();rmSync(dir,{recursive:true});}
+});
+
+test('authenticated loopback shutdown endpoint closes SQLite, releases port and rejects unauthenticated and forwarded callers', {timeout:20_000}, async () => {
+  const dir=mkdtempSync('.local/network-shutdown-'),listener=createServer();await new Promise<void>(done=>listener.listen(0,'127.0.0.1',done));const port=(listener.address() as any).port;await new Promise<void>(done=>listener.close(()=>done()));
+  let child:ReturnType<typeof fork>|undefined,closed!:Promise<number|null>,output='';
+  const start=async()=>{child=fork('src/server.ts',[],{cwd:PROJECT_ROOT,env:{...process.env,PORT:String(port),YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',LIVE_PROVIDER:'none',YAPLIX_DB:dir+'/data.sqlite'},silent:true});closed=new Promise(done=>child!.once('exit',done));await new Promise<void>((done,fail)=>{child!.stdout!.once('data',()=>done());child!.once('error',fail);child!.once('exit',()=>fail(Error('START_FAILED')));});child.stdout!.on('data',data=>output+=data);};
+  const begin=Date.now();
+  try{
+    await start();const url='http://127.0.0.1:'+port;
+    // Version saved before shutdown must survive a full restart afterwards.
+    const v=await(await fetch(url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();
+    const noHeader=await fetch(url+'/api/runtime/shutdown',{method:'POST'});assert.equal(noHeader.status,403);
+    const wrongKey=await fetch(url+'/api/runtime/shutdown',{method:'POST',headers:{'X-Yaplix-Control':'a'.repeat(64)}});assert.equal(wrongKey.status,403);
+    assert.equal((await fetch(url+'/api/runtime/shutdown',{method:'POST',headers:{'X-Yaplix-Control':'x'.repeat(64),'X-Forwarded-Proto':'https'}})).status,403);
+    const response=await fetch(url+'/api/runtime/shutdown',{method:'POST',headers:{'X-Yaplix-Control':runtimeKey()}});assert.equal(response.status,202);
+    assert.equal(await closed,0);child=undefined;
+    assert.match(output,/SQLite closed/);assert.ok(Date.now()-begin<15000);
+    await start();
+    assert.equal((await(await fetch(url+'/api/versions/'+v.versionId)).json()).sha256,v.sha256);
+    child!.send('shutdown');assert.equal(await closed,0);child=undefined;
+  }finally{child?.kill();await new Promise<void>(done=>{let attempt=0;const wipe=()=>{try{rmSync(dir,{recursive:true});done();}catch(e){if(++attempt>5)return done();setTimeout(wipe,300);}};wipe();});}
 });

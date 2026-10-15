@@ -19,6 +19,7 @@ const store = new Store(process.env.YAPLIX_DB);
 const adapter = configuredGenerator();
 const telegram = new TelegramSessions();
 const control = new RuntimeControl(policy, runtimeKey(), () => telegram.singleOwner());
+control.onShutdown = () => stop();
 const jobs=new GenerationJobs(store,adapter,(owner,gameId,versionId)=>telegram.notifyReady(owner,gameId,versionId,policy.mode==='https'?policy.origin:undefined),false,{maxCalls:Number(process.env.LLM_MAX_ATTEMPTS??6),durationMs:Number(process.env.LLM_MAX_DURATION_MS??600000),retryMs:Number(process.env.LLM_RETRY_MS??2000)});
 const bot=telegram.singleOwner()&&process.env.TELEGRAM_UPDATES!=='off'?new TelegramBot(store,jobs,process.env,{publicEndpoint:()=>control.active()&&policy.mode==='https'&&policy.origin&&policy.origin!=='https://pending.invalid'?{origin:policy.origin,instance:control.instance}:undefined}):undefined;
 let botStartup:Promise<void>|undefined;
@@ -52,6 +53,8 @@ async function stop() {
   deadline.unref();
   server.close(() => { clearTimeout(deadline); store.close(); console.log('YAPLIX stopped; SQLite closed'); process.disconnect?.(); });
   if ('closeIdleConnections' in server) server.closeIdleConnections();
+  // Hard timeout fallback: ensure process exits even if something holds the event loop.
+  setTimeout(() => { process.exit(0); }, 12000).unref();
 }
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
