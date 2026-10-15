@@ -96,6 +96,41 @@ MOBILE_VERIFIED; отдельные gameplay/end/input correctness levels не �
 Pause проверяет замороженное изображение, resume — фактическое продолжение через
 видимую Resume/Continue или data-yaplix-resume, затем pause-toggle fallback.
 
+## Экспериментальный orchestrator (TASK-013, architecture B)
+
+[orchestrator/](../src/orchestrator/) — отдельный экспериментальный pipeline
+`UserPrompt → GameSpec (выведенный без LLM) → MechanicsSelector → MechanicsLibrary
+→ LLMGameLogic → HTMLBuilder → ExistingChecker → Artifact`. Production путь выше
+(A: LLM пишет полный HTML) остаётся единственным для jobs/UI/API; orchestrator
+включается только явным скриптом.
+
+- [spec.ts](../src/orchestrator/spec.ts) выводит OrchestratorGameSpec ключевыми
+  словами: spaceType grid/free/mixed/unresolved, entities/movement/interactions,
+  буквальные winRule/lossRule regex по исходному промпту. Ничего не выдумывается:
+  unresolved не подбирает примитивы. Оригинальный промпт всегда передаётся LLM
+  дословно и остаётся главным источником.
+- [selector.ts](../src/orchestrator/selector.ts) выбирает substrate из библиотеки
+  примитивов [primitives.ts](../src/orchestrator/primitives.ts) (8 primitives:
+  canvas, loop, input с touchpad, grid, physics, fsm, score, session). Решение
+  техническое, не жанровое: примитивы не задают готовую игру, правила полностью
+  пишет LLM.
+- [html-builder.ts](../src/orchestrator/html-builder.ts) собирает standalone HTML:
+  скелет (#yapStart/#yapPause/#yapState/#yapRestartBtn, CSS 44px targets) + выбранные
+  источники примитивов + сгенерированная логика. В LLM уходит только задача «напиши
+  новую игровую логику plain-JS ≤350 строк» — не перескраска жанрового шаблона.
+- [engine.ts](../src/orchestrator/engine.ts) implements Generator с теми же
+  attempt/cooldown/block bookkeeping, что [live.ts](../src/live.ts): single slot,
+  bounded repairs, cooldown 900 s для LLM_QUOTA/AUTH/CONTEXT, 60 s для RATE_LIMIT,
+  sandbox-fatal без repair/fallback. Fallback «scratch» при unresolved space
+  использует полный путь A-стиля. Метаданные OrchestratorRun (spaceType,
+  selection, primitiveKeys/bytes, llmCodeChars/sha256, per-stage timings) хранятся
+  рядом с артефактом в .local/task-013, не в contracts (strict Artifact).
+- A/B протокол: scripts/orchestrator-ab.ts, одна модель gemma4:31b (ollama-cloud)
+  для обеих ветвей, ≤2 repairs на попытку, бюджеты ≤6 primary + ≤2 repairs;
+  аудит артефактов scripts/orchestrator-audit.ts. Итоги — docs/task-013-report.md.
+  Результаты в .local/task-013 (не коммитятся) — это данные эксперимента, не
+  production поведение.
+
 ## Runtime и доступ
 
 Opaque iframe `sandbox=allow-scripts`, без same-origin. CSP блокирует connect/frames/
