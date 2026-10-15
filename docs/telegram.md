@@ -158,11 +158,17 @@ bot/API tokens, initData и Authorization фильтруются до запис
   TCP; `--protocol quic` — UDP; default auto использует штатную логику cloudflared.
   TLS не ослабляется. [Официальные сетевые требования](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/).
 - VPN может менять DNS, маршрут и доступность транспортов. Сравните диагностику в
-  разрешённой сети/VPN, не угадывайте причину только по TUNNEL_CLOSED. Передаются
-  явно заданные HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY и lowercase варианты;
-  поддержка конкретного proxy транспортом cloudflared не гарантируется. Node внешний
-  probe учитывает proxy при `NODE_USE_ENV_PROXY=1`; Windows GUI/PAC proxy не подхватывается
-  автоматически. Proxy credentials считаются секретами.
+  разрешённой сети/VPN, не угадывайте причину только по TUNNEL_CLOSED. С TASK-014
+  коннектор по умолчанию получает очищенные proxy-переменные (провижининг
+  `POST /tunnel` и edge-транспорт идут напрямую; задокументирован отказ
+  провижининга при одновременных HTTP_PROXY+HTTPS_PROXY в cloudflared 2026.10.0).
+  `YAPLIX_TUNNEL_CONNECTOR_PROXY=1` явно возвращает наследование системных
+  HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY в коннектор для сети без прямого
+  egress; поддержка конкретного proxy транспортом cloudflared не гарантируется.
+  Внешний Node probe учитывает proxy только при `NODE_USE_ENV_PROXY=1`; Windows
+  GUI/PAC proxy не подхватывается автоматически. Proxy credentials считаются
+  секретами. Переменные окружения коннектора не содержат bot/LLM ключей; TLS
+  не ослабляется.
 - Windows Firewall/защитное ПО могут блокировать исходящие соединения процесса.
   Проверьте правила с администратором; launcher не меняет firewall, не открывает
   входящий backend и не публикует Ollama. HTTPS не заменяет авторизацию.
@@ -176,6 +182,15 @@ bot/API tokens, initData и Authorization фильтруются до запис
    `npm run tunnel -- --menu` явно вызывает setChatMenuButton, не отправляет сообщения.
 4. Main Mini App/direct t.me launch: `/mybots` → Bot Settings → Configure Mini App,
    тот же HTTPS URL. Menu button достаточно для теста. Пункты Telegram могут меняться.
+
+Важно (TASK-014): пункты 1 и 4 — ручные настройки BotFather, код YAPLIX их не
+обновляет. Quick Tunnel URL меняется при каждом запуске и сразу устаревает:
+не сохраняйте временный адрес в Main Mini App/Menu Button между сессиями —
+Telegram откроет его с `ERR_NAME_NOT_RESOLVED` даже когда код бота молчит.
+Код бота публикует web_app кнопку только для подтверждённого живого экземпляра;
+`npm run telegram:check` показывает актуальный menuType/menuUrl (`commands`/`null`
+означает, что бот мёртвую ссылку не раздаёт). Для постоянного запуска настройте
+[постоянный HTTPS host](#постоянный-url) и укажите его в BotFather вручную.
 
 Обычный browser `/telegram` без initData даёт понятный отказ. Обычный `/` требует
 access key. Forbidden ID отклоняется до library/LLM. Theme/viewport/safe-area по SDK,

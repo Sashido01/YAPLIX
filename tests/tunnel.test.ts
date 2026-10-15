@@ -31,6 +31,17 @@ async function scenario(extra: Partial<TunnelOptions> = {}) {
   try { await runTunnel(options); return { messages, port: options.port, children }; }
   finally { for (const child of children) assert.notEqual(child.exitCode ?? child.signalCode, null); rmSync(directory, { recursive: true }); }
 }
+test('M: connector env drops system proxy variables but keeps opt-in forward', async () => {
+  const { buildConnectorEnvFromParts } = await import('../scripts/tunnel-connector-env.ts');
+  const system = { HTTP_PROXY: 'http://127.0.0.1:10809', HTTPS_PROXY: 'http://127.0.0.1:10809', NO_PROXY: 'localhost', http_proxy: 'http://127.0.0.1:10809', PATH: 'C:\\tools', SystemRoot: 'C:\\Windows' };
+  const dropped = buildConnectorEnvFromParts(system, '/tmp/home1', '/tmp/temp1');
+  for (const k of ['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy']) assert.equal(dropped[k], '');
+  assert.equal(dropped.PATH, 'C:\\tools'); assert.equal(dropped.SystemRoot, 'C:\\Windows'); assert.equal(dropped.HOME, '/tmp/home1');
+  const forwarded = buildConnectorEnvFromParts(system, '/tmp/home2', '/tmp/temp1', true);
+  assert.equal(forwarded.HTTP_PROXY, 'http://127.0.0.1:10809'); assert.equal(forwarded.NO_PROXY, 'localhost'); assert.equal(forwarded.PATH, 'C:\\tools');
+  const clean = buildConnectorEnvFromParts({ PATH: '/usr/bin' }, '/tmp/home3', '/tmp/temp3');
+  assert.equal(clean.PATH, '/usr/bin'); assert.equal(clean.HOME, '/tmp/home3'); assert.equal(clean.HTTPS_PROXY, '');
+});
 test('A/J/K: free port starts ready backend, then closes owned processes; repeated runs leave port free', async () => {
   for (let i = 0; i < 2; i++) {
     const result = await scenario(); assert.ok(result.messages.some(m => m.includes('Backend запущен')));
