@@ -43,13 +43,19 @@ export class GenerationEngine implements Generator {
           }
         }
       }
+      // A damaged draft cannot be repaired into a good game. A verified complete
+      // draft deserves one fresh full pass that ignores it entirely.
+      const freshIssues=['BROWSER_INPUT_NO_EFFECT','BROWSER_START_CONTROL','BROWSER_MOBILE_LAYOUT','BROWSER_GAME_AREA','BROWSER_HORIZONTAL_OVERFLOW','BROWSER_INSTANT_END','BROWSER_AUTOSTART','BROWSER_DUPLICATE_START','BROWSER_EVENT_ORDER','LLM_INVALID_HTML','LLM_UNSAFE_ARTIFACT','LLM_INVALID_RESPONSE','LLM_OUTPUT_TRUNCATED'];
+      let resumeAttempted=false;
       for(const route of this.routes){
         const stored=context?.cooldowns?.[route.provider+'/'+route.model];if(stored&&stored.until>Date.now())this.cooldowns.set(route.provider+'/'+route.model,stored);
         const key=route.provider+'/'+route.model,cooldown=this.cooldowns.get(key);
         if(context?.blockedRoutes?.includes(key)){lastCode='LLM_ROUTES_UNAVAILABLE';continue;}
         if(cooldown&&cooldown.until>Date.now()){lastCode=cooldown.code;if(Number.isFinite(cooldown.until))context?.retryAt?.(cooldown.until);continue;}
+        const partialResumable=Boolean(partial)&&!freshIssues.includes(lastCode);
+        if(partial&&!partialResumable)resumeAttempted=true;
         const messages=generationMessages(spec,previous,this.promptStyle);
-        if(partial)messages.push({role:'assistant',content:partial},{role:'user',content:'Recover this draft using the original requirements. Return one complete concise HTML document, not a continuation fragment. Preserve working mechanics. Never concatenate unverified fragments. '+recoveryIssue});
+        if(partial&&partialResumable)messages.push({role:'assistant',content:partial},{role:'user',content:'Recover this draft using the original requirements. Return one complete concise HTML document, not a continuation fragment. Preserve working mechanics. Never concatenate unverified fragments. '+recoveryIssue});
         for(let repair=0;repair<=this.repairs;repair++){
           if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure(attempts.at(-1)?.errorCode??'JOB_ATTEMPT_LIMIT',attempts,409);
           const begin=performance.now();let actual:string|null=null,code='',requestMs=0,validationMs=0;let tokens:TokenUsage={};
@@ -87,6 +93,53 @@ export class GenerationEngine implements Generator {
             if(!actual||repair===this.repairs||lastCode==='BROWSER_INSTALL_REQUIRED')break;
             messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return concise complete HTML, below 250 lines, with little reasoning and no commentary.':'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
           }finally{clearTimeout(requestTimer);}
+        }
+      }
+      // Structured full regeneration from the saved prompt: the draft was set
+      // aside as unusable and one recovery pass already tried it. Same attempt
+      // budget; no dispatch beyond context.maxCalls.
+      if(resumeAttempted){
+        let routed=false;
+        for(const route of this.routes){
+          const key=route.provider+'/'+route.model;
+          if(context?.blockedRoutes?.includes(key)){lastCode='LLM_ROUTES_UNAVAILABLE';continue;}
+          const cooldown=this.cooldowns.get(key);
+          if(cooldown&&cooldown.until>Date.now()){lastCode=cooldown.code;if(Number.isFinite(cooldown.until))context?.retryAt?.(cooldown.until);continue;}
+          const messages=generationMessages(spec,previous,this.promptStyle);
+          for(let repair=0;repair<=this.repairs;repair++){
+            if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure(attempts.at(-1)?.errorCode??'JOB_ATTEMPT_LIMIT',attempts,409);
+            const begin=performance.now();let actual:string|null=null,code='',requestMs=0,validationMs=0;let tokens:TokenUsage={};
+            const requestController=new AbortController(),requestTimer=setTimeout(()=>requestController.abort(),this.requestTimeout);
+            const requestSignal=AbortSignal.any([controller.signal,requestController.signal]);
+            try{
+              context?.stage(repair?'repairing':'generating');if(!route.observesDispatch)context?.dispatch(route);
+              const transportContext=context?{...context,partial:(value:string,model:string|null,usage?:TokenUsage)=>{if(model)actual=model;if(usage)tokens={...tokens,...usage};}}:undefined;
+              const response=await route.complete(messages,requestSignal,transportContext);clearTimeout(requestTimer);requestMs=Math.round(performance.now()-begin);actual=response.model;tokens={...(response.outputTokens===undefined?{}:{outputTokens:response.outputTokens}),...(response.reasoningTokens===undefined?{}:{reasoningTokens:response.reasoningTokens})};code=extractDocument(response.code);context?.stage('validating');
+              const issues=validateDocument(code);if(issues.length)throw new Fault('LLM_UNSAFE_ARTIFACT',502);
+              const checkBegan=performance.now();const evidence=await this.check(code,controller.signal);validationMs=Math.round(performance.now()-checkBegan);
+              if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
+              attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-begin),requestMs,validationMs,...tokens});context?.attempt(attempts.at(-1)!);
+              return parseArtifact({html:code,method:'llm_code',provider:route.provider,model:actual,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts,fallback:routed||route!==this.routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
+            }catch(error){
+              if(controller.signal.aborted){attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:'failed',errorCode:signal?.aborted?'REQUEST_CANCELLED':'LLM_TIMEOUT',elapsedMs:Math.round(performance.now()-begin),requestMs:requestMs||Math.round(performance.now()-begin),validationMs,...tokens});context?.attempt(attempts.at(-1)!);throw error;}
+              if(error instanceof ProviderFailure){actual=error.actualModel;code=error.partial;tokens=error.usage;if(error.retryAt)context?.retryAt?.(error.retryAt);}
+              lastCode=requestController.signal.aborted?'LLM_TIMEOUT':error instanceof Fault?error.code:'LLM_NETWORK_OR_RESPONSE';
+              attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:actual?'rejected':'failed',errorCode:lastCode,elapsedMs:Math.round(performance.now()-begin),requestMs:requestMs||Math.round(performance.now()-begin),validationMs,...tokens});context?.attempt(attempts.at(-1)!);
+              if(context&&['LLM_QUOTA','LLM_AUTH','LLM_MODEL_NOT_FOUND','FREE_MODEL_REQUIRED','LLM_CONTEXT_LIMIT','LLM_OUTPUT_BUDGET_TOO_SMALL'].includes(lastCode)){
+                const until=Date.now()+900000;this.cooldowns.set(key,{until,code:lastCode});context.cooldownRoute?.(route,until,lastCode);context.blockRoute?.(route,lastCode);break;
+              }
+              if(context&&lastCode==='LLM_RATE_LIMIT'){const until=error instanceof ProviderFailure&&error.retryAt?error.retryAt:Date.now()+60000;this.cooldowns.set(key,{until,code:lastCode});context.cooldownRoute?.(route,until,lastCode);context.retryAt?.(until);break;}
+              if(context&&['RATE_LIMIT','JOB_ATTEMPT_LIMIT'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,429);
+              if(context&&['LLM_TIMEOUT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR'].includes(lastCode)){
+                if(route.provider!=='openrouter'&&route.provider!=='ollama')context.blockRoute?.(route,lastCode);
+                this.cooldowns.set(key,{until:Date.now()+5000,code:lastCode});break;
+              }
+              if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
+              if(!actual||repair===this.repairs||lastCode==='BROWSER_INSTALL_REQUIRED')break;
+              messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return concise complete HTML, below 250 lines, with little reasoning and no commentary.':'')+' '+validateDocument(code).join(', ')+'. Return one complete fresh implementation of the original requirements. Original requirements: '+JSON.stringify(spec)});
+            }finally{clearTimeout(requestTimer);}
+          }
+          routed=true;
         }
       }
       throw new GenerationFailure(lastCode,attempts);

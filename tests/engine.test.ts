@@ -32,9 +32,17 @@ test('bounded repair receives original request and exact failed HTML; only check
 test('failed checks, native dialogs, external resources and malformed output never persist',async()=>{
  for(const bad of [html.replace('</html>','<script>alert("bad")</script></html>'),html.replace('</html>','<script src="https://example.test/x"></script></html>'),'not html']){
   let calls=0;const engine=new GenerationEngine([route(async()=>{calls++;return{code:bad,model:'actual-free-model'};})],{check:evidence});const store=new Store(':memory:');
-  try{const response=await createApp(store,engine).request('/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'})});assert.equal(response.status,502);assert.equal(store.list().length,0);assert.equal(calls,2);assert.equal((await response.json()).attempts.length,2);}finally{store.close();}
+  try{const response=await createApp(store,engine).request('/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'})});assert.equal(response.status,502);assert.equal(store.list().length,0);assert.ok(calls===2||calls===4,`unexpected call count ${calls}`);assert.equal((await response.json()).attempts.length,calls);}finally{store.close();}
  }
 });
+test('a rejected partial draft triggers one bounded fresh full generation without resuming it',async()=>{
+  const batches:Message[][]=[];let calls=0;
+  const engine=new GenerationEngine([route(async m=>{batches.push(structuredClone(m));calls++;return calls===1?{code:'<!doctype html><html><body>incomplete',model:'actual-free-model'}:{code:html,model:'actual-free-model'};})],{repairs:2,check:async()=>{if(calls===1)throw new Fault('LLM_INVALID_HTML',502);return evidence();}});
+  const result=await engine.generate(spec);assert.equal(result.model,'actual-free-model');assert.ok(result.generation!.attempts.length>=2);
+  const fresh=batches.find(m=>m.length===2);assert.ok(fresh,'fresh pass must send the original two-message prompt');
+  assert.ok(!fresh!.at(-1)!.content.includes('Recover this draft'),'fresh pass must not resume the rejected draft');
+});
+
 test('HTTP failures are not retried; only explicit configured fallback runs and provenance stays visible',async()=>{
  let calls=0;const failed=route(async()=>{calls++;throw new Fault('LLM_RATE_LIMIT',429);});const secondary=route(async()=>({code:html,model:'secondary-actual'}),'secondary');
  await assert.rejects(new GenerationEngine([failed],{check:evidence}).generate(spec),/LLM_RATE_LIMIT/);assert.equal(calls,1);
