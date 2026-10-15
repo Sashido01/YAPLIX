@@ -112,3 +112,12 @@ selector,primitives,html-builder,engine}.ts, tests/orchestrator.{test,spec}.ts,
 scripts/orchestrator-{ab,audit}.ts, playwright.config.ts (testMatch),
 docs/architecture.md (раздел), этот отчёт. Live данные `.local/task-013/`
 не коммитятся (локальная evidence; сырые HTML не публиковать в репозитории).
+
+## Hosted CI наблюдение (TASK-013)
+
+Windows shared runners три прогона подряд упирались в 20-минутный лимит job'а:
+два падения на разных тяжёлых e2e-тестах и одно снятие шага performance при
+пройденных 218 браузерных тестах; за сутки до задачи main падал так же дважды
+(разные тесты). Бюджет поднят до 30 минут (repository-checks.yml); исправление
+занесено в [known-errors](known-errors.md). Локальная верификация независимо
+зелёная: typecheck, 137 Node, browser suite (218), build, repo checks.
