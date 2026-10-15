@@ -1,5 +1,6 @@
 import {runTunnel,explain} from './tunnel-runtime.ts';
 import {telegramMenu} from './telegram-menu.ts';
+import {buildConnectorEnvFromParts,tunnelConnectorProxyForwarded} from './tunnel-connector-env.ts';
 import {existsSync,readFileSync,writeFileSync,chmodSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {managedPath,PROJECT_ROOT} from '../src/store.ts';
@@ -41,9 +42,16 @@ try {
   if(!['auto','http2','quic'].includes(protocol))throw new Fault('TUNNEL_PROTOCOL_INVALID');
   const ownHome=managedPath('.local/tunnel-home/config.yml').replace(/[\\/]config\.yml$/,'');
   const ownTemp=managedPath('.local/tmp/tunnel.tmp').replace(/[\\/]tunnel\.tmp$/,'');
-  // Explicit system proxy variables only; the connector never gets bot/LLM keys.
-  const names=['PATH','Path','SystemRoot','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'];
-  const connectorEnv={...Object.fromEntries(names.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!])),HOME:ownHome,USERPROFILE:ownHome,LOCALAPPDATA:ownHome,TEMP:ownTemp,TMP:ownTemp};
+  // TASK-014 root cause (docs/known-errors.md "TUNNEL_CLOSED proxy"): with
+  // HTTP_PROXY and HTTPS_PROXY both inherited, cloudflared 2026.10.0 fails its
+  // quick-tunnel provisioning POST (context deadline exceeded; reproduced
+  // 2026-10-15 with the pinned binary through Xray), while no proxy and an
+  // HTTPS-only proxy both work. The connector therefore runs with proxy
+  // variables cleared: provisioning and edge transport stay direct, localhost
+  // targets are never proxied either way, TLS stays verified and the connector
+  // still receives no bot/LLM keys. Set YAPLIX_TUNNEL_CONNECTOR_PROXY=1 to
+  // forward system proxy variables explicitly when a network requires it.
+  const connectorEnv=buildConnectorEnvFromParts(process.env,ownHome,ownTemp,tunnelConnectorProxyForwarded(process.env));
   const stop=new AbortController(),shutdown=()=>stop.abort();
   process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);process.on('disconnect',shutdown);
   process.on('message',message=>{if(message==='shutdown')shutdown();});
