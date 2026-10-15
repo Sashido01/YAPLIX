@@ -29,7 +29,7 @@ const app = createApp(store, adapter, async () => {
 const server = serve({ fetch: app.fetch, hostname: policy.host, port }, () => {
   try{jobs.start();}catch{console.error('JOB_WORKER_BUSY: эта база уже используется другим backend; он сохранён.');process.exitCode=1;void stop();return;}
   console.log(`YAPLIX ${policy.origin ?? `http://127.0.0.1:${port}`}/ (${policy.mode})`);
-  botStartup=bot?.start().catch(error=>console.error(error instanceof Error&&'code' in error?String(error.code):'TELEGRAM_API_UNAVAILABLE'));
+  botStartup=bot?.startWithRetry().catch(error=>console.error(error instanceof Error&&'code' in error?String(error.code):'TELEGRAM_API_UNAVAILABLE'));
   if (policy.mode === 'lan' && process.env.YAPLIX_PRINT_LAN_KEY === '1') {
     console.log(`Ключ доступа: ${policy.key}\nОткройте адрес на компьютере → Диагностика → Показать QR. Телефон должен быть в той же Wi-Fi сети. Ключ вводится отдельно. Firewall не изменён.`);
   }

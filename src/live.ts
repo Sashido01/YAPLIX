@@ -51,7 +51,7 @@ export class GenerationEngine implements Generator {
         const messages=generationMessages(spec,previous,this.promptStyle);
         if(partial)messages.push({role:'assistant',content:partial},{role:'user',content:'Recover this draft using the original requirements. Return one complete concise HTML document, not a continuation fragment. Preserve working mechanics. Never concatenate unverified fragments. '+recoveryIssue});
         for(let repair=0;repair<=this.repairs;repair++){
-          if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure('JOB_ATTEMPT_LIMIT',attempts,409);
+          if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure(attempts.at(-1)?.errorCode??'JOB_ATTEMPT_LIMIT',attempts,409);
           const begin=performance.now();let actual:string|null=null,code='',requestMs=0,validationMs=0;let tokens:TokenUsage={};
           const requestController=new AbortController(),requestTimer=setTimeout(()=>requestController.abort(),this.requestTimeout);
           const requestSignal=AbortSignal.any([controller.signal,requestController.signal]);

@@ -22,6 +22,18 @@ function cleanup(token:string){for(const path of [statePath(token),statePath(tok
 function idle(signal:AbortSignal){return new Promise<never>((_resolve,reject)=>{const stop=()=>reject(new DOMException('stopped','AbortError'));if(signal.aborted)stop();else signal.addEventListener('abort',stop,{once:true});});}
 function harness(override?:BotCall){const calls:{method:string;body:Record<string,unknown>}[]=[];let menu:unknown={type:'commands'};const call:BotCall=async(method,body,signal)=>{calls.push({method,body});if(method==='getChatMenuButton')return menu;if(method==='setChatMenuButton'){menu=body.menu_button;return true;}if(override)return override(method,body,signal);if(method==='getMe')return{is_bot:true,username:'YaplixBot'};if(method==='getWebhookInfo')return{url:''};if(method==='getUpdates')return idle(signal);return true;};return{calls,call};}
 
+test('bootstrap retries transient API failure; shutdown cancels wait; identity failures do not retry',async()=>{
+ for(const scenario of ['recover','close','identity']){
+  const store=new Store(':memory:'),jobs=new GenerationJobs(store),settings=env();let attempts=0;const logs:string[]=[];
+  const h=harness(async(method,_body,signal)=>{if(method==='getMe'){attempts++;if(scenario==='identity')return{is_bot:true,username:'WrongBot'};if(attempts===1||scenario==='close')throw new Fault('TELEGRAM_API_UNAVAILABLE');return{is_bot:true,username:'YaplixBot'};}if(method==='getWebhookInfo')return{url:''};if(method==='getUpdates')return idle(signal);return true;});
+  const bot=new TelegramBot(store,jobs,settings,{call:h.call,log:s=>logs.push(s)});
+  try{if(scenario==='identity'){await assert.rejects(bot.startWithRetry(5),/TELEGRAM_BOT_MISMATCH/);assert.equal(attempts,1);}
+   else if(scenario==='close'){const pending=bot.startWithRetry(60000);await until(()=>logs.includes('TELEGRAM_START_RETRY'));await bot.close();await pending;assert.equal(attempts,1);}
+   else{await bot.startWithRetry(5);assert.equal(attempts,2);assert.ok(logs.includes('TELEGRAM_POLLING_READY'));await bot.handle(update('/start'));assert.ok(h.calls.some(c=>c.method==='sendMessage'));}}
+  finally{await bot.close();await jobs.close();store.close();cleanup(settings.TELEGRAM_BOT_TOKEN);}
+ }
+});
+
 test('bot commands use actual catalog and job status; HTTPS links preserve exact game/version',async t=>{
  const store=new Store(':memory:'),jobs=new GenerationJobs(store);const settings=env({PUBLIC_URL:'https://yaplix.test'}),h=harness();const bot=new TelegramBot(store,jobs,settings,{call:h.call,log:()=>{},publicEndpoint:()=>({origin:'https://yaplix.test',instance:'owned-instance'})});
  t.mock.method(globalThis,'fetch',async(url:unknown)=>{assert.equal(String(url),'https://yaplix.test/healthz');return Response.json({app:'YAPLIX',protocol:1,ready:true,instance:'owned-instance'});});

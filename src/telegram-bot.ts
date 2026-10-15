@@ -55,6 +55,19 @@ export class TelegramBot {
     if(url){if(current.type!=='web_app'||current.web_app?.url!==url){await this.call('setChatMenuButton',{menu_button:{type:'web_app',text:'Играть',web_app:{url}}},signal);const checked=await this.call('getChatMenuButton',{},signal);if(checked.type!=='web_app'||checked.web_app?.url!==url)throw new Fault('TELEGRAM_MENU_VERIFY_FAILED');}}
     else if(current.type==='web_app'){await this.call('setChatMenuButton',{menu_button:{type:'commands'}},signal);if((await this.call('getChatMenuButton',{},signal)).type!=='commands')throw new Fault('TELEGRAM_MENU_VERIFY_FAILED');}
   }
+  async startWithRetry(retryMs=2000){
+    if(!Number.isSafeInteger(retryMs)||retryMs<1||retryMs>60000)throw new Fault('INVALID_BOT_RETRY');
+    let delay=retryMs;
+    while(!this.stopSignal.signal.aborted){
+      try{await this.start();return;}catch(error){
+        if(this.stopSignal.signal.aborted)return;
+        if(!(error instanceof Fault)||error.code!=='TELEGRAM_API_UNAVAILABLE')throw error;
+        this.log('TELEGRAM_START_RETRY');
+        await new Promise<void>(done=>{const finish=()=>{clearTimeout(timer);this.stopSignal.signal.removeEventListener('abort',finish);done();};const timer=setTimeout(finish,delay);this.stopSignal.signal.addEventListener('abort',finish,{once:true});});
+        delay=Math.min(60000,delay*2);
+      }
+    }
+  }
   async start(){
     if(this.running)return;
     if(!/^\d+:[A-Za-z0-9_-]+$/.test(this.token)||!Number.isSafeInteger(this.owner)||this.owner<=0)throw new Fault('TELEGRAM_SINGLE_OWNER_REQUIRED');
