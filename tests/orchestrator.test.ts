@@ -384,10 +384,11 @@ test('orchestrator selector: library choices follow space and mechanics', () => 
 test('task-016 gameplay: parseTarget reads declared numeric and word targets', () => {
   assert.equal(parseTarget('Целевое число предметов (например, 10) до поражения'), 10);
   assert.equal(parseTarget('Достичь целевого счёта, например 200 очков'), 200);
-  assert.equal(parseTarget('clear 3 lines to win'), null, 'English prose with no target keyword is not a parsed target');
+  assert.equal(parseTarget('Clear 3 lines to win'), null, 'English prose with no target keyword is not a parsed target');
   assert.equal(parseTarget('target line count'), null);
   assert.equal(parseTarget('Проигрыш — когда блоки достигают верха.'), null);
   assert.equal(parseTarget(null), null);
+  assert.equal(parseTarget('Win: collect 5 apples | Lose: enemy touches the head'), null, 'digits after keywords only; bare counts are not targets');
 });
 
 test('task-016 gameplay: summarizeSession maps observations to honest evidence levels', () => {
