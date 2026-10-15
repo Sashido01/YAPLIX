@@ -2,7 +2,8 @@
 
 База: main `ec97f37edd29485d5095382fc1a646065307eeb8` (TASK-010, PR #15).
 Implementation HEAD: `c10ae6b8616a6b1fb4d51c87e6a31cc9766d728b`.
-Рабочая ветка: `codex/task-011-mvp-worker`; документационный commit следует за implementation. PR пока не создан на момент этого снимка; authoritative состояние проверять по head этой ветки.
+Рабочая ветка: `codex/task-011-mvp-worker`; документационный checkpoint `8f824569fc8d675fc624f2ba1155da17fd9e2ab6`.
+PR [#16](https://github.com/Sashido01/YAPLIX/pull/16) создан, hosted CI запущен; этот снимок сделан до merge. Новая сессия должна сначала проверить actual PR state, не создавать повторный PR и не начинать исправления заново.
 
 ## Реализовано
 
@@ -18,6 +19,7 @@ Implementation HEAD: `c10ae6b8616a6b1fb4d51c87e6a31cc9766d728b`.
 - Реальный getUpdates long poll: HTTP 200/ok, пустая очередь. Без входящих owner messages нельзя объявлять реальные command replies PASS.
 - npm test: 108/108 PASS, build/typecheck пройдены. Новый тест сначала воспроизвёл JOB_ATTEMPT_LIMIT вместо JAVASCRIPT_EXCEPTION; после исправления PASS. Независимый focused source review: без actionable P1/P2. Gitleaks staged diff: clean.
 - .env не редактировалась. Пользовательские старые rows не удалялись; добавлены разрешённые DEMO/LIVE проверки. docs/Keys_Bilayn.pdf остаётся локальным untracked.
+- Итог .env SHA-256 совпал; SQLite quick_check=ok, FK errors=0, 16 games/34 versions после добавления двух проверочных игр.
 
 ## Оставшееся / команды
 
