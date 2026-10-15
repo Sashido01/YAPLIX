@@ -7,6 +7,7 @@ import { buildHtml } from '../src/orchestrator/html-builder.ts';
 import { validateDocument } from '../src/generation.ts';
 import { extractLogic, OrchestratorEngine, OrchestratorFailure } from '../src/orchestrator/engine.ts';
 import type { OrchestratorArtifact } from '../src/orchestrator/engine.ts';
+import { parseTarget, summarizeSession } from '../src/orchestrator/gameplay-check.ts';
 import type { CodeTransport, Message, GenerationContext, TokenUsage } from '../src/transport.ts';
 import { CloudOutputFailure, ProviderFailure } from '../src/transport.ts';
 import { Fault } from '../src/contracts.ts';
@@ -38,17 +39,18 @@ const CHOSEN = primitives.filter(p => ['canvas', 'loop', 'input', 'session', 'sc
 test('orchestrator assembly: buildHtml embeds chosen primitives and generated logic', () => {
   const os = orchestratorSpec('Тетрис: стрелки влево-вправо, пробел — сброс. Линии взрываются.');
   assert.equal(os.spaceType, 'grid');
-  const html = buildHtml({ title: 'Falling blocks', rules: 'Move with arrows, clear lines.', derivation: '{}', chosen: CHOSEN, code: sampleLogic() });
+  const html = buildHtml({ title: 'Falling blocks', rules: 'Move with arrows, clear lines.', derivation: '{}', chosen: CHOSEN, code: sampleLogic(), rulesBanner: 'Goal: reach the target score | Lose: stack overflow | Win: target score' });
   assert.match(html, /^<!DOCTYPE html>/);
   assert.match(html, /<\/html>$/);
   for (const p of CHOSEN) assert.ok(html.includes(p.source.trim().slice(0, 60)), 'primitive ' + p.key + ' missing from html');
   assert.ok(html.includes(sampleLogic().slice(0, 40)), 'generated logic missing');
+  assert.ok(html.includes('Goal: reach the target score'), 'rules banner missing');
   assert.deepEqual(validateDocument(html), []);
   assert.ok(Buffer.byteLength(html) < 200000);
 });
 
 test('orchestrator assembly: skeleton marks exactly one required control per attribute', () => {
-  const html = buildHtml({ title: 'T', rules: 'R', derivation: '{}', chosen: CHOSEN, code: sampleLogic() });
+  const html = buildHtml({ title: 'T', rules: 'R', derivation: '{}', chosen: CHOSEN, code: sampleLogic(), rulesBanner: 'Goal G | Lose L | Win W' });
   assert.equal((html.match(/data-yaplix-start/g) || []).length, 1);
   assert.equal((html.match(/data-yaplix-pause/g) || []).length, 1);
   assert.equal((html.match(/data-yaplix-state/g) || []).length, 1);
@@ -315,7 +317,44 @@ test('orchestrator spec: unresolved prompts produce no invented rules', () => {
   assert.equal(s.spaceType, 'unresolved');
   assert.equal(s.winRule, null);
   assert.equal(s.lossRule, null);
+  assert.equal(s.rules.win, null, 'unresolved space invents no default win');
+  assert.equal(s.rules.objective, null);
   assert.equal(selectMechanics(s).decision, 'scratch');
+});
+
+// --- TASK-016: mandatory rules -------------------------------------------------
+
+test('task-016 rules: explicit user conditions win and set userRulesPriority', () => {
+  const tetris = orchestratorSpec('Тетрис: стрелки влево-вправо, вращение, пробел — сброс. Линии из блоков исчезают со взрывом и добавляют очки. Проигрыш — когда блоки достигают верха.');
+  assert.match(tetris.rules.loss!, /блоки достигают верха/, 'verbatim user loss captured');
+  assert.ok(tetris.rules.userRulesPriority, 'user-stated conditions claim priority');
+  assert.ok(tetris.rules.actions.includes('вращать (rotate)'), 'rotation listed as an action');
+  assert.ok(tetris.rules.actions.some(a => a.includes('двигаться')), 'movement listed as an action');
+  assert.ok(tetris.rules.restart && tetris.rules.mobile, 'restart and mobile always required');
+});
+
+test('task-016 rules: endless-style prompts get a documented default completion result', () => {
+  const endless = orchestratorSpec('Змейка в лабиринте со стенами: змейка собирает яблоки, стреляет по преследующим врагам, у змейки есть жизни и счет.');
+  assert.equal(endless.rules.win, 'Собрать целевое число предметов до поражения.', 'collectibles imply a finite target');
+  assert.equal(endless.rules.loss, 'Потеря всех жизней завершает игру поражением.', 'lives imply a life loss rule without inventing text');
+  assert.ok(endless.rules.interactions.length >= 3, 'mechanic interactions documented');
+  assert.ok(!endless.rules.userRulesPriority, 'heuristic defaults do not claim user priority');
+  const tetris = orchestratorSpec('Тетрис со взрывами: линии исчезают с очками, проигрыш при переполнении');
+  assert.ok(tetris.rules.win, 'grid game still receives a reachable default win target');
+  assert.match(tetris.rules.loss ?? '', /переполнени/i, 'loss text preserved');
+});
+
+test('task-016 rules: unresolved space stays rule-free, resolved spaces always complete', () => {
+  const unresolved = orchestratorSpec('Собери три точки');
+  assert.equal(unresolved.rules.win, null);
+  assert.equal(unresolved.rules.loss, null);
+  assert.equal(unresolved.rules.objective, null);
+  for (const prompt of ['тетрис с линиями', 'корабль стреляет в астероиды', 'змейка собирает яблоки']) {
+    const s = orchestratorSpec(prompt);
+    assert.ok(s.rules.win, 'resolved space completes win: ' + prompt);
+    assert.ok(s.rules.loss, 'resolved space completes loss: ' + prompt);
+    assert.ok(s.rules.objective, 'resolved space completes objective: ' + prompt);
+  }
 });
 
 test('orchestrator selector: library choices follow space and mechanics', () => {
@@ -338,4 +377,45 @@ test('orchestrator selector: library choices follow space and mechanics', () => 
     assert.ok(keys.includes('grid') && keys.includes('physics'), 'mixed space selects both grid and physics');
     assert.equal(new Set(keys).size, keys.length, 'no duplicate primitives');
   }
+});
+
+// --- TASK-016: gameplay evidence checker ---------------------------------------
+
+test('task-016 gameplay: parseTarget reads declared numeric and word targets', () => {
+  assert.equal(parseTarget('Целевое число предметов (например, 10) до поражения'), 10);
+  assert.equal(parseTarget('Достичь целевого счёта, например 200 очков'), 200);
+  assert.equal(parseTarget('Clear 3 lines to win'), null, 'English prose with no target keyword is not a parsed target');
+  assert.equal(parseTarget('target line count'), null);
+  assert.equal(parseTarget('Проигрыш — когда блоки достигают верха.'), null);
+  assert.equal(parseTarget(null), null);
+  assert.equal(parseTarget('Win: collect 5 apples | Lose: enemy touches the head'), null, 'digits after keywords only; bare counts are not targets');
+});
+
+test('task-016 gameplay: summarizeSession maps observations to honest evidence levels', () => {
+  const full = summarizeSession({ startWorks: true, inputChanged: true, hudStates: 5, scoreEvents: 7, ended: true, won: true, lost: false, finalScore: 200, errors: [], restartWorks: true, eventTypes: ['game_ready', 'game_started', 'score_changed', 'game_won', 'session_ended'] }, 200);
+  const byAspect = Object.fromEntries(full.aspects.map(a => [a.aspect, a.level]));
+  assert.equal(byAspect['html-runs'], 'VERIFIED');
+  assert.equal(byAspect['input-works'], 'VERIFIED');
+  assert.equal(byAspect['gameplay-observed'], 'VERIFIED');
+  assert.equal(byAspect['win-reachable'], 'VERIFIED');
+  assert.equal(byAspect['loss-reachable'], 'NOT_VERIFIED', 'unproven loss stays NOT VERIFIED, never PASS');
+  assert.equal(byAspect['restart-works'], 'VERIFIED');
+
+  const thin = summarizeSession({ startWorks: true, inputChanged: false, hudStates: 1, scoreEvents: 0, ended: false, won: false, lost: false, finalScore: null, errors: ['JAVASCRIPT_EXCEPTION'], restartWorks: null, eventTypes: ['game_ready'] }, null);
+  const thinAspect = Object.fromEntries(thin.aspects.map(a => [a.aspect, a.level]));
+  assert.equal(thinAspect['html-runs'], 'FAILED');
+  assert.equal(thinAspect['input-works'], 'NOT_VERIFIED', 'static menu is not input proof but not a proven failure of input');
+  assert.equal(thinAspect['gameplay-observed'], 'NOT_VERIFIED');
+  assert.equal(thinAspect['win-reachable'], 'NOT_VERIFIED');
+  assert.equal(thinAspect['loss-reachable'], 'NOT_VERIFIED');
+  assert.equal(thinAspect['restart-works'], 'NOT_VERIFIED');
+  assert.ok(thin.notes.some(n => n.includes('browser errors')), 'errors surface in notes');
+});
+
+test('task-016 gameplay: pixel-only sessions never claim gameplay or win', () => {
+  const pixels = summarizeSession({ startWorks: true, inputChanged: true, hudStates: 1, scoreEvents: 0, ended: false, won: false, lost: false, finalScore: null, errors: [], restartWorks: null, eventTypes: ['game_ready', 'game_started'] }, null);
+  const byAspect = Object.fromEntries(pixels.aspects.map(a => [a.aspect, a.level]));
+  assert.equal(byAspect['gameplay-observed'], 'NOT_VERIFIED', 'canvas movement alone is not mechanics proof');
+  assert.equal(byAspect['win-reachable'], 'NOT_VERIFIED');
+  assert.equal(byAspect['loss-reachable'], 'NOT_VERIFIED');
 });

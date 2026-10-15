@@ -37,6 +37,8 @@ export interface OrchestratorRun {
   specPrepMs: number;
   selectMs: number;
   buildMs: number;
+  /** TASK-016 mandatory rules carried to the LLM and the visible banner. */
+  rules: OrchestratorGameSpec['rules'];
 }
 
 export type OrchestratorArtifact = Artifact & { orchestrator: OrchestratorRun };
@@ -103,6 +105,13 @@ export class OrchestratorEngine implements Generator {
       const selection = selectMechanics(os);
       const specPrepMs = Math.round(performance.now() - specBegan);
       const selectMs = Math.round(performance.now() - specBegan) - specPrepMs;
+      // TASK-016 mandatory rules: verbatim user conditions first; a documented
+      // default completion objective only when the prompt states none.
+      const rules = os.rules;
+      const rulesBanner = 'Goal: ' + (rules.objective ?? 'complete the stated game goal')
+        + ' | Lose: ' + (rules.loss ?? 'declared failure condition')
+        + ' | Win: ' + (rules.win ?? 'reach the goal') + ' | Controls: keyboard + on-screen buttons';
+      const rulesBlock = JSON.stringify(rules);
       const scratch = selection.decision === 'scratch';
       let basis: string = 'scratch';
       let primitiveKeys: string[] = [];
@@ -123,7 +132,7 @@ export class OrchestratorEngine implements Generator {
         const apiList = chosen.map(p => p.key + ': ' + p.api).join('\n');
         messages = [
           { role: 'system', content: ORCHESTRATOR_SYSTEM_PROMPT },
-          { role: 'user', content: 'Game task for the YAPLIX orchestrator.\nUser request (verbatim, authoritative): ' + spec.prompt + '\nDerived spec (heuristic hints; never contradict the verbatim request):\n' + JSON.stringify(os) + '\nChosen primitives:\n' + apiList + '\nWrite the complete game-logic JavaScript now.' },
+          { role: 'user', content: 'Game task for the YAPLIX orchestrator.\nUser request (verbatim, authoritative - any rule it states wins):\n' + spec.prompt + '\nDerived spec (heuristic hints; never contradict the verbatim request):\n' + JSON.stringify({ space: os.spaceType, entities: os.entities, movement: os.movement, interactions: os.interactions, winRule: os.winRule, lossRule: os.lossRule }) + '\nMANDATORY RULES to implement exactly as executable state checks (win and loss must both be reachable; if the request seems endless, rules.win is the declared completion result):\n' + rulesBlock + '\nChosen primitives:\n' + apiList + '\nWrite the complete game-logic JavaScript now.' },
         ];
       }
       let lastCode = 'LLM_GENERATION_FAILED';
@@ -163,6 +172,7 @@ export class OrchestratorEngine implements Generator {
                 derivation: JSON.stringify({ space: os.spaceType, entities: os.entities, movement: os.movement, interactions: os.interactions, win: os.winRule, loss: os.lossRule, primitives: primitiveKeys }),
                 chosen,
                 code: logic,
+                rulesBanner,
               };
               html = buildHtml(task);
             } else {
@@ -184,7 +194,7 @@ export class OrchestratorEngine implements Generator {
             const base = parseArtifact({ html, method: 'llm_code', provider: route.provider, model: actual, generationStatus: 'succeeded', validationStatus: 'passed', generation: { attempts, fallback: route !== this.routes[0], elapsedMs: Math.round(performance.now() - started), browser: evidence } });
             // Attached after parseArtifact: the artifact contract itself rejects
             // unknown keys, so orchestrator provenance travels beside it.
-            const run: OrchestratorRun = { version: 13, spaceType: os.spaceType, selection: selection.decision, basis, primitiveKeys, primitiveBytes, llmCodeChars: logic.length, llmCodeSha256: sha256(logic), scratchFallback: scratch, specPrepMs, selectMs, buildMs };
+            const run: OrchestratorRun = { version: 13, spaceType: os.spaceType, selection: selection.decision, basis, primitiveKeys, primitiveBytes, llmCodeChars: logic.length, llmCodeSha256: sha256(logic), scratchFallback: scratch, specPrepMs, selectMs, buildMs, rules };
             const result: OrchestratorArtifact = { ...base, orchestrator: run };
             return result;
           } catch (error) {
