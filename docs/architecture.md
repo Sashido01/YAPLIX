@@ -131,6 +131,33 @@ Pause проверяет замороженное изображение, resume
   Результаты в .local/task-013 (не коммитятся) — это данные эксперимента, не
   production поведение.
 
+### TASK-016: обязательные правила игры и доказательство достижимости
+
+- OrchestratorGameSpec (spec.ts) несёт блок `rules` — objective, actions,
+  interactions, progress, win, loss, restart, mobile, userRulesPriority.
+  Дословные условия пользователя из промпта всегда выигрывают (sentence-level
+  regex); documented defaults выводятся из резолведного space (lives → loss
+  жизней, enemies → захват, grid → переполнение, collectibles/score → цель
+  счёта); на unresolved правила не выдумываются.
+- engine.ts передаёт LLM MANDATORY RULES block точно как исполняемые проверки
+  состояния («win и loss должны быть оба достижимы; loss-only games запрещены»)
+  + rules banner (Goal/Lose/Win/Controls) в видимый `#yapBanner` артефакта;
+  run metadata включает rules.
+- [gameplay-check.ts](../src/orchestrator/gameplay-check.ts) — evidence checker
+  поверх механик browser-check.ts: real-сессия Start → input probe →
+  generic sweeps или scripted sequence → terminal drive → idle stretch →
+  restart probe. Аспекты html-runs/input-works/gameplay-observed/
+  win-reachable/loss-reachable/restart-works получают VERIFIED (доказано
+  реальной сессией), NOT_VERIFIED (не доказано автоматикой в бюджет —
+  никогда не PASS), FAILED (доказано сломано). Пиксельная активность без
+  state-доказательств (HUD states/score events) геймплеем не считается.
+- Контролируемые регрессии tests/orchestrator.spec.ts: tetris+взрывы (win =
+  2 линии guided drops, loss = переполнение idle) и snake+враги (win = 5
+  яблок по trail через «вперёд-спавн», loss = захват врагом при idle) —
+  реальная автоматическая игра доказывает достижимость обоих концов.
+- Аудит артефактов: scripts/orchestrator-gameplay-audit.ts (.local/task-016);
+  итоги и honest evidence по live-прогонам — docs/task-016-report.md.
+
 ## Runtime и доступ
 
 Opaque iframe `sandbox=allow-scripts`, без same-origin. CSP блокирует connect/frames/

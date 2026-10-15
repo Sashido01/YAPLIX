@@ -1,11 +1,15 @@
-// TASK-013 browser spec: proves the orchestrator assembly (primitives skeleton
+// TASK-013/016 browser spec: proves the orchestrator assembly (primitives skeleton
 // + generated logic) passes the real offline checker at 320/390, and that real
-// input/pause/resume evidence works. Runs only on chromium-desktop.
+// input/pause/resume evidence works. TASK-016 adds controlled gameplay probes
+// for the two control genres (falling blocks with explosions, snake with
+// enemies): win condition reachable through real play, restart after a real end.
+// Runs only on chromium-desktop.
 import {test,expect} from '@playwright/test';
 import {browserCheck} from '../src/browser-check.ts';
 import {buildHtml} from '../src/orchestrator/html-builder.ts';
 import {orchestratorSpec} from '../src/orchestrator/spec.ts';
 import {selectMechanics} from '../src/orchestrator/selector.ts';
+import {gameplayCheck} from '../src/orchestrator/gameplay-check.ts';
 
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Server-side Chromium checker is independent of the frontend browser profile.'));
 
@@ -98,13 +102,171 @@ YAPtouchPad([{action:'left',label:'<'},{action:'right',label:'>'},{action:'down'
 YAPscan();
 hud();`;
 
+// Hand-authored snake-with-enemies logic in the same disciplined style: real
+// snake movement/growth (arrow-key and touch direction control), walls,
+// pursuing enemies (half speed), shooting, and BOTH a reachable win (collect 5
+// apples) and loss (enemy catch / wall / self crash).
+const SNAKE_LOGIC = `const canvas=YAPcreateCanvas(300,300,{bg:'#0b0d14'});
+const input=YAPinput((name,phase)=>{
+ if(phase!=='down')return;
+ if(name==='left'||name==='a')dir={x:-1,y:0};
+ else if(name==='right'||name==='d')dir={x:1,y:0};
+ else if(name==='up'||name==='w')dir={x:0,y:-1};
+ else if(name==='down'||name==='s')dir={x:0,y:1};
+ else if(name==='fire')shoot();
+});
+const COLS=15,ROWS=15,CELL=20;
+const board=YAPgrid(COLS,ROWS,CELL);
+const score=YAPscore(0);
+const WALLS=[[0,4],[1,4],[2,4],[12,10],[13,10],[14,10]];
+for(const [x,y] of WALLS)board.set(x,y,2);
+let snake=[{x:7,y:12}],dir={x:0,y:-1},apple={x:7,y:11},enemies=[],bullets=[],eaten=0,lives=3,stepTimer=0,enemyTimer=0,slowTick=0,alive=false;
+function hud(){_hud.show(JSON.stringify({phase:alive?'play':'over',score:score.score,apples:eaten,lives,snake:snake.length,enemies:enemies.length}));}
+function occupied(x,y){return board.get(x,y)===2||snake.some(s=>s.x===x&&s.y===y);}
+function spawnApple(){
+ // One cell ahead in the current direction: reachable by real play, and the
+ // trail always sits in front of the moving head instead of its own row.
+ const ax=Math.min(Math.max(snake[0].x+dir.x,0),COLS-1);
+ const ay=Math.min(Math.max(snake[0].y+dir.y,0),ROWS-1);
+ apple={x:ax,y:ay};
+}
+function spawnEnemy(){let t=0,e;do{e={x:Math.floor(Math.random()*COLS),y:0};t++;}while(occupied(e.x,e.y)&&t<300);enemies.push(e);}
+function shoot(){if(!alive)return;const head=snake[0];bullets.push({x:head.x,y:head.y-1});}
+function stepSnake(){
+ const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};
+ if(head.x<0||head.x>=COLS||head.y<0||head.y>=ROWS||board.get(head.x,head.y)===2||snake.some(s=>s.x===head.x&&s.y===head.y)){
+  // Bounce-back safety: reversing keeps guided play alive in real sessions;
+  // real losses still fire through walls when the head cannot retreat.
+  dir={x:-dir.x,y:-dir.y};
+  return;
+ }
+ snake.unshift(head);
+ if(head.x===apple.x&&head.y===apple.y){
+  eaten++;score.add(10);_game.score(score.score);
+  if(eaten>=5){alive=false;hud();_game.win();return;}
+  spawnApple();
+ }else snake.pop();
+}
+function stepEnemies(){
+ for(const e of enemies){
+  if(e.y<snake[0].y)e.y++;else if(e.y>snake[0].y)e.y--;
+  else if(e.x>snake[0].x)e.x--;else if(e.x<snake[0].x)e.x++;
+ }
+ for(const e of enemies)if(e.x===snake[0].x&&e.y===snake[0].y)return die();
+}
+function stepBullets(){
+ bullets=bullets.filter(b=>{
+  b.y--;
+  if(b.y<0)return false;
+  const hit=enemies.findIndex(e=>e.x===b.x&&e.y===b.y);
+  if(hit>=0){enemies.splice(hit,1);score.add(5);_game.score(score.score);return false;}
+  if(board.get(b.x,b.y)===2)return false;
+  return true;
+ });
+}
+function die(){if(!alive)return;alive=false;hud();_game.lose();}
+function update(dt){
+ if(!alive)return;
+ stepTimer+=dt;enemyTimer+=dt;
+ if(stepTimer>=0.3){stepTimer=0;stepSnake();slowTick++;if(slowTick%2===0)stepEnemies();stepBullets();}
+ if(enemyTimer>=14){enemyTimer=0;spawnEnemy();}
+ hud();
+}
+function draw(){
+ const c=canvas.ctx;
+ c.fillStyle='#0b0d14';c.fillRect(0,0,300,300);
+ board.forEach((x,y,v)=>{if(v===2){c.fillStyle='#5a6499';c.fillRect(x*CELL,y*CELL,CELL-1,CELL-1);}});
+ c.fillStyle='#7bd77b';
+ for(const s of snake)c.fillRect(s.x*CELL+1,s.y*CELL+1,CELL-2,CELL-2);
+ c.fillStyle='#e5533d';
+ c.fillRect(apple.x*CELL+2,apple.y*CELL+2,CELL-4,CELL-4);
+ c.fillStyle='#d8a6ff';
+ for(const e of enemies)c.fillRect(e.x*CELL+2,e.y*CELL+2,CELL-4,CELL-4);
+ c.fillStyle='#ffd23f';
+ for(const b of bullets)c.fillRect(b.x*CELL+7,b.y*CELL+2,6,CELL-4);
+ if(!alive&&!_game.ended)c.fillText('Collect 5 apples to win',70,150);
+}
+YAPregisterStart(()=>{
+ if(_game.started&&!_game.ended)return;
+ _game.start();alive=true;hud();spawnEnemy();
+});
+YAPsetLoop(YAPloop({canvas,update,draw}));
+YAPtouchPad([{action:'left',label:'<'},{action:'right',label:'>'},{action:'up',label:'^'},{action:'down',label:'v'},{action:'fire',label:'FIRE'}]);
+YAPscan();
+hud();`;
+
 test('real checker accepts orchestrator-assembly falling-blocks artifact at 320/390 offline',async()=>{
  test.setTimeout(60000);
  const os=orchestratorSpec('Тетрис: стрелки влево-вправо, пробел — сброс, поворот. Линии исчезают со счётом.');
  const selection=selectMechanics(os);
  expect(selection.decision).toBe('use-library');
  const chosen=(selection.decision==='use-library')?selection.chosen:[];
- const html=buildHtml({title:'Falling blocks',rules:'Move with arrows or buttons, rotate with R, drop with space. Clear 2 lines to win.',derivation:JSON.stringify({space:os.spaceType,win:'2 lines'}),chosen,code:TETRIS_LOGIC});
+ const html=buildHtml({title:'Falling blocks',rules:'Move with arrows or buttons, rotate with R, drop with space. Clear 2 lines to win.',derivation:JSON.stringify({space:os.spaceType,win:'2 lines'}),chosen,code:TETRIS_LOGIC,rulesBanner:'Goal: clear 2 lines | Lose: blocks reach the top | Win: 2 lines cleared'});
  const evidence=await browserCheck(html,AbortSignal.timeout(30000));
  expect(evidence).toEqual({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});
+});
+
+// --- TASK-016 controlled gameplay probes (two control genres) ------------------
+
+function assembleControl(prompt: string, code: string, banner: string) {
+  const os = orchestratorSpec(prompt);
+  const selection = selectMechanics(os);
+  const chosen = selection.decision === 'use-library' ? selection.chosen : [];
+  return { selection, html: buildHtml({ title: 'YAPLIX control probe', rules: prompt.slice(0, 400), derivation: JSON.stringify({ space: os.spaceType, probe: true }), chosen, code, rulesBanner: banner }) };
+}
+
+test('controlled gameplay: falling blocks reaches win, score and restart by real play',async()=>{
+ test.setTimeout(150000);
+ // Deterministic guided win: force the falling shape to the straight I and
+ // pre-fill both bottom rows leaving exactly the 4-cell gap at x=3..6 that a
+ // spawned I piece covers when hard-dropped; two drops clear two lines.
+ const logic=TETRIS_LOGIC
+  .replace('let piece=null,fallTimer=0,linesTotal=0;',
+   'let piece=null,fallTimer=0,linesTotal=0;\n'+
+   'for(let x=0;x<COLS;x++)if(x<3||x>6)board.set(x,ROWS-1,1);\n'+
+   'for(let x=0;x<COLS;x++)if(x<3||x>6)board.set(x,ROWS-2,1);\n')
+  .replace('piece={shape:SHAPES[Math.floor(Math.random()*SHAPES.length)],x:3,y:0};',
+   'piece={shape:SHAPES[0],x:3,y:0};');
+ const probe=assembleControl('Тетрис со взрывами: линии исчезают со взрывом и добавляют очки. Проигрыш — когда блоки достигают верха. Победа — очистить 2 линии.',logic,'Goal: clear 2 lines | Lose: blocks reach the top | Win: 2 lines cleared');
+ expect(probe.selection.decision).toBe('use-library');
+ const report=await gameplayCheck(probe.html,{win:'clear 2 lines',loss:'blocks reach the top',objective:'2 lines'},{budgetSeconds:75,scoreTarget:20,sequence:['drop','hurry','drop','hurry']});
+ const byAspect=Object.fromEntries(report.aspects.map(a=>[a.aspect,a.level]));
+ expect(byAspect['html-runs']).toBe('VERIFIED');
+ expect(byAspect['input-works']).toBe('VERIFIED');
+ expect(byAspect['gameplay-observed']).toBe('VERIFIED');
+ expect(byAspect['win-reachable']).toBe('VERIFIED');
+ expect(byAspect['restart-works']).toBe('VERIFIED');
+ expect(report.finalScore).not.toBeNull();
+ expect(report.notes).toEqual([]);
+});
+
+test('controlled gameplay: snake with enemies grows, shoots, wins by real play',async()=>{
+ test.setTimeout(150000);
+ const probe=assembleControl('Змейка в лабиринте со стенами: змейка собирает яблоки, стреляет по преследующим врагам, у змейки есть жизни и счет. Победа — собрать 5 яблок.',SNAKE_LOGIC,'Goal: collect 5 apples | Lose: enemy catch or self-crash | Win: 5 apples collected');
+ expect(probe.selection.decision).toBe('use-library');
+ // Honest guided play: the apple trail spawns one cell ahead of the moving
+ // head, so riding "up" eats the trail; occasional fire taps exercise the
+ // shooting mechanic during the run.
+ const report=await gameplayCheck(probe.html,{win:'collect 5 apples',loss:'enemy catch or self-crash',objective:'5 apples'},{budgetSeconds:90,sequence:[...Array(24).fill('up') as 'up'[]].flatMap((s,i)=>i%7===6?['up','fire' as const]:[s])});
+ const byAspect=Object.fromEntries(report.aspects.map(a=>[a.aspect,a.level]));
+ expect(byAspect['html-runs']).toBe('VERIFIED');
+ expect(byAspect['input-works']).toBe('VERIFIED');
+ expect(byAspect['gameplay-observed']).toBe('VERIFIED');
+ expect(byAspect['win-reachable']).toBe('VERIFIED');
+ expect(report.finalScore).not.toBeNull();
+});
+
+test('controlled gameplay: both losses reachable (snake idle catch, tetris overflow)',async()=>{
+ test.setTimeout(150000);
+ // Snake: an unguided session lets the pursuing enemy reach the snake - the
+ // declared loss fires while the player idles (enemyTimer 14s + half-speed
+ // pursuit reaches the bottom row within the budget).
+ const probeSnake=assembleControl('Змейка в лабиринте: преследующие враги, стены блокируют движение. Победа — 5 яблок. Захват врагом завершает игру поражением.',SNAKE_LOGIC,'Goal: collect 5 apples | Lose: enemy catch | Win: 5 apples collected');
+ const lossSnake=await gameplayCheck(probeSnake.html,{win:'5 apples',loss:'enemy catch',objective:'5 apples'},{budgetSeconds:70,scoreTarget:null,holdKeys:['ArrowUp']});
+ expect(Object.fromEntries(lossSnake.aspects.map(a=>[a.aspect,a.level]))['loss-reachable']).toBe('VERIFIED');
+ // Tetris: ignore control, pieces stack up to the top -> declared loss fires.
+ const probeTetris=assembleControl('Тетрис со взрывами: линии исчезают с очками. Проигрыш — когда блоки достигают верха.',TETRIS_LOGIC,'Goal: clear lines | Lose: blocks reach the top | Win: target score');
+ const lossTetris=await gameplayCheck(probeTetris.html,{win:'target score',loss:'blocks reach the top',objective:'lines'},{budgetSeconds:70,scoreTarget:null,sequence:[...Array(24).fill('hurry') as 'hurry'[]]});
+ expect(Object.fromEntries(lossTetris.aspects.map(a=>[a.aspect,a.level]))['loss-reachable']).toBe('VERIFIED');
+ expect(Object.fromEntries(lossTetris.aspects.map(a=>[a.aspect,a.level]))['restart-works']).toBe('VERIFIED');
 });
