@@ -66,19 +66,71 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
         await start.tap();await page.waitForFunction(()=>(window as any).checkEvents.some((e:{type:string})=>e.type==='game_started'));
         const terminal=()=>page.evaluate(()=>(window as any).checkEvents.some((e:{type:string})=>e.type==='session_ended'));
         if(await terminal())throw new Fault('BROWSER_INSTANT_END',502);
+        const capture=()=>frame.evaluate(()=>{const canvas=document.querySelector('canvas');return canvas?canvas.toDataURL():document.body.innerText;});
+        // dataURL equality is strict: decorative backdrops keep shifting a tiny
+        // fraction of the canvas in a correctly paused game. Real movement of
+        // bodies changes far more pixel area, so pause evidence compares the
+        // changed-pixel share instead of raw image bytes.
+        const frameFreeze=()=>frame.evaluate(()=>{
+          const c=document.querySelector('canvas');
+          if(!(c instanceof HTMLCanvasElement))return null;
+          const ctx=c.getContext('2d');if(!ctx)return null;
+          const cur=ctx.getImageData(0,0,c.width,c.height).data;
+          const w=window as any;const prev=w.__yaplixFreeze as number[]|undefined;
+          w.__yaplixFreeze=Array.from(cur);
+          if(!prev||prev.length!==cur.length)return -1;
+          let changed=0;
+          for(let p=0;p<cur.length;p+=4)if(Math.abs(cur[p]-prev[p])>12||Math.abs(cur[p+1]-prev[p+1])>12||Math.abs(cur[p+2]-prev[p+2])>12)changed++;
+          return changed/(cur.length/4);
+        });
+        const preInput=await capture();
         await input.tap();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowRight');await page.waitForTimeout(180);
+        const inputEffective=await capture()!==preInput;
         if(!await terminal()){
           const pause=frame.locator('[data-yaplix-pause]');if(await pause.count()!==1)throw new Fault('BROWSER_PAUSE_CONTROL',502);
           await pause.tap();
-          const capture=()=>frame.evaluate(()=>{const canvas=document.querySelector('canvas');return canvas?canvas.toDataURL():document.body.innerText;});
-          const frozen=await capture();await page.waitForTimeout(250);if(await capture()!==frozen)throw new Fault('BROWSER_PAUSE_NOT_FROZEN',502);
+          // The paused overlay is painted on a later animation frame that can lag
+          // badly under load, and decorative backdrops keep repainting a tiny
+          // fraction of a correctly paused canvas. Pause evidence therefore uses
+          // the changed-pixel share: decor stays far below real body movement.
+          let frozenShare=-1,frozenText='',strictCompare=false;
+          if(await frame.evaluate(()=>!!document.querySelector('canvas'))){
+            for(let settle=0;settle<8;settle++){
+              await page.waitForTimeout(200);
+              const share=await frameFreeze();
+              if(share===null){strictCompare=true;break;}
+              if(share===-1)continue;
+              if(share<0.005){frozenShare=share;break;}
+            }
+            if(strictCompare)frozenText=await capture();
+            else if(frozenShare===-1)throw new Fault('BROWSER_PAUSE_NOT_FROZEN',502);
+          }else strictCompare=true;
+          if(strictCompare){frozenText=frozenText||await capture();await page.waitForTimeout(250);if(await capture()!==frozenText)throw new Fault('BROWSER_PAUSE_NOT_FROZEN',502);}
+          else{const share=await frameFreeze();if(share!==null&&share>=0.005)throw new Fault('BROWSER_PAUSE_NOT_FROZEN',502);}
+          const stateText=()=>frame.evaluate(()=>document.querySelector('output[data-yaplix-state]')?.textContent??'');
+          const frozenState=await stateText();
           const resume=frame.getByRole('button',{name:/^(resume|continue|продолжить|возобновить)$/i}).filter({visible:true});
           const markedResume=frame.locator('[data-yaplix-resume]').filter({visible:true});
           if(await markedResume.count()===1)await markedResume.tap();else if(await resume.count()===1)await resume.tap();else await pause.tap();
           let resumed=false;
-          for(const key of ['ArrowRight','ArrowUp','ArrowLeft','ArrowDown',' ']){await page.keyboard.press(key);await page.waitForTimeout(40);if(await capture()!==frozen||await terminal()){resumed=true;break;}}
-          if(!resumed&&!await input.isDisabled()){await input.tap();await page.waitForTimeout(100);resumed=await capture()!==frozen;}
-          if(!resumed)throw new BrowserFailure('BROWSER_RESUME_NOT_WORKING','After pause the game remained frozen despite resuming and real input. Make the marked pause control toggle, or provide a visible button marked data-yaplix-resume. Resume must retain the world/score and restart exactly one animation loop.');
+          const changed=async()=>{
+            if(strictCompare)return await capture()!==frozenText||(frozenState&&await stateText()!==(frozenState||''))||await terminal();
+            const share=await frameFreeze();
+            return share!==null&&share>=0.005||(frozenState&&await stateText()!==(frozenState||''))||await terminal();
+          };
+          for(const key of ['ArrowRight','ArrowUp','ArrowLeft','ArrowDown',' ']){await page.keyboard.press(key);await page.waitForTimeout(40);if(await changed()){resumed=true;break;}}
+          if(!resumed&&!await input.isDisabled()){await input.tap();await page.waitForTimeout(100);resumed=await changed();}
+          // Keyboard-only evidence would wrongly fail touch-first games: tap the
+          // visible in-game action buttons too (start, restart, pause and resume
+          // stay excluded because restart must remain silent after session_ended).
+          if(!resumed){
+            const actions=frame.locator('button:visible:not([data-yaplix-start]):not([data-yaplix-pause]):not([data-yaplix-resume]):not([data-yaplix-restart])').filter({visible:true});
+            const count=Math.min(4,await actions.count());
+            for(let i=0;i<count&&!resumed;i++){await actions.nth(i).tap();await page.waitForTimeout(80);if(await changed())resumed=true;}
+          }
+          if(!resumed)throw new BrowserFailure(inputEffective?'BROWSER_RESUME_NOT_WORKING':'BROWSER_INPUT_NO_EFFECT',inputEffective
+            ?'After pause the game remained frozen despite resuming and real input. Make the marked pause control toggle, or provide a visible button marked data-yaplix-resume. Resume must retain the world/score and restart exactly one animation loop; input must visibly act again on resume.'
+            :'Resuming did not reveal working input: keyboard and pointer input produced no visible change before or after pause. The pause control toggled, but movement ignored Arrow keys and taps. Check that the keydown listener reads the correct key values (event.code vs event.key), is attached while playing, calls the drawing path, and that touch/pointer handlers move the game state.');
         }
         const events=await page.evaluate(()=>(window as any).checkEvents);let started=false,ended=false,result=false;
         for(let i=0;i<events.length;i++){
