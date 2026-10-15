@@ -27,18 +27,26 @@ export class RuntimeControl {
   readonly policy: NetworkPolicy;
   readonly key: string;
   readonly publicReady: () => boolean;
+  onShutdown?: () => void;
+  private shuttingDown = false;
   constructor(policy: NetworkPolicy, key: string, publicReady: () => boolean) {
     this.policy = policy; this.key = key; this.publicReady = publicReady;
     this.original = { ...policy };
   }
   identity(nonce: string) {
     if (!/^[a-f0-9]{64}$/.test(nonce)) throw new Fault('RUNTIME_NONCE_INVALID');
-    return { app: 'YAPLIX', protocol: RUNTIME_PROTOCOL, instance: this.instance, proof: proof(this.key, nonce, this.instance), mode: this.policy.mode,buildId:this.buildId };
+    return { app: 'YAPLIX', protocol: RUNTIME_PROTOCOL, instance: this.instance, proof: proof(this.key, nonce, this.instance), mode: this.policy.mode, buildId: this.buildId };
   }
   authorized(value = '') {
     return value.length === this.key.length && timingSafeEqual(Buffer.from(value), Buffer.from(this.key));
   }
-  active() { return !this.lease || this.lease.expires > Date.now(); }
+  active() { return !this.shuttingDown && (!this.lease || this.lease.expires > Date.now()); }
+  /** Called only from the authenticated loopback shutdown endpoint. */
+  requestShutdown() {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    this.onShutdown?.();
+  }
   update(body: { action?: unknown; lease?: unknown; origin?: unknown; key?: unknown }) {
     if (body.action === 'prepare') {
       if (this.lease) throw new Fault('TUNNEL_ALREADY_ATTACHED', 409);

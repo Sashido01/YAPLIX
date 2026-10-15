@@ -9,10 +9,23 @@ import {runtimeKey,proof,RUNTIME_PROTOCOL} from '../src/runtime-control.ts';
 import {PROJECT_ROOT,Store} from '../src/store.ts';
 import {spec} from './helpers.ts';
 async function freePort(){const server=createServer();await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const port=(server.address() as {port:number}).port;await new Promise<void>(done=>server.close(()=>done()));return port;}
-test('one-click runtime starts one owned server, opens catalogue, reuses identity and preserves DB on graceful close',async()=>{
-  const directory=mkdtempSync('.local/launcher-test-'),port=await freePort(),controller=new AbortController();let ready!:()=>void;const started=new Promise<void>(done=>ready=done);const opened:string[]=[];
-  const running=runApp({port,env:{...process.env,LIVE_PROVIDER:'none',YAPLIX_DB:directory+'/data.sqlite'},signal:controller.signal,openBrowser:url=>opened.push(url),announce:()=>ready()});
-  try{await started;const reused=await runApp({port,signal:new AbortController().signal,openBrowser:url=>opened.push(url),announce:()=>{}});assert.equal(reused.attached,true);assert.equal(opened.length,2);const version=await(await fetch(opened[0]+'api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();controller.abort();await running;const store=new Store(directory+'/data.sqlite');try{assert.equal(store.getVersion(version.versionId).sha256,version.sha256);assert.ok(store.integrity());}finally{store.close();}}finally{controller.abort();await running;rmSync(directory,{recursive:true});}
+test('one-click restart stops own backend, preserves DB, and relaunches',{timeout:45000},async()=>{
+  const directory=mkdtempSync('.local/launcher-test-'),port=await freePort(),c1=new AbortController(),c2=new AbortController();
+  let ready1!:()=>void,ready2!:()=>void;const started1=new Promise<void>(done=>ready1=done),started2=new Promise<void>(done=>ready2=done);const opened:string[]=[];
+  const running=runApp({port,env:{...process.env,LIVE_PROVIDER:'none',YAPLIX_DB:directory+'/data.sqlite'},signal:c1.signal,openBrowser:url=>opened.push(url),announce:()=>ready1()});
+  try{
+    await started1;
+    // Second launch must gracefully stop the proven own backend and start a new one; both share the temp DB.
+    const restarted=runApp({port,env:{...process.env,LIVE_PROVIDER:'none',YAPLIX_DB:directory+'/data.sqlite'},signal:c2.signal,openBrowser:url=>opened.push(url),announce:()=>ready2()});
+    try{
+      await started2;
+      assert.equal(opened.length,2);
+      const version=await(await fetch(opened[1]+'api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();
+      c2.abort();await restarted;
+      c1.abort();await running;
+      const store=new Store(directory+'/data.sqlite');try{assert.equal(store.getVersion(version.versionId).sha256,version.sha256);assert.ok(store.integrity());}finally{store.close();}
+    }finally{c2.abort();await restarted.catch(()=>{});}
+  }finally{c1.abort();await running.catch(()=>{});rmSync(directory,{recursive:true});}
 });
 test('one-click rejects foreign service without exposing control key or stopping it',async()=>{
   let authorization=false;const server=createServer((request,response)=>{authorization||=Boolean(request.headers.authorization||request.headers['x-yaplix-control']);response.end('{}');});await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const port=(server.address() as {port:number}).port;

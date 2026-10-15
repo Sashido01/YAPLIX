@@ -47,6 +47,12 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
       if (c.req.method !== 'POST' || !control.authorized(c.req.header('X-Yaplix-Control'))) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
       return c.json(control.update(object(await json(c.req.raw, 512), ['action','lease','origin','key'])));
     }
+    if (control && c.req.path === '/api/runtime/shutdown') {
+      if (requestUrl.hostname !== '127.0.0.1' || requestUrl.port !== String(policy!.port) || c.req.header('Origin') || c.req.header('X-Forwarded-Proto') || c.req.header('X-Forwarded-For') || c.req.header('Sec-Fetch-Site')) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
+      if (c.req.method !== 'POST' || !control.authorized(c.req.header('X-Yaplix-Control'))) throw new Fault('RUNTIME_CONTROL_FORBIDDEN', 403);
+      control.requestShutdown();
+      return c.json({ shuttingDown: true }, 202);
+    }
     if (policy?.mode === 'local' && (c.req.header('X-Forwarded-Proto') || c.req.header('X-Forwarded-For'))) throw new Fault('HOST_FORBIDDEN', 403);
     if (control && !control.active()) throw new Fault('TUNNEL_LEASE_EXPIRED', 503);
     if (accessKey !== policy?.key) { accessKey = policy?.key; access = accessKey ? new AccessSessions(accessKey, policy?.mode === 'https') : undefined; }
