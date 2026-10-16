@@ -29,6 +29,18 @@ previous HTML, исходное описание и изменение. [transpo
 напрямую вызывает два разрешённых OpenAI-compatible HTTPS endpoint.
 TLS проверяется, redirects запрещены, HTTP только loopback. Секреты только серверу.
 
+Native Node fetch (bundled Undici), без provider SDK: streaming используется
+для durable jobs, non-streaming — legacy synchronous API. MICRO-020 завершает
+SSE reader на `[DONE]`, не ожидая remote EOF; acceptance по-прежнему требует
+model/stop и последующие static/browser gates. Обрыв чтения non-stream body
+отличается от полного malformed JSON. Timeout не увеличен: engine request timer
+охватывает catalog, соединение и весь inference body; отдельного нового
+connection timeout не вводится, connect timeout остаётся у Node transport.
+Fetch переиспользует соединения через global dispatcher. Прокси автоматически
+не подставляется; Node `--use-env-proxy`/`NODE_USE_ENV_PROXY=1` — отдельная явная
+настройка оператора. [Официальные правила Node 24](https://nodejs.org/docs/latest-v24.x/api/http.html#built-in-proxy-support).
+Сетевые замеры и LIVE/gameplay proof boundaries — [MICRO-020](SESSION_HANDOFF.md).
+
 [live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
 (default 1), два production routes. Один transport request по умолчанию
 ограничен 60 s; jobs управляют bounded автоматическими retry и durable cooldown.

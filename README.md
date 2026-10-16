@@ -167,6 +167,10 @@ LIVE_PROVIDER=ollama-cloud
 Точная доступность зависит от аккаунта:
 models API не доказывает inference. В TASK-010 `gemma4:31b` вернула настоящий код;
 scope проверки конкретной игры указан в [отчёте](docs/task-010-report.md).
+MICRO-020 также получила полный LIVE HTML через UI; browser gate отверг его
+из-за gameplay JavaScript error, поэтому играбельная версия не создана.
+Исправлено ожидание EOF после SSE `[DONE]`; таймауты не увеличены.
+[Текущий результат и оставшиеся ограничения](docs/SESSION_HANDOFF.md).
 
 `LLM_PROMPT_STYLE=direct` явно выбирает прямой natural-language prompt; `spec`
 остаётся code default и использует структурированное описание. Оба проходят один
