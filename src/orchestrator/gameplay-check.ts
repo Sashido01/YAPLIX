@@ -16,6 +16,8 @@ import { randomUUID } from 'node:crypto';
 import { Fault } from '../contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from '../runtime.ts';
 import { PROJECT_ROOT } from '../store.ts';
+import { runRulesGameplay } from './rules-gameplay.ts';
+import type { RulesProbeOptions, RulesEvidence } from './rules-gameplay.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
 const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
@@ -30,6 +32,7 @@ export type Aspect =
 export interface GameplayAspect { aspect: Aspect; level: Evidence; detail?: string }
 
 export interface GameplayReport {
+  evidence?: RulesEvidence;
   aspects: GameplayAspect[];
   /** Session event types observed in the real session (ordered). */
   events: string[];
@@ -65,6 +68,8 @@ export interface GameplayRules {
 export type SequenceStep = 'left' | 'right' | 'up' | 'down' | 'rotate' | 'drop' | 'fire' | 'hurry';
 
 export interface GameplayCheckOptions {
+  /** Separate post-generation rules-aware probe; never called by generation. */
+  rulesAware?: RulesProbeOptions;
   /** Max wall-clock seconds for the drive loop. Default 45. */
   budgetSeconds?: number;
   /** Explicit declared score target overriding banner parsing, when known. */
@@ -105,8 +110,8 @@ export function summarizeSession(obs: SessionObservation, target: number | null)
   });
   aspects.push({
     aspect: 'win-reachable',
-    level: obs.won ? 'VERIFIED' : 'NOT_VERIFIED',
-    detail: obs.won ? 'real session reached game_won' : 'no game_won within probe budget' + (target !== null ? ' (declared target ' + target + ')' : ''),
+    level: 'NOT_VERIFIED',
+    detail: obs.won ? 'game_won alone is insufficient; use rules-aware action/progress/completion proof' : 'no game_won within probe budget' + (target !== null ? ' (declared target ' + target + ')' : ''),
   });
   aspects.push({
     aspect: 'loss-reachable',
@@ -131,7 +136,7 @@ export async function gameplayCheck(
   rules: GameplayRules,
   options: GameplayCheckOptions = {},
 ): Promise<GameplayReport> {
-  const budgetMs = (options.budgetSeconds ?? 45) * 1000;
+  const budgetMs = Math.min(180, Math.max(2, options.budgetSeconds ?? 45)) * 1000;
   const holdKeys = options.holdKeys ?? ['ArrowLeft', 'ArrowRight'];
   const sequence = options.sequence ?? null;
   const target = options.scoreTarget ?? parseTarget([rules.win, rules.objective, rules.loss].filter(Boolean).join(' '));
@@ -152,7 +157,7 @@ export async function gameplayCheck(
     chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
   deadline.addEventListener('abort',browserLaunchAbort,{once:true});
   const browser=await browserLaunchPromise;
-  const startedAt=Date.now();
+  let startedAt=Date.now();
   const remaining=()=>Math.max(0,budgetMs-(Date.now()-startedAt));
   try {
     const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
@@ -168,7 +173,16 @@ export async function gameplayCheck(
     await page.setContent('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style><iframe id="check" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>');
     await page.evaluate(({html,session,csp,compat})=>{
       const frame=document.querySelector('iframe')!;(window as any).checkEvents=[];
-      addEventListener('message',e=>{if(e.source===frame.contentWindow&&e.origin==='null'&&e.data?.channel==='yaplix'&&(window as any).checkEvents.length<256)(window as any).checkEvents.push(e.data.event);});
+      let nextSequence=0;
+      addEventListener('message',e=>{
+        const ev=e.data?.event;
+        if(e.source!==frame.contentWindow||e.origin!=='null'||e.data?.channel!=='yaplix'||!ev||ev.protocolVersion!==1||ev.sessionId!==session.sessionId||ev.versionId!==session.versionId||typeof ev.type!=='string')return;
+        // A real reload starts a new bridge sequence. The rules-aware probe
+        // seals the previous run's proof before clicking Restart.
+        if(ev.type==='game_ready'&&ev.sequence===0)nextSequence=0;
+        if(ev.sequence!==nextSequence||(window as any).checkEvents.length>=512)return;
+        nextSequence++;(window as any).checkEvents.push(ev);
+      });
       frame.onload=()=>(frame.contentWindow as Window).postMessage({channel:'yaplix_init',protocolVersion:1,...session},'*');
       frame.srcdoc='<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="'+csp+'"><script>'+compat+'</script>'+html;
     },{html,session,csp:GAME_CSP,compat:UUID_COMPAT});
@@ -185,7 +199,7 @@ export async function gameplayCheck(
       const hud=document.querySelector('output[data-yaplix-state]');
       return (c?c.toDataURL():'')+'|'+(hud?hud.textContent:'');
     });
-    const readEvents=()=>page.evaluate(()=>(window as any).checkEvents as Ev[]);
+    const readEvents=()=>page.evaluate(()=>(window as any).checkEvents.map((e:Ev)=>({type:e.type,...(typeof e.data?.score==='number'?{data:{score:e.data.score}}:{})})) as Ev[]);
     const debug=process.env.YAPLIX_GAMEPLAY_DEBUG==='1';
     const log=(msg:string)=>{if(debug)console.log('[gameplay-check]',msg);};
     const startButton=gameFrame().locator('[data-yaplix-start]');
@@ -196,6 +210,12 @@ export async function gameplayCheck(
     const started=await page.waitForFunction(()=>(window as any).checkEvents.some((e:Ev)=>e.type==='game_started'),null,{timeout:4000}).then(()=>true).catch(()=>false);
     if(!started){
       return summarizeSession({ startWorks:false,inputChanged:false,hudStates:0,scoreEvents:0,ended:false,won:false,lost:false,finalScore:null,errors:errors.slice(0,6),restartWorks:null,eventTypes:[] }, target);
+    }
+    if (options.rulesAware) {
+      // Active play gets its declared budget after real Start. Startup still
+      // shares the original hard watchdog (budget + 12s); no unbounded setup.
+      startedAt=Date.now();
+      return await runRulesGameplay(page, gameFrame, readEvents, rules, options.rulesAware, remaining, errors);
     }
     const sig0=await snap();
     const hudSeen=new Set<string>();
@@ -336,6 +356,7 @@ export async function gameplayCheck(
       eventTypes:(await readEvents()).map(ev=>ev.type),
     }, target);
   } catch (error) {
+    if (deadline.aborted) return { aspects: [{ aspect: 'html-runs', level: 'FAILED', detail: 'gameplay watchdog expired while browser was unresponsive' }, { aspect: 'win-reachable', level: 'NOT_VERIFIED', detail: 'no completed proof before watchdog' }], events: [], finalScore: null, notes: ['BROWSER_GAMEPLAY_TIMEOUT'] };
     if (error instanceof Fault) return { aspects: [{ aspect: 'html-runs', level: 'FAILED', detail: 'checker fault ' + error.code }], events: [], finalScore: null, notes: [error.code] };
     return { aspects: [{ aspect: 'html-runs', level: 'FAILED', detail: 'unexpected checker error' }], events: [], finalScore: null, notes: [String(error).slice(0, 200)] };
   } finally { deadline.removeEventListener('abort',browserLaunchAbort); await browser.close().catch(()=>{}); }

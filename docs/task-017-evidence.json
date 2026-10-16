@@ -1,0 +1,1911 @@
+{
+  "scope": "Observed local Chromium sessions of unchanged TASK-016 LIVE artifacts; no LLM requests",
+  "base": "d70a926fb0958518169239da43c9db3ba9ba7872",
+  "results": [
+    {
+      "artifact": "b-prompt-1",
+      "artifactSha256": "c82cd6311876f6dc8b9f175e538657a4d006e4fe3a6ea531461ef16d1cd78468",
+      "rawEvidencePath": ".local/task-017/2026-10-16T06-14-38-154Z/b-prompt-1.json",
+      "rawEvidenceSha256": "497f22034e1521b10de1780a0622312a14e58a80f64ecbeb1119ca4c0f3fc034",
+      "rules": {
+        "objective": "Набрать целевое количество очков (например, 200) до наступления условия поражения.",
+        "actions": [
+          "двигаться (стрелки/WASD и видимые кнопки на экране)"
+        ],
+        "interactions": [
+          "взрыв удаляет занятые клетки поля и начисляет очки"
+        ],
+        "progress": "Счёт показывает прогресс.",
+        "win": "Достичь целевого счёта до поражения.",
+        "loss": "Проигрыш — когда блоки достигают верха.",
+        "restart": true,
+        "mobile": true,
+        "userRulesPriority": true
+      },
+      "goal": {
+        "metric": "score",
+        "target": 200,
+        "source": "rules.win+HUD"
+      },
+      "startedAtUTC": "2026-10-16T06:14:38.782Z",
+      "totalMs": 30090,
+      "probeMs": 29370,
+      "stopReason": "time budget",
+      "aspects": [
+        {
+          "aspect": "html-runs",
+          "level": "VERIFIED"
+        },
+        {
+          "aspect": "input-works",
+          "level": "VERIFIED"
+        },
+        {
+          "aspect": "gameplay-observed",
+          "level": "NOT_VERIFIED"
+        },
+        {
+          "aspect": "win-reachable",
+          "level": "NOT_VERIFIED",
+          "detail": "insufficient independent action/progress/completion evidence within budget"
+        },
+        {
+          "aspect": "loss-reachable",
+          "level": "NOT_VERIFIED",
+          "detail": "observed loss screen/end only; causal loss rule not independently verified"
+        },
+        {
+          "aspect": "restart-works",
+          "level": "NOT_VERIFIED",
+          "detail": "no completed session / insufficient budget"
+        }
+      ],
+      "actions": [
+        {
+          "ms": 0,
+          "kind": "start",
+          "value": "Start"
+        },
+        {
+          "ms": 424,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 531,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 669,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 773,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 1132,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 1237,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 1371,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 1477,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 1835,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 1941,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2067,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 2172,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 2527,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 2631,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2759,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 2862,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 3216,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 3321,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 3450,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 3554,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 3910,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 4016,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 4142,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 4246,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 4602,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 4708,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 4833,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 4937,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 5293,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 5399,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 5531,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 5635,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 5990,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 6095,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 6223,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 6327,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 6683,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 6788,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 6914,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 7019,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 7375,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 7480,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 7606,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 7709,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 8065,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 8172,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 8297,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 8401,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 8757,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 8864,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 8989,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 9092,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 9449,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 9554,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 9680,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 9786,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 10143,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 10247,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 10372,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 10478,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 10834,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 10938,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 11077,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 11180,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 11536,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 11642,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 11774,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 11878,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 12236,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 12349,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 12580,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 12694,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 13054,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 13162,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 13318,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 13423,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 13785,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 13892,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 14019,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 14124,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 14479,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 14585,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 14717,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 14823,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 15179,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 15285,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 15414,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 15517,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 15873,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 15976,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 16106,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 16209,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 16565,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 16670,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 16804,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 16908,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 17262,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 17369,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 17495,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 17599,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 17955,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 18059,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 18187,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 18290,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 18649,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 18753,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 18884,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 18989,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 19344,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 19450,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 19576,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 19679,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 20035,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 20140,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 20267,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 20370,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 20729,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 20833,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 20959,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 21062,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 21419,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 21523,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 21650,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 21754,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 22110,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 22215,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 22342,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 22446,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 22803,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 22911,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 23041,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 23144,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 23499,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 23604,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 23732,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 23836,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 24191,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 24297,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 24423,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 24527,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 24883,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 24987,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 25115,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 25219,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 25574,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 25680,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 25807,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 25910,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 26266,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 26372,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 26498,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 26602,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 26957,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 27064,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 27189,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 27292,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 27646,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 27750,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 27881,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 27985,
+          "kind": "wait",
+          "value": "250ms"
+        },
+        {
+          "ms": 28341,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 28447,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 28572,
+          "kind": "button",
+          "value": "drop"
+        },
+        {
+          "ms": 28676,
+          "kind": "wait",
+          "value": "250ms"
+        }
+      ],
+      "milestones": [
+        {
+          "ms": 24,
+          "actions": 1,
+          "progress": 0,
+          "contacts": null,
+          "headCell": null,
+          "appleCell": null
+        }
+      ],
+      "finalHUD": {
+        "score": 0,
+        "target": 200,
+        "progress": "0%"
+      },
+      "terminal": {
+        "visible": false,
+        "text": "",
+        "score": ""
+      },
+      "events": [
+        {
+          "protocolVersion": 1,
+          "eventId": "942c9e57-1c4f-4474-862b-31d23657362a",
+          "sessionId": "5bd65ccc-0322-489d-9af7-c8fa82d4feb5",
+          "versionId": "a63fff1e-98a7-46c1-bbfa-a30b0094346b",
+          "sequence": 0,
+          "timestamp": 1792131278667,
+          "type": "game_ready",
+          "data": {}
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "921e6a33-3b96-4e67-9765-6c76d66ef938",
+          "sessionId": "5bd65ccc-0322-489d-9af7-c8fa82d4feb5",
+          "versionId": "a63fff1e-98a7-46c1-bbfa-a30b0094346b",
+          "sequence": 1,
+          "timestamp": 1792131278779,
+          "type": "game_started",
+          "data": {}
+        }
+      ],
+      "restart": {
+        "level": "NOT_VERIFIED",
+        "detail": "no completed session / insufficient budget"
+      },
+      "screenshots": [
+        {
+          "path": "docs/task-017/b-prompt-1-final.png",
+          "sha256": "5d692572b836995c1621b119862e75f352bcb860bdb2f244428464dbf0faba18"
+        }
+      ],
+      "renderedPiece": {
+        "observations": 167,
+        "distinctPositions": 2,
+        "minRow": 0,
+        "maxRow": 1,
+        "dropButtons": 41
+      }
+    },
+    {
+      "artifact": "b-prompt-2",
+      "artifactSha256": "38bc9e6c16ebf4864163b054035ffc837bb9de2694876914f1cc4ee6df65d432",
+      "rawEvidencePath": ".local/task-017/2026-10-16T06-14-38-154Z/b-prompt-2.json",
+      "rawEvidenceSha256": "7c47863d00b2170316fcb0bf5fa4cb4fd445be83a91cde6b1369351febe1010d",
+      "rules": {
+        "objective": "Собрать конечное число заявленных предметов (например, 10) до наступления условия поражения.",
+        "actions": [
+          "двигаться (стрелки/WASD и видимые кнопки на экране)",
+          "стрелять"
+        ],
+        "interactions": [
+          "столкновение с противником наносит урон/жизни",
+          "снаряды уничтожают противников/объекты",
+          "сбор предметов увеличивает счёт/прогресс",
+          "жизни/здоровье уменьшаются от урона"
+        ],
+        "progress": "Счёт и собранные предметы показывают прогресс.",
+        "win": "Собрать целевое число предметов до поражения.",
+        "loss": "Потеря всех жизней завершает игру поражением.",
+        "restart": true,
+        "mobile": true,
+        "userRulesPriority": false
+      },
+      "goal": {
+        "metric": "items",
+        "target": 5,
+        "source": "rules.win+HUD"
+      },
+      "startedAtUTC": "2026-10-16T06:15:08.770Z",
+      "totalMs": 9268,
+      "probeMs": 8660,
+      "stopReason": "terminal observed",
+      "aspects": [
+        {
+          "aspect": "html-runs",
+          "level": "VERIFIED"
+        },
+        {
+          "aspect": "input-works",
+          "level": "VERIFIED"
+        },
+        {
+          "aspect": "gameplay-observed",
+          "level": "VERIFIED"
+        },
+        {
+          "aspect": "win-reachable",
+          "level": "VERIFIED",
+          "detail": "real input + HUD threshold + ordered outcome/end + stable visible victory"
+        },
+        {
+          "aspect": "loss-reachable",
+          "level": "NOT_VERIFIED",
+          "detail": "observed loss screen/end only; causal loss rule not independently verified"
+        },
+        {
+          "aspect": "restart-works",
+          "level": "VERIFIED",
+          "detail": "fresh run: {\"playable\":true,\"reset\":0,\"baseline\":0,\"renderedChange\":true,\"stillPlaying\":true}"
+        }
+      ],
+      "actions": [
+        {
+          "ms": 0,
+          "kind": "start",
+          "value": "Start"
+        },
+        {
+          "ms": 436,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 465,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 466,
+          "kind": "key",
+          "value": "ArrowUp"
+        },
+        {
+          "ms": 489,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 555,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 585,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 585,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 604,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 761,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 822,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 823,
+          "kind": "key",
+          "value": "ArrowUp"
+        },
+        {
+          "ms": 841,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 998,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 1028,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 1029,
+          "kind": "key",
+          "value": "ArrowUp"
+        },
+        {
+          "ms": 1047,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 1199,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 1228,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 1229,
+          "kind": "key",
+          "value": "ArrowUp"
+        },
+        {
+          "ms": 1247,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 1405,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 1436,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 1436,
+          "kind": "key",
+          "value": "ArrowUp"
+        },
+        {
+          "ms": 1460,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 1618,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 1648,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 1648,
+          "kind": "key",
+          "value": "ArrowUp"
+        },
+        {
+          "ms": 1665,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 1828,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 1861,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 1862,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 1885,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 2048,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 2110,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 2110,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2134,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 2313,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 2358,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 2359,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2384,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 2522,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 2551,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 2552,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2570,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 2721,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 2751,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 2751,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2769,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 2921,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 2952,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 2953,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 2976,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 3128,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 3158,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 3158,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 3175,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 3353,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 3382,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 3383,
+          "kind": "key",
+          "value": "ArrowRight"
+        },
+        {
+          "ms": 3401,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 3558,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 3588,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 3589,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 3606,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 3759,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 3788,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 3789,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 3807,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 3966,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 3996,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 3996,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 4016,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 4177,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 4250,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 4251,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 4269,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 4426,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 4456,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 4457,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 4474,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 4633,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 4662,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 4663,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 4681,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 4832,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 4862,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 4863,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 4881,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 5038,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 5068,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 5069,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 5087,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 5246,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 5276,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 5277,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 5301,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 5458,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 5495,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 5496,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 5518,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 5676,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 5705,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 5706,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 5727,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 5889,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 5919,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 5919,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 5937,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 6094,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 6124,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 6124,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 6142,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 6301,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 6331,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 6331,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 6350,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 6507,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 6538,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 6538,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 6556,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 6713,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 6774,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 6774,
+          "kind": "key",
+          "value": "ArrowLeft"
+        },
+        {
+          "ms": 6793,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 6952,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 6981,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 6982,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 7005,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 7162,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 7194,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 7194,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 7217,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 7375,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 7405,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 7405,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 7423,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 7564,
+          "kind": "button",
+          "value": "pause"
+        },
+        {
+          "ms": 7593,
+          "kind": "button",
+          "value": "fire"
+        },
+        {
+          "ms": 7594,
+          "kind": "key",
+          "value": "ArrowDown"
+        },
+        {
+          "ms": 7611,
+          "kind": "button",
+          "value": "continue"
+        },
+        {
+          "ms": 8171,
+          "kind": "restart",
+          "value": "Restart"
+        },
+        {
+          "ms": 8212,
+          "kind": "start",
+          "value": "Start after restart"
+        },
+        {
+          "ms": 8405,
+          "kind": "key",
+          "value": "ArrowDown after restart"
+        }
+      ],
+      "milestones": [
+        {
+          "ms": 24,
+          "actions": 1,
+          "progress": 0,
+          "contacts": 0,
+          "headCell": 210,
+          "appleCell": 191
+        },
+        {
+          "ms": 738,
+          "actions": 9,
+          "progress": 1,
+          "contacts": 1,
+          "headCell": 191,
+          "appleCell": 92
+        },
+        {
+          "ms": 2027,
+          "actions": 33,
+          "progress": 2,
+          "contacts": 2,
+          "headCell": 92,
+          "appleCell": 159
+        },
+        {
+          "ms": 4157,
+          "actions": 73,
+          "progress": 3,
+          "contacts": 3,
+          "headCell": 159,
+          "appleCell": 294
+        },
+        {
+          "ms": 6693,
+          "actions": 121,
+          "progress": 4,
+          "contacts": 4,
+          "headCell": 294,
+          "appleCell": 373
+        },
+        {
+          "ms": 7766,
+          "actions": 141,
+          "progress": 5,
+          "contacts": 5,
+          "headCell": 373,
+          "appleCell": 305
+        }
+      ],
+      "finalHUD": {
+        "lives": 3,
+        "collected": "5/5"
+      },
+      "terminal": {
+        "visible": true,
+        "text": "You win!",
+        "score": "score: 50"
+      },
+      "events": [
+        {
+          "protocolVersion": 1,
+          "eventId": "61e88821-3466-4cac-8474-70be798c9341",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 0,
+          "timestamp": 1792131308663,
+          "type": "game_ready",
+          "data": {}
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "cff9fb4e-07fa-4e8d-8422-1104ba384a28",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 1,
+          "timestamp": 1792131308768,
+          "type": "game_started",
+          "data": {}
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "36794f5c-054b-455b-9db8-156c1371bfde",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 2,
+          "timestamp": 1792131309487,
+          "type": "score_changed",
+          "data": {
+            "score": 10
+          }
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "0bdc1130-7fdf-497a-9133-67e0f8b914dd",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 3,
+          "timestamp": 1792131310773,
+          "type": "score_changed",
+          "data": {
+            "score": 20
+          }
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "e75b8f21-0159-4bf2-8dc6-84522fa7ea90",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 4,
+          "timestamp": 1792131312903,
+          "type": "score_changed",
+          "data": {
+            "score": 30
+          }
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "b6f83cfc-e241-42cc-a707-b2c3d84cfbd1",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 5,
+          "timestamp": 1792131315439,
+          "type": "score_changed",
+          "data": {
+            "score": 40
+          }
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "6d2027ed-e7ae-441e-94ce-9cfdf232a1d0",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 6,
+          "timestamp": 1792131316512,
+          "type": "score_changed",
+          "data": {
+            "score": 50
+          }
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "7d4c7e70-9872-4399-be18-2abbaa37a164",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 7,
+          "timestamp": 1792131316512,
+          "type": "game_won",
+          "data": {}
+        },
+        {
+          "protocolVersion": 1,
+          "eventId": "b56e899c-7885-4ddf-9c83-32a61d71a9b6",
+          "sessionId": "efe8c4af-524c-4c1e-9a0e-94b8c434237f",
+          "versionId": "0994656a-b3a3-4de4-b387-34a24dfba583",
+          "sequence": 8,
+          "timestamp": 1792131316512,
+          "type": "session_ended",
+          "data": {}
+        }
+      ],
+      "restart": {
+        "level": "VERIFIED",
+        "detail": "fresh run: {\"playable\":true,\"reset\":0,\"baseline\":0,\"renderedChange\":true,\"stillPlaying\":true}"
+      },
+      "screenshots": [
+        {
+          "path": "docs/task-017/b-prompt-2-final.png",
+          "sha256": "6bda4216e75c5c0761e0cefcfc8c35b79f988ac2435e0f39f1424adb9ef8ac39"
+        },
+        {
+          "path": "docs/task-017/b-prompt-2-restart.png",
+          "sha256": "7139d93f562590f8706717c252beae31210b4c09feaa2f4d353366f485df7e9c"
+        }
+      ]
+    }
+  ]
+}

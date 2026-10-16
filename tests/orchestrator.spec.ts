@@ -95,7 +95,7 @@ function draw(){
  if(fsm.is('menu')){c.fillStyle='#eef';c.font='15px system-ui';c.fillText('Clear 2 lines to win',58,150);}
 }
 YAPregisterStart(()=>{
- if(fsm.is('menu')){_game.start();fsm.set('play');spawn();}
+ if(fsm.is('menu')){_game.start();fsm.set('play');spawn();hud();}
 });
 YAPsetLoop(YAPloop({canvas,update,draw}));
 YAPtouchPad([{action:'left',label:'<'},{action:'right',label:'>'},{action:'down',label:'v'},{action:'rotate',label:'R'},{action:'space',label:'DROP'}]);
@@ -229,7 +229,8 @@ test('controlled gameplay: falling blocks reaches win, score and restart by real
    'piece={shape:SHAPES[0],x:3,y:0};');
  const probe=assembleControl('Тетрис со взрывами: линии исчезают со взрывом и добавляют очки. Проигрыш — когда блоки достигают верха. Победа — очистить 2 линии.',logic,'Goal: clear 2 lines | Lose: blocks reach the top | Win: 2 lines cleared');
  expect(probe.selection.decision).toBe('use-library');
- const report=await gameplayCheck(probe.html,{win:'clear 2 lines',loss:'blocks reach the top',objective:'2 lines'},{budgetSeconds:75,scoreTarget:20,sequence:['drop','hurry','drop','hurry']});
+ const report=await gameplayCheck(probe.html,{win:'clear 2 lines',loss:'blocks reach the top',objective:'2 lines'},{budgetSeconds:75,rulesAware:{sequence:['drop','hurry','drop','hurry']}});
+ await test.info().attach('rules-proof',{body:JSON.stringify(report,null,2),contentType:'application/json'});
  const byAspect=Object.fromEntries(report.aspects.map(a=>[a.aspect,a.level]));
  expect(byAspect['html-runs']).toBe('VERIFIED');
  expect(byAspect['input-works']).toBe('VERIFIED');
@@ -237,17 +238,19 @@ test('controlled gameplay: falling blocks reaches win, score and restart by real
  expect(byAspect['win-reachable']).toBe('VERIFIED');
  expect(byAspect['restart-works']).toBe('VERIFIED');
  expect(report.finalScore).not.toBeNull();
- expect(report.notes).toEqual([]);
+ expect(report.notes).toEqual(['terminal observed']);
 });
 
 test('controlled gameplay: snake with enemies grows, shoots, wins by real play',async()=>{
  test.setTimeout(150000);
- const probe=assembleControl('Змейка в лабиринте со стенами: змейка собирает яблоки, стреляет по преследующим врагам, у змейки есть жизни и счет. Победа — собрать 5 яблок.',SNAKE_LOGIC,'Goal: collect 5 apples | Lose: enemy catch or self-crash | Win: 5 apples collected');
+ const waitingSnake=SNAKE_LOGIC.replace('dir={x:0,y:-1},apple=', 'dir={x:0,y:0},apple=');
+ const probe=assembleControl('Змейка в лабиринте со стенами: змейка собирает яблоки, стреляет по преследующим врагам, у змейки есть жизни и счет. Победа — собрать 5 яблок.',waitingSnake,'Goal: collect 5 apples | Lose: enemy catch or self-crash | Win: 5 apples collected');
  expect(probe.selection.decision).toBe('use-library');
  // Honest guided play: the apple trail spawns one cell ahead of the moving
  // head, so riding "up" eats the trail; occasional fire taps exercise the
  // shooting mechanic during the run.
- const report=await gameplayCheck(probe.html,{win:'collect 5 apples',loss:'enemy catch or self-crash',objective:'5 apples'},{budgetSeconds:90,sequence:[...Array(24).fill('up') as 'up'[]].flatMap((s,i)=>i%7===6?['up','fire' as const]:[s])});
+ const report=await gameplayCheck(probe.html,{win:'collect 5 apples',loss:'enemy catch or self-crash',objective:'5 apples'},{budgetSeconds:90,rulesAware:{sequence:[...Array(24).fill('up') as 'up'[]].flatMap((s,i)=>i%7===6?['up','fire' as const]:[s])}});
+ await test.info().attach('rules-proof',{body:JSON.stringify(report,null,2),contentType:'application/json'});
  const byAspect=Object.fromEntries(report.aspects.map(a=>[a.aspect,a.level]));
  expect(byAspect['html-runs']).toBe('VERIFIED');
  expect(byAspect['input-works']).toBe('VERIFIED');
@@ -269,4 +272,64 @@ test('controlled gameplay: both losses reachable (snake idle catch, tetris overf
  const lossTetris=await gameplayCheck(probeTetris.html,{win:'target score',loss:'blocks reach the top',objective:'lines'},{budgetSeconds:70,scoreTarget:null,sequence:[...Array(24).fill('hurry') as 'hurry'[]]});
  expect(Object.fromEntries(lossTetris.aspects.map(a=>[a.aspect,a.level]))['loss-reachable']).toBe('VERIFIED');
  expect(Object.fromEntries(lossTetris.aspects.map(a=>[a.aspect,a.level]))['restart-works']).toBe('VERIFIED');
+});
+
+// TASK-017 fixtures are small authored games/defects, not LIVE output. The
+// checker only supplies normal movement; outcome decisions stay in game code.
+function numericGame(mode: string, target: number) {
+ const code=`const canvas=YAPcreateCanvas(300,300,{bg:'#111'});
+ let x=0,score=0,ready=null;
+ addEventListener('message',e=>{if(e.data?.channel==='yaplix_init')ready=e.data;});
+ function hud(){_hud.show(JSON.stringify({score,target:'${mode}'==='changing-target'&&score>0?${target}+1:${target}}));}
+ function draw(){const c=canvas.ctx;c.clearRect(0,0,300,300);c.fillStyle='#0f0';c.fillRect(x*20,120,16,16);}
+ const input=YAPinput((name,phase)=>{
+  if(phase!=='down'||name!=='right'||!_game.started||_game.ended)return;
+  if('${mode}'==='unresponsive'){while(true){}}
+  if('${mode}'==='autonomous')return;
+  x++;
+  if('${mode}'!=='stalled'&&'${mode}'!=='unreachable')score++;
+  if('${mode}'==='unreachable')score=Math.min(x,${target}-1);
+  _game.score(score);hud();draw();
+  if('${mode}'==='false-event')window.parent.postMessage({channel:'yaplix',event:{...ready,protocolVersion:1,eventId:crypto.randomUUID(),sequence:3,timestamp:Date.now(),type:'game_won',data:{}}},'*');
+  if('${mode}'==='premature'||(score>=${target}&&['normal','invisible','changing-target'].includes('${mode}'))){_game.win();if('${mode}'==='invisible')document.getElementById('yapOverlay').style.opacity='0';}
+ });
+ YAPtouchPad([{action:'right',label:'Move right'}]);YAPscan();
+ YAPregisterStart(()=>{_game.start();hud();draw();if('${mode}'==='autonomous')setInterval(()=>{if(!_game.ended){score++;_game.score(score);hud();draw();if(score>=${target})_game.win();}},100);});
+ YAPsetLoop(YAPloop({update(){},draw}));`;
+ return assembleControl('Игра на сетке: движение вправо и сбор очков. Победа — достичь целевого счёта.',code,'Goal: reach target score').html;
+}
+for(const [mode,expected] of [['normal','VERIFIED'],['false-event','FAILED'],['threshold-only','FAILED'],['premature','FAILED'],['stalled','NOT_VERIFIED'],['unreachable','NOT_VERIFIED'],['ambiguous','NOT_VERIFIED'],['changing-target','FAILED'],['invisible','FAILED'],['autonomous','NOT_VERIFIED']] as const){
+ test(`rules-aware browser: ${mode}`,async()=>{
+  test.setTimeout(15000);
+  const report=await gameplayCheck(numericGame(mode==='ambiguous'?'normal':mode,7),{win:mode==='ambiguous'?'reach 7 points or collect 3 items':'reach 7 points',loss:'none observed',objective:null},{budgetSeconds:6,rulesAware:{sequence:['right'],maxActions:16,stallMs:600}});
+  expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).toBe(expected);
+  expect(report.evidence!.actions.length).toBeLessThanOrEqual(16);
+  expect(report.evidence!.elapsedMs).toBeLessThan(8000);
+  if(mode==='normal')expect(report.aspects.find(a=>a.aspect==='restart-works')?.level).toBe('VERIFIED');
+ });
+}
+test('rules-aware browser: hard action budget bounds an unreachable target',async()=>{
+ const report=await gameplayCheck(numericGame('unreachable',13),{win:'reach 13 points',loss:null,objective:null},{budgetSeconds:6,rulesAware:{sequence:['right'],maxActions:4}});
+ expect(report.evidence!.actions).toHaveLength(4);
+ expect(report.evidence!.stopReason).toBe('action budget');
+ expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).toBe('NOT_VERIFIED');
+});
+test('rules-aware browser: an unresponsive game is bounded and never verifies',async()=>{
+ test.setTimeout(25000);
+ const start=Date.now();
+ // Leave room for sandbox startup/first-frame baseline on shared runners;
+ // the 2s probe could expire before sending any key, so it never exercised
+ // the deliberately blocked handler on Ubuntu (TASK-017 hosted evidence).
+ const report=await gameplayCheck(numericGame('unresponsive',7),{win:'reach 7 points',loss:null,objective:null},{budgetSeconds:6,rulesAware:{sequence:['right'],maxActions:4}});
+ expect(report.aspects.some(a=>a.level==='FAILED')).toBe(true);
+ expect(report.notes).toContain('BROWSER_GAMEPLAY_TIMEOUT');
+ expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).not.toBe('VERIFIED');
+ expect(Date.now()-start).toBeLessThan(22000);
+});
+test('rules-aware browser: active budget begins after a real delayed Start',async()=>{
+ test.setTimeout(15000);
+ const delayed=numericGame('normal',3).replace('</style>','@keyframes setup{from{transform:translateX(100px)}to{transform:translateX(0)}}#yapStart{animation:setup 2.4s linear}</style>');
+ const report=await gameplayCheck(delayed,{win:'reach 3 points',loss:null,objective:null},{budgetSeconds:6,rulesAware:{sequence:['right'],maxActions:8}});
+ expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).toBe('VERIFIED');
+ expect(report.evidence!.actions.filter(a=>a.kind==='key'&&a.value==='ArrowRight')).toHaveLength(3);
 });

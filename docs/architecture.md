@@ -158,6 +158,54 @@ Pause проверяет замороженное изображение, resume
 - Аудит артефактов: scripts/orchestrator-gameplay-audit.ts (.local/task-016);
   итоги и honest evidence по live-прогонам — docs/task-016-report.md.
 
+### TASK-017: отдельная rules-aware проверка без новой генерации
+
+`gameplayCheck(html, rules, {rulesAware: ...})` запускает post-generation probe;
+production generator, jobs, UI и durable storage его не вызывают. Старый
+`summarizeSession` больше не выдаёт win VERIFIED только по `game_won`.
+
+[rules-probe.ts](../src/orchestrator/rules-probe.ts) интерпретирует одну
+кумулятивную числовую цель score/items/lines/waves из малого словаря rules.win.
+Явный порог обязан совпасть с HUD; при generic target допустим однозначный
+порог той же метрики из HUD (`target`, `collected: n/N`). Примеры objective и
+loss не используются. Compound/unknown wording, конфликт и недостаток evidence
+никогда не превращаются в VERIFIED.
+
+[rules-gameplay.ts](../src/orchestrator/rules-gameplay.ts) читает DOM HUD и
+пиксели нарисованного canvas, нажимает настоящие кнопки/клавиши. Для явно
+настроенной геометрии/палитры змейки BFS выбирает следующий безопасный шаг до
+яблока; каждый прирост дополнительно сверяется с входом головы в предыдущую
+клетку яблока. Реальные Pause/Continue позволяют наблюдать и планировать ход.
+Generic sequences годятся для простых проверяемых HUD-сценариев; автономный
+прирост baseline не доказывает влияние input. Универсального игрового AI нет.
+
+Win VERIFIED требует правила + исходного прогресса до первого gameplay input +
+действий + порога HUD + согласованной последовательности win/end + устойчивого
+видимого completion в двух наблюдениях. Проверяется viewport/visibility/opacity/
+перекрытие result. Unexpected ready/start/reload не может смешать разные run.
+Restart выполняется после запечатывания первого proof: reload, новые ready/start,
+сброс прогресса, реальный ввод и изменение изображения в активном новом run.
+Bridge дополнительно фильтруется по source/origin/session/version/protocol/sequence.
+Это наблюдательное evidence, не гарантия против специально сфальсифицированного
+HUD в произвольном недоверенном HTML; визуальные адаптеры дают дополнительный
+независимый сигнал. Win-event сам по себе недостаточен.
+
+Активный probe budget 2–180 s начинается после настоящего game_started;
+общий watchdog budget + 12 s включает browser startup. Pending FIRE/Pause
+отменяется при terminal event, если завершение возникло между наблюдением и
+actionability click; proof всё равно требует независимого подтверждения.
+Ограничения: 1000 action records,
+2048 samples и 512 bridge events. Оpaque iframe, offline, OS sandbox, CSP и
+secrets-free browser environment сохранены. Прямого доступа к переменным,
+RNG/таймерам/победе или вызова игровых функций из Playwright нет.
+
+`node scripts/orchestrator-gameplay-audit.ts [b-prompt-1|b-prompt-2]` читает
+неизменённые HTML и metadata TASK-016; никакого LLM dispatch. Результаты,
+action/sample timelines и PNG пишутся в новый `.local/task-017/<timestamp>/`.
+Для clean clone доступны controlled tests; исходные LIVE HTML локальны.
+Реальные результаты и пределы: [TASK-017 report](task-017-report.md),
+[переносимое evidence](task-017-evidence.json). Решение — ITERATE.
+
 ## Runtime и доступ
 
 Opaque iframe `sandbox=allow-scripts`, без same-origin. CSP блокирует connect/frames/
