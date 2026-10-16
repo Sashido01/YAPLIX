@@ -35,7 +35,7 @@ export class GenerationEngine implements Generator {
   async readiness(){
     let routes:CodeTransport[];try{routes=this.routesFor();}catch{return{liveConfigured:true,liveReady:false,llmState:'not_configured',provider:null,model:null,browserReady:checkerReady(),fallbackConfigured:false};}
     const diagnostic=routes[0] instanceof CloudTransport?await routes[0].diagnose(AbortSignal.timeout(3000)):undefined;
-    const state=diagnostic?.state??await routes[0].readiness(AbortSignal.timeout(3000));return{...(diagnostic?{network:diagnostic.network,inferenceVerified:false}:{}),liveConfigured:true,liveReady:state==='ready'&&checkerReady(),llmState:state==='ready'&&!checkerReady()?'browser_missing':state,provider:routes[0].provider,model:routes[0].model,browserReady:checkerReady(),fallbackConfigured:routes.length>1};
+    const state=diagnostic?.state??await routes[0].readiness(AbortSignal.timeout(3000));return{readinessSource:diagnostic?'models-api-get':'adapter-readiness',readinessCheckedAt:new Date().toISOString(),...(diagnostic?{network:diagnostic.network,inferenceVerified:false}:{}),liveConfigured:true,liveReady:state==='ready'&&checkerReady(),llmState:state==='ready'&&!checkerReady()?'browser_missing':state,provider:routes[0].provider,model:routes[0].model,browserReady:checkerReady(),fallbackConfigured:routes.length>1};
   }
   async generate(spec:GameSpec,previous?:GameVersion,method?:'llm_code',signal?:AbortSignal,context?:GenerationContext):Promise<Artifact>{
     parseSpec(spec);if(method!==undefined&&method!=='llm_code')throw new Fault('INVALID_REQUIRED_METHOD');

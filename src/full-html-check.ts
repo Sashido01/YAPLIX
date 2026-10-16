@@ -30,7 +30,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       if(await start.count()===1)await start.tap();
       const input=frame.locator('canvas:visible,button:visible:enabled,[role="grid"]:visible');
       if(await input.count())await input.first().tap();
-      for(const key of ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '])await page.keyboard.press(key);
+      // This is a phone probe: keyboard input would hide missing touch controls.
       // Probe real visible action controls, but never infer rules from pixels.
       const actions=frame.getByRole('button').filter({visible:true});
       for(let i=0,n=Math.min(3,await actions.count());i<n;i++)if(await actions.nth(i).isVisible()&&await actions.nth(i).isEnabled())await actions.nth(i).tap();

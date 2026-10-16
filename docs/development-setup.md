@@ -133,6 +133,10 @@ X-Yaplix-Telegram-Session. Events дополнительно session bearer. Ori
 | POST /api/sessions/:sessionId/events | GameEvent + session bearer, duplicate boolean |
 | GET /api/versions/:versionId/analytics | aggregates; baselineVersionId для comparison |
 | POST /api/backups | `{}` → filename/hash/schema verified backup |
+| GET/POST/DELETE /api/phone | Только локальный owner: сети/status, включение выбранной версии, отзыв |
+| GET /api/phone/qr.svg | Только локальный owner: QR временной ссылки |
+| GET /phone, /phone/style.css, /phone/phone-ui.js | Отдельный временный LAN listener; только оболочка |
+| POST /phone/access; GET /phone/version | Ограниченный token → HttpOnly cookie; чтение только выбранной версии |
 | GET /api/connection/qr.svg | LAN/HTTPS authorization, только адрес без ключей |
 
 Strict types — [contracts.ts](../src/contracts.ts). prompt 2..500 chars; audience
@@ -246,7 +250,31 @@ npm run app
 Git/npm не заменяют .local/.env. Dirty/ff-only failure: сохраните свою ветку,
 без reset/clean/force. Проверьте прежние game/history/export hashes и задания.
 TASK-009 переводит schema v1 → v2 с protective snapshot; сохранность конкретной
-пользовательской базы проверяйте отдельно. LAN/QR — README, [HTTPS/Telegram](telegram.md).
+пользовательской базы проверяйте отдельно.
+
+MICRO-024: обычный `YAPLIX.cmd` слушает loopback. «Подключить телефон» в UI
+включает отдельный Hono listener в том же процессе/Store на выбранном физическом
+private IPv4 и автоматически назначенном свободном порту. Windows использует
+активные `Get-NetAdapter -Physical`; при ошибке проверки fail-closed. Несколько
+подходящих адресов требуют выбора. После bind self-probe получает фактическую
+страницу; неуспех не выдаёт QR. Токен 256 bit находится во fragment QR и передаётся
+только bounded POST, затем HttpOnly SameSite cookie с областью /phone. TTL 30 min,
+refresh/disable/shutdown отзывают listener и cookie. QR encoder/server local,
+секреты/URLs не логируются. HTTP не шифрует игру; используйте доверенную сеть.
+
+На LAN listener нет proxy к owner API: разрешены только оболочка, bounded login
+и выбранная версия. Host/Origin/forwarded checks и opaque sandbox/CSP сохранены.
+Телефон не пишет sessions/events, не меняет версии и не запускает LLM. Owner
+продолжает работать через localhost с теми же jobs/SQLite. Port/firewall/router
+автоматически не настраиваются. Разрешение Node.js в Windows Firewall только для
+доверенных частных сетей выполняет владелец; VPN LAN access/client isolation
+проверяются отдельно.
+
+Служебная диагностика LIVE — GET models, время/код/источник отдельно от последней
+сохранённой генерации выбранного provider. Она не проверяет inference-квоту или
+способность выполнить следующий POST. Новых inference для MICRO-024 нет.
+
+LAN/QR — README, [HTTPS/Telegram](telegram.md).
 TASK-010 не добавляет schema migration: recovery budget/cooldown metadata помещаются
 в существующий JSON jobs. Старые HTML и validationStatus не переписываются.
 PORT_IN_USE — свой активный server или чужой процесс; остановите только свой либо

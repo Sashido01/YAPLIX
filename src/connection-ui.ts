@@ -1,4 +1,4 @@
-interface Status { ok: boolean; demoReady?: boolean; liveReady?: boolean; llmState?: string; mode?: string; connectionUrl?: string; accessRequired?: boolean; provider?: string; model?: string; browserReady?: boolean }
+interface Status { ok: boolean; demoReady?: boolean; liveConfigured?: boolean; liveReady?: boolean; llmState?: string; mode?: string; connectionUrl?: string; accessRequired?: boolean; provider?: string; model?: string; browserReady?: boolean; readinessSource?: string; readinessCheckedAt?: string; network?: {category?:string}; lastSavedGeneration?: {createdAt:string;model:string} }
 let telegramToken:string|undefined;
 let imageUrl: string | undefined;
 const el = (id: string) => document.getElementById(id)!;
@@ -15,10 +15,11 @@ export async function diagnose(token?:string) {
   el('system-info').textContent = 'Проверяем API, базу и модель…';
   try {
     const data: Status = await (await response('/api/diagnostics')).json();
-    const states: Record<string,string> = {ready:'модель доступна',not_configured:'не настроен',unreachable:'провайдер недоступен',model_missing:'модель не найдена',authentication_failed:'API key не принят',browser_missing:'установите браузер: npm run checker:install',not_verified:'готовность модели не проверена'};
-    el('system-info').textContent = `API: ответ получен. База: ${data.ok?'исправна':'ошибка'}. DEMO: ${data.demoReady===false?'нужна сборка / проверка базы':'доступен'}. LIVE: ${states[data.llmState??'not_configured']??'состояние неизвестно'}${data.model?' / '+data.model:''}. Режим: ${data.mode??'неизвестен'}.`;
+    const states: Record<string,string> = {ready:'модель найдена',not_configured:'ключ/маршрут не настроен',unreachable:'служебная проверка не удалась; доступность генерации не определена',model_missing:'модель не найдена в каталоге',authentication_failed:'служебный запрос отклонён авторизацией',browser_missing:'модель найдена; браузер проверки не установлен',not_verified:'не проверено'};
+    const mode = data.mode==='local'?'Сервер на этом компьютере':data.mode==='lan'?'Полный интерфейс в локальной сети':data.mode==='https'?'HTTPS сервер':'неизвестен';
+    el('system-info').textContent = `API: ответ получен. База: ${data.ok?'исправна':'ошибка'}. LIVE: ${data.liveConfigured?'маршрут настроен':'не настроен'}${data.model?' / '+data.model:''}. Служебная проверка: ${states[data.llmState??'not_configured']??'неизвестно'}. Источник: ${data.readinessSource??'конфигурация'}${data.readinessCheckedAt?' · '+new Date(data.readinessCheckedAt).toLocaleString():''}${data.network?.category?' · '+data.network.category:''}. Квота и текущий rate limit inference не проверялись. Последняя сохранённая генерация: ${data.lastSavedGeneration?new Date(data.lastSavedGeneration.createdAt).toLocaleString()+' / '+data.lastSavedGeneration.model+' (история версий)':'не найдена для этого маршрута'}. ${mode}.`;
     if (!['lan','https'].includes(data.mode??'') || !data.connectionUrl) {
-      el('lan-instructions').textContent = 'Для телефона запустите npm run lan -- --list, затем npm run lan -- --host <IPv4> --port 3000. Выберите адрес Wi-Fi/Ethernet вашей сети из списка; VPN и виртуальные адаптеры также могут присутствовать.';
+      el('lan-instructions').textContent = 'Для мобильного тестирования откройте «Подключить телефон».';
       return;
     }
     const url = new URL(data.connectionUrl);

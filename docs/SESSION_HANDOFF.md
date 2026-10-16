@@ -1,3 +1,96 @@
+# MICRO-024 — One-click LAN QR / mobile testing
+
+16 октября 2026. Baseline main/origin/main `6728272a14a1be217118d3551e1866e66ea93153`
+(PR #30), ветка `codex/micro-024-lan-qr-mobile`. Это внутреннее изменение, не release.
+
+## Пользовательский сценарий
+
+`YAPLIX.cmd` → открыть свою игру → «Подключить телефон» → выбрать физическую
+сеть, если их несколько → камера телефона → выбранная версия. QR появляется
+автоматически после bind/self-probe; адрес/порт фактические. Обновление выдаёт
+новый token/порт, прежнее подключение отзывается. «Отключить доступ», TTL 30 min
+и shutdown закрывают listener. Если игра ещё не выбрана, предложена последняя
+сохранённая; выбор виден над QR. После новых edits выберите новую версию явно.
+При уже работающем старом backend launcher требует перезапуска обновлённой сборки.
+
+## Реализация и границы
+
+- Loopback owner сохранён. Второй listener внутри того же процесса и Store,
+  без второй пользовательской базы, копирования игр или миграции schema.
+- Windows active physical adapters + private IPv4, исключение VPN/virtual;
+  при нескольких сетях нужен выбор, при ошибке OS inspection fail-closed.
+- Read-only mobile scope только одной сохранённой версии. Random 256-bit token
+  в fragment, bounded POST redemption, HttpOnly SameSite cookie, 30 min.
+  Нет owner API, библиотеки, jobs, backups, настроек, файлов или session writes.
+  Token/secret не попадают в HTTP URL/logs; не передавайте саму QR-ссылку посторонним.
+- Оpaque iframe/CSP сохранены. Phone shell учитывает short viewport, safe-area,
+  restart и browser-history restore с повторной проверкой доступа. Прогресс
+  телефонного запуска не сохраняется. HTTP подходит только доверенной LAN.
+- Firewall/router/routes не изменялись. При блокировке разрешите Node.js только
+  для доверенной частной сети. VPN LAN access и guest/client isolation — внешние
+  условия; self-probe на ПК не доказывает доступ физического телефона.
+- LIVE диагностика раньше означала GET models + 3 s timeout. Теперь источник,
+  время/код служебной проверки и сохранённый success текущего provider раздельны.
+  Квота/rate limit inference не проверялись. «local» → «Сервер на этом компьютере».
+
+## Проверка существующей игры
+
+Неизменённый MICRO-023L HTML прочитан из private evidence, применён только в
+in-memory Store. Его SHA-256 совпадает до/после; исходные SQLite/игры не редактировались.
+На настоящем Wi-Fi listener и отдельном Chromium Pixel5 390×844 клиенте этого ПК:
+QR independently decoded == returned URL, joystick visible, настоящий touch
+сдвинул player x300→412, restart/reload работают, overflow=false, JS errors=0.
+Это read-only mechanical proof этой версии, не полная проверка игры и не телефон.
+Private receipt/screenshots — `.local/micro024/`, не включать в публичный diff.
+
+Исторический hidden joystick зависит от окружения: standalone setContent всё ещё
+даёт ontouchstart=false/hidden; текущий served opaque iframe даёт true/visible.
+Единственная проверка ontouchstart в артефакте непереносима. HTML владельца не
+исправлялся. Prompt усилен Pointer Events/cancel/visible fallback/maxTouchPoints;
+мобильный validator использует taps без клавиатуры и не обещает универсальный
+gameplay PASS. Source regex, автоматически меняющий или отвергающий произвольный
+HTML по одной строке, не введён. Новое качество LLM этим не проверено.
+
+## Verification receipt
+
+Typecheck/build PASS; Node unit 230/230; Python 19/19; CI policy 8/8.
+Phone/mobile browser matrix 72/72 на 12 профилях (Chromium/WebKit 320/360/390/430,
+tablet; Chromium/Firefox desktop). Validator + phone gates 14 PASS / 16 intentional
+profile skips. Повторный phone smoke после UI review — 24/24; Git receipt в PR.
+7 cold Slow4G/CPU×4 synthetic runs: interactive p75 664 ms; game launch 999 ms,
+touch 7.2 ms, API 2.5 ms. Initial JS gzip 10965 B, CSS 2385 B, total 16777 B;
+phone UI грузится отдельно. Это local timing с synthetic game, не скорость LLM
+или физического телефона; сравнение с дооптимизационным baseline не заявляется.
+QR decode, multiple adapters, exact selected address, invalid/expired access,
+private API denial, Host/Origin/forwarded, failed bind/self-probe cleanup,
+busy/shutdown guards, touch/rotation/restart/reopen/expiry покрыты локально.
+Browser emulation и отдельный сетевой клиент на ПК не равны физическим устройствам.
+Android Chrome/System WebView, iOS Safari/WKWebView и Telegram — NOT_TESTED.
+Другой физический LAN-клиент/VPN/firewall/router isolation — NOT_TESTED.
+
+**LLM: 0 новых inference POST**, repairs/fallback не запускались; маршруты
+Ollama Cloud gemma4:31b и manual OpenRouter openrouter/free сохранены. Пользователь
+сообщил об успешном создании/изменении после MICRO-023L; это owner evidence, здесь
+новая независимая LIVE-приёмка не выполнялась. Доступность квоты не утверждается.
+
+**CI:** repository Actions enabled:false, baseline 79 runs / latest 38877566527;
+не включать и не запускать. Hosted Ubuntu/Windows и release FULL не заявляются.
+Оригинальные FAST/FULL требования остаются. Gitleaks history и reviewed manifest — без находок; diff/repo checks PASS.
+Protected baseline: из 328 файлов 327 hashes совпали; изменился только
+consumer SQLite synthetic token из tests/tunnel.test.ts:18. User SQLite/.env,
+игры/версии, PDF и Visual Kit не изменялись. Git merge SHA — в PR receipt; exact release FULL отдельно.
+
+## Проверка владельцем / NEXT
+
+На доверенной общей сети откройте свою игру, «Подключить телефон», сканируйте QR
+на Android/iPhone, Start → движение/действия → Restart → повторное открытие.
+Поверните телефон, проверьте края управления. Затем «Отключить доступ»: повторная
+загрузка должна завершиться ошибкой доступа/соединения. Для physical PASS нужны
+точные устройство/OS/browser и наблюдаемые действия; пока Physical NOT_TESTED.
+MVP phone scenario технически реализован; physical acceptance остаётся открытой.
+
+---
+
 # MICRO-023L — Fresh LIVE acceptance: PARTIAL
 
 16 октября 2026. LIVE проверен на main
