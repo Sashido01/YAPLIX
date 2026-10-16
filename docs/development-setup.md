@@ -278,3 +278,10 @@ URL-файл отражает только подтверждённую теку
 показывают exit code/signal/stderr. URL timeout 60 s, внешний health 45 s.
 `--protocol auto|http2|quic`, влияние DNS/VPN/proxy/Windows Firewall, Android и
 безопасный публичный сценарий описаны в [Telegram](telegram.md).
+
+## LLM network без inference
+
+`npm run network:check` / `npm run network:check -- --all` выполняют service GET
+через тот же Direct/HTTP(S) proxy transport, что inference, без запуска worker и
+SQLite. Настройки, Auto/NO_PROXY, VPN/PAC ограничения и TLS CA —
+[сетевая инструкция](llm-network.md). Изменение серверного `.env` требует restart.

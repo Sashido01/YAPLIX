@@ -29,7 +29,7 @@ for(const scenario of ['before-headers','after-headers','stream-close','partial-
  const cloud=new CloudTransport({base:'http://127.0.0.1:'+(server.address() as any).port+'/v1',key:'synthetic',model:'fixture'});
  const context:GenerationContext={stage(){},dispatch(){dispatched++;},partial(v){checkpoint=v;},attempt(){}};
  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),150);t.after(()=>clearTimeout(timer));
- await assert.rejects(cloud.complete([],controller.signal,scenario==='partial-json'?undefined:context),e=>controller.signal.aborted||e instanceof ProviderFailure&&e.code===(scenario==='partial-json'?'LLM_INVALID_RESPONSE':'LLM_CONNECTION_INTERRUPTED'));
+ await assert.rejects(cloud.complete([],controller.signal,scenario==='partial-json'?undefined:context),e=>controller.signal.aborted||e instanceof ProviderFailure&&e.code===(scenario==='partial-json'?'LLM_INVALID_RESPONSE':scenario==='before-headers'?'LLM_TCP_CONNECTION':'LLM_CONNECTION_INTERRUPTED'));
  assert.equal(dispatched,scenario==='partial-json'?0:1);
  if(scenario==='stream-close'||scenario==='body-timeout')assert.equal(checkpoint,'<!doctype html><html>draft');
 });
@@ -50,7 +50,7 @@ test('fully received invalid UTF-8 remains an invalid response, not a network in
 for(const code of ['ENOTFOUND','ERR_TLS_CERT_ALTNAME_INVALID','ECONNREFUSED'])test('sanitized DNS/TLS/proxy failure: '+code,async t=>{
  t.mock.method(globalThis,'fetch',async()=>{throw new TypeError('private provider credential',{cause:Object.assign(new Error('private host'),{code})});});
  const cloud=new CloudTransport({base:'https://ollama.com/v1',key:'synthetic-private',model:'gemma4:31b'});
- await assert.rejects(cloud.complete([],AbortSignal.timeout(500)),e=>e instanceof ProviderFailure&&e.code==='LLM_CONNECTION_INTERRUPTED'&&!String(e).includes('private'));
+ await assert.rejects(cloud.complete([],AbortSignal.timeout(500)),e=>e instanceof ProviderFailure&&e.code===({ENOTFOUND:'LLM_DNS',ERR_TLS_CERT_ALTNAME_INVALID:'LLM_TLS',ECONNREFUSED:'LLM_TCP_CONNECTION'}[code])&&!String(e).includes('private'));
 });
 
 for(const suffix of ['data: [DONE]\n\n',delta+'data: [DONE]\n\n'])test('terminal marker alone cannot authorize incomplete SSE: '+suffix.length,async t=>{

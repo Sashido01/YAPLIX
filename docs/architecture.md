@@ -29,17 +29,21 @@ previous HTML, исходное описание и изменение. [transpo
 напрямую вызывает два разрешённых OpenAI-compatible HTTPS endpoint.
 TLS проверяется, redirects запрещены, HTTP только loopback. Секреты только серверу.
 
-Native Node fetch (bundled Undici), без provider SDK: streaming используется
-для durable jobs, non-streaming — legacy synchronous API. MICRO-020 завершает
-SSE reader на `[DONE]`, не ожидая remote EOF; acceptance по-прежнему требует
-model/stop и последующие static/browser gates. Обрыв чтения non-stream body
-отличается от полного malformed JSON. Timeout не увеличен: engine request timer
-охватывает catalog, соединение и весь inference body; отдельного нового
-connection timeout не вводится, connect timeout остаётся у Node transport.
-Fetch переиспользует соединения через global dispatcher. Прокси автоматически
-не подставляется; Node `--use-env-proxy`/`NODE_USE_ENV_PROXY=1` — отдельная явная
-настройка оператора. [Официальные правила Node 24](https://nodejs.org/docs/latest-v24.x/api/http.html#built-in-proxy-support).
-Сетевые замеры и LIVE/gameplay proof boundaries — [MICRO-020](SESSION_HANDOFF.md).
+Node fetch с явным per-request Agent/ProxyAgent (Undici 7.30.1), без provider SDK.
+Оба cloud provider используют [llm-network.ts](../src/llm-network.ts): Auto,
+Direct или обязательный HTTP/HTTPS proxy, свежая конфигурация на каждый запрос,
+без global dispatcher mutation и Direct fallback при отказе proxy. GET models,
+readiness и inference используют один путь; agent освобождается после body.
+Секреты/URL не попадают в диагностику, только provider/route/stage/status/duration/category.
+Отдельный [network:check](../scripts/llm-network-check.ts) делает только service GET,
+не открывает SQLite/worker и не подтверждает inference. [Настройка и границы](llm-network.md).
+Streaming используется для durable jobs, non-streaming — legacy synchronous API.
+SSE reader завершается на `[DONE]`, сохраняя model/stop и static/browser gates.
+Обрыв body отличается от malformed JSON. Connect timeout default 10 s;
+engine request timer охватывает catalog, соединение и весь body, общий job deadline,
+bounded retries/cooldowns и checkpoint recovery сохраняются. DNS/TCP/proxy/timeout
+получают отдельные коды; UI сохраняет идею/черновик, TLS не отключается.
+Результаты сети и gameplay — [MICRO-021](SESSION_HANDOFF.md).
 
 [live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
 (default 1), два production routes. Один transport request по умолчанию

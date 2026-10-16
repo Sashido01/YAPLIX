@@ -18,6 +18,7 @@
     "telegram:menu": "node --env-file-if-exists=.env scripts/telegram-setup.ts menu",
     "tunnel:install": "node scripts/tunnel.ts install",
     "tunnel": "node --env-file-if-exists=.env scripts/tunnel.ts",
+    "network:check": "node --env-file-if-exists=.env scripts/llm-network-check.ts",
     "doctor": "node --env-file-if-exists=.env scripts/maintenance.ts doctor",
     "backup": "node --env-file-if-exists=.env scripts/maintenance.ts backup",
     "verify:backup": "node scripts/maintenance.ts verify-backup",
@@ -34,7 +35,8 @@
     "@hono/node-server": "2.1.5",
     "hono": "4.13.13",
     "playwright-core": "1.64.0",
-    "qrcode-generator": "2.0.4"
+    "qrcode-generator": "2.0.4",
+    "undici": "7.30.1"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",
