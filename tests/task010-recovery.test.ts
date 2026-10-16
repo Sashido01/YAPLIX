@@ -33,15 +33,17 @@ test('a zero-byte secondary failure cannot relabel the inherited checkpoint or i
  }finally{await jobs.close();store.close();}
 });
 
-for(const field of ['prompt','completion'])for(const price of [null,'',false,' ',undefined,'0e0','0.01',-1])test('explicit free model refuses unproven '+field+' pricing '+String(price)+' before POST',async t=>{
- let posts=0;t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{if(init?.method==='POST'){posts++;throw Error('POST_MUST_NOT_HAPPEN');}return Response.json({data:[{id:'authored/model:free',pricing:{prompt:'0',completion:'0',[field]:price}}]});});
- const cloud=new CloudTransport({base:'https://openrouter.ai/api/v1',key:'synthetic-key',model:'authored/model:free'});
- await assert.rejects(cloud.complete([{role:'user',content:'synthetic'}],new AbortController().signal),/FREE_MODEL_REQUIRED/);assert.equal(posts,0);
+// MICRO-019 strengthens the old catalog/price policy: concrete IDs are now
+// prohibited even when the catalog explicitly advertises zero token prices.
+for(const field of ['prompt','completion'])for(const price of [null,'',false,' ',undefined,'0e0','0.01',-1,0,'0.000'])test('concrete free model is refused regardless of '+field+' pricing '+String(price),t=>{
+ let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;return Response.json({data:[{id:'authored/model:free',pricing:{prompt:'0',completion:'0',[field]:price}}]});});
+ assert.throws(()=>new CloudTransport({base:'https://openrouter.ai/api/v1',key:'synthetic-key',model:'authored/model:free'}),/FREE_MODEL_REQUIRED/);assert.equal(requests,0);
 });
 
-test('explicit free model accepts positively confirmed numeric/string zero token pricing',async t=>{
- let posts=0;t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{if(init?.method==='POST'){posts++;return Response.json({model:'authored/model:free',choices:[{message:{content:html},finish_reason:'stop'}]});}return Response.json({data:[{id:'authored/model:free',pricing:{prompt:0,completion:'0.000'}}]});});
- const cloud=new CloudTransport({base:'https://openrouter.ai/api/v1',key:'synthetic-key',model:'authored/model:free'});const result=await cloud.complete([{role:'user',content:'synthetic'}],new AbortController().signal);assert.equal(result.code,html);assert.equal(posts,1);
+test('superseded concrete OpenRouter models are blocked before any HTTP request',t=>{
+ let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;throw Error('MUST_NOT_DISPATCH');});
+ for(const model of ['authored/model:free','openrouter/auto','paid-model'])assert.throws(()=>new CloudTransport({base:'https://openrouter.ai/api/v1',key:'synthetic-key',model}),/FREE_MODEL_REQUIRED/);
+ assert.equal(requests,0);
 });
 
 test('provider Retry-After survives a fresh engine and worker and protects another job',async t=>{

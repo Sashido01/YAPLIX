@@ -7,6 +7,7 @@ let current: GameVersion | null = null, unmount: (() => void) | undefined, busy 
 let telegramToken:string|undefined;
 const versions = new Map<string, GameVersion>(); // Bounded read cache, at most 3 × 200 KB HTML.
 const errors: Record<string, string> = {
+  INVALID_PROVIDER_MODE:'Выберите Auto, Ollama Cloud или OpenRouter Free.',
   LLM_NOT_CONFIGURED:'LIVE не настроен. Добавьте серверный API key и откройте диагностику.',
   BROWSER_INSTALL_REQUIRED:'Для LIVE установите браузер проверки: npm run checker:install.',
   BROWSER_SANDBOX_UNAVAILABLE:'Браузер проверки не смог запустить защищённую среду. Проверьте настройку Chromium sandbox по инструкции Ubuntu.',
@@ -133,10 +134,13 @@ async function show(version:GameVersion,signal?:AbortSignal) {
 }
 function help(){el('mode-help').textContent=mode.value==='demo'?'DEMO использует авторскую игру «Звёздный курьер». Число в запросе задаёт цель. Это не LLM.':'LIVE создаёт HTML/JS моделью. Ожидание может занять несколько минут. Ошибка не переключает режим на DEMO.';}
 mode.addEventListener('change',help);
+const providerSelect=el<HTMLSelectElement>('provider-mode');
+try{const saved=sessionStorage.getItem('yaplix-provider-mode');if(saved&&['auto','ollama-cloud','openrouter'].includes(saved))providerSelect.value=saved;}catch{}
+providerSelect.addEventListener('change',()=>{try{sessionStorage.setItem('yaplix-provider-mode',providerSelect.value);}catch{}});
 const submitting=new Set<string>();
 async function submitJob(buttonId:string,text:string,previousVersionId?:string){
   if(submitting.has(buttonId))return;submitting.add(buttonId);const button=el<HTMLButtonElement>(buttonId);button.disabled=true;
-  const request={spec:spec(text),mode:mode.value,...(previousVersionId?{previousVersionId}:{}),telegramConsent:Boolean(telegramToken&&el<HTMLInputElement>('telegram-notify').checked)};
+  const request={spec:spec(text),mode:mode.value,providerMode:el<HTMLSelectElement>('provider-mode').value,...(previousVersionId?{previousVersionId}:{}),telegramConsent:Boolean(telegramToken&&el<HTMLInputElement>('telegram-notify').checked)};
   // randomUUID is unavailable on private-IP HTTP LAN; getRandomValues works there.
   const bytes=crypto.getRandomValues(new Uint8Array(16));let key=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');try{const old=JSON.parse(sessionStorage.getItem('yaplix-pending-'+buttonId)??'null');if(old?.request===JSON.stringify(request))key=old.key;sessionStorage.setItem('yaplix-pending-'+buttonId,JSON.stringify({key,request:JSON.stringify(request)}));}catch{}
   try{await api('/api/jobs',{...request,idempotencyKey:key});try{sessionStorage.removeItem('yaplix-pending-'+buttonId);}catch{}message.textContent='Задание сохранено. Можно продолжать играть.';await pollJobs();}
@@ -165,7 +169,7 @@ function openJob(job:JobSummary){if(job.versionId){el('jobs-panel').hidden=true;
 function renderJobs(jobs:JobSummary[]){
   const count=jobs.filter(j=>['queued','generating','repairing','validating'].includes(j.stage)).length;el('jobs-toggle').textContent='Задания'+(count?' ('+count+')':'');
   const container=el('jobs-list');container.replaceChildren();if(!jobs.length)container.textContent='Заданий пока нет.';
-  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`+((job.actualModel??job.requestedModel)?' · '+(job.actualModel??job.requestedModel):'');row.append(title,status);
+  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=(job.providerMode?({auto:'Auto','ollama-cloud':'Ollama Cloud',openrouter:'OpenRouter Free'}[job.providerMode]+' · '):'')+`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`+((job.actualModel??job.requestedModel)?' · '+(job.actualModel??job.requestedModel):'');row.append(title,status);
     const failures=job.history.filter(attempt=>attempt.errorCode).slice(-3);if(failures.length){const reasons=document.createElement('p');reasons.className='muted';reasons.textContent='Предыдущие попытки: '+failures.map(attempt=>`${attempt.provider} / ${attempt.model??attempt.requestedModel}: ${errors[attempt.errorCode!]??attempt.errorCode}`).join(' · ');row.append(reasons);}
     if(job.errorCode){const error=document.createElement('p');error.textContent=(errors[job.errorCode]??`Черновик сохранён (${job.errorCode}).`)+(job.retryAt?' Повтор после '+new Date(job.retryAt).toLocaleTimeString()+'.':'');row.append(error);}
     const actions=document.createElement('div');actions.className='actions';const add=(label:string,work:()=>Promise<unknown>|void)=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>{button.disabled=true;void Promise.resolve().then(work).then(()=>pollJobs()).catch(error=>{message.textContent=error.message;button.disabled=false;});});actions.append(button);return button;};

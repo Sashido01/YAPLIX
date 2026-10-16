@@ -14,10 +14,17 @@ targeting main. Wait for successful Windows, Ubuntu and secret-scan checks for
 the current head, with the risk-selected FAST/FULL coverage in
 [CI economy](docs/ci-economy.md); fix failures and repeat. Before releases run
 manual FULL on the exact release commit. Review the diff and conflicts.
+MICRO-019 owner exception through 2026-10-29: hosted Actions are temporarily
+disabled at repository level; do not wait for unavailable hosted checks or claim
+them green. Run local typecheck/build, critical units, short Playwright and secret
+scan, with real LLM evidence separately. Restore Actions only on owner instruction
+using the recorded procedure in [CI economy](docs/ci-economy.md). FAST/FULL policy
+and release FULL requirements remain intact.
 
 The owner authorizes autonomous standard PR merge for ordinary internal work
 after those checks. Do not wait for a teammate's review unless GitHub protection
-requires it. Never force-push, bypass protection, disable CI or change permissions.
+requires it. Never force-push or bypass protection. Do not disable CI or change
+permissions outside the explicit temporary MICRO-019 owner exception above.
 Use an allowed merge method, preferring a merge commit to preserve commits.
 If merge fails, check authoritative PR state before any further action.
 
@@ -31,14 +38,15 @@ offline HTML export, diagnostics, backup and update instructions. The generator
 and prompts are independently authored here. Do not fetch/read/use BGen or its
 old local checkout, templates, assets or docs as a reference. Do not modify external
 repositories. Preserve unknown ignored files. Cloud is primary; OpenRouter is
-FREE ONLY. TASK-010 permits concrete OpenRouter :free model IDs from the official
-catalog only at the exact https://openrouter.ai/api/v1 base, after explicitly zero
-prompt and completion prices are checked before dispatch. openrouter/free remains
-compatible, not the default random model selector. No paid or hidden fallback.
-TASK-009 permits Ollama Cloud as a distinct opt-in route with the owner's available
-account quota, explicit credentials and route configuration. Never buy credits or
-change plans automatically, infer paid entitlement, or transition there without
-that configuration. OpenRouter remains free-only.
+FREE ONLY. MICRO-019 supersedes TASK-010 model selection: production LIVE routes
+are only gemma4:31b at https://ollama.com/v1 with an explicit server credential,
+and openrouter/free at exactly https://openrouter.ai/api/v1. No concrete :free
+selection, generic provider, local route, paid or hidden fallback. UI modes are
+auto, ollama-cloud and openrouter; only auto may switch providers, preferring
+configured Ollama Cloud then OpenRouter Free, without returning to the previous
+provider within a job. Legacy model/fallback/local knobs cannot authorize routes.
+Never buy credits or change plans automatically or infer paid entitlement.
+Preserve existing jobs, checkpoints, cancellation, idempotency and restart state.
 Implement the minimal UI here when no integrated UI exists.
 
 Report MAIN, MERGED, RUN, VERIFIED, MVP, LIVE, DOCS and NEXT. Synthetic tests,

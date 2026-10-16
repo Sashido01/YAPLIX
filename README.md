@@ -87,7 +87,7 @@ cloud и Chromium. Ручная альтернатива: `npm run build`, за�
 одно задание. Состояние заданий, исходный текст и полученные checkpoints хранятся в
 SQLite v2. После возврата страница получает состояние сервера. Recoverable timeout,
 обрыв потока, обрезанный вывод и `429` автоматически получают допустимый retry,
-проверку полного checkpoint или явно настроенный fallback. Последние три неудачных
+проверку полного checkpoint или переход к другому разрешённому provider в Auto. Последние три неудачных
 route/model и причины переходов видны в истории задания. В центре видны
 «Автоматический повтор»/«Ожидание провайдера» и фактическая причина. После restart
 сохраняются исходный deadline, cooldown и бюджет; неизвестный потенциально оплаченный
@@ -98,14 +98,20 @@ route/model и причины переходов видны в истории з
 ещё не считается безопасной или играбельной версией.
 
 Retry-After соблюдается; квота/отказ ключа/model/context блокируют маршрут и позволяют
-использовать другой явно разрешённый. «Отменить задание» сохраняет запрос и черновик.
-Один worker, очередь до 20 заданий и 3 на владельца. Default: до 6 provider calls
-за автоматический цикл, до 4 запусков worker и общий deadline 600 s; один запрос
+использовать другой разрешённый provider только в Auto. После перехода job не
+возвращается к прежнему provider, в том числе после restart/Continue.
+«Отменить задание» сохраняет запрос и черновик.
+Один worker, очередь до 20 заданий и 3 на владельца. Default: до 4 provider calls
+за автоматический цикл, до 4 запусков worker и общий deadline 300 s; один запрос
 до 60 s. Ручное продолжение не снимает lifetime limit 12 calls на задание.
 Точные настройки и действия — [известные ошибки](docs/known-errors.md).
 Недоступность всех моделей может оставить черновик; она не подменяет LIVE на DEMO.
 
 ## Настоящая LIVE-генерация
+
+Проверка MICRO-019 от 16.10.2026 остаётся **PARTIAL**: «три в ряд» не получила
+HTML за четыре разрешённых inference POST из-за обрыва Ollama и таймаутов
+OpenRouter. Полный gameplay не подтверждён. [Факты и продолжение](docs/SESSION_HANDOFF.md).
 
 Серверный Chromium (телефону не нужен):
 
@@ -118,48 +124,47 @@ Ubuntu при отсутствии OS библиотек:
 Локальный `.env`:
 
 ```dotenv
-LIVE_PROVIDER=cloud
+LIVE_PROVIDER=auto
 CLOUD_BASE_URL=https://openrouter.ai/api/v1
-CLOUD_MODEL=google/gemma-4-31b-it:free
 CLOUD_API_KEY=your-local-key
-LLM_FALLBACK=none
+# Optional: enables the preferred route in Auto.
+# OLLAMA_CLOUD_API_KEY=your-local-cloud-key
 LLM_REPAIRS=1
 ```
 
-Перезапустите backend, выберите LIVE и опишите игру. Конвейер проверяет HTML,
+Перезапустите backend, выберите LIVE, provider и опишите игру.
+**Auto** предпочитает настроенный Ollama Cloud и допускает переход к OpenRouter Free.
+**Ollama Cloud** и **OpenRouter Free** используют только выбранный provider,
+без перехода к другому. Выбор сохраняется для задания и виден в центре заданий.
+Конвейер проверяет HTML,
 реальный Start/input/pause в opaque iframe 320/390 px и автономный offline запуск.
 Ошибка не создаёт игровую версию; запрос/доступный черновик остаются в задании.
 Default — одно исправление. Успех показывает фактическую
-модель, попытки и явно настроенный fallback. Короткий browser preflight не гарантирует
+модель, попытки и фактический переход provider. Короткий browser preflight не гарантирует
 весь путь до победы/поражения или FPS каждого результата; это проверяется отдельно.
 
-OpenRouter использует конкретный бесплатный model ID; default —
-`google/gemma-4-31b-it:free`. Разрешены только exact official API base и ID с `:free`,
-которые сервер нашёл в models API с явно нулевыми prompt/completion ценами до вызова.
-При неизвестной цене вызов блокируется. Legacy `openrouter/free` сохранён, но
-случайный router не выбран по умолчанию. Имя фактической модели видно в provenance.
+MICRO-019 разрешает OpenRouter только через `openrouter/free` и exact official
+base `https://openrouter.ai/api/v1`. Фактическую бесплатную модель выбирает router;
+она видна в provenance. Concrete `:free` IDs, платные модели, generic providers
+и локальные модели не являются production routes.
 Бесплатные лимиты/недоступность/ошибки остаются возможны; это не рейтинг «лучшей» модели.
-Другой OpenAI-compatible provider задаётся точными CLOUD_BASE_URL/MODEL/KEY.
-Gateway21t endpoint/model не угадываются. `LLM_MAX_TOKENS` — запрошенный верхний
+`LLM_MAX_TOKENS` — запрошенный верхний
 предел, а не гарантия полного ответа: сервер учитывает доступные model metadata,
 сохраняет output/reasoning tokens, если провайдер их возвращает. Бюджет нельзя
 увеличивать вслепую; подробности в [настройке](docs/development-setup.md).
 
-**Ollama Cloud** подключается отдельно, только по явной настройке:
+**Ollama Cloud** использует квоту аккаунта и явный серверный ключ:
 
 ```dotenv
-LLM_FALLBACK=ollama-cloud
 OLLAMA_CLOUD_API_KEY=your-local-cloud-key
-OLLAMA_CLOUD_MODEL=
+# Optional server default; UI can also select this provider explicitly.
+LIVE_PROVIDER=ollama-cloud
 ```
 
-Заполните MODEL точным именем из официального [каталога API](https://ollama.com/api/tags);
-не запускайте с пустым значением. Фиксированный endpoint — `https://ollama.com/v1`,
-model ID проверяется сервером через models API. Суффикс модели локального CLI
-не следует угадывать для прямого cloud API. [Официальная документация](https://docs.ollama.com/cloud).
-Это дополнительный cloud route с квотами вашего аккаунта, который по умолчанию
-выключен. Для явно выбранного Ollama Cloud primary: `LIVE_PROVIDER=ollama-cloud`,
-те же KEY/MODEL и `LLM_FALLBACK=none`. Точная доступность зависит от аккаунта:
+Фиксированные model/endpoint — `gemma4:31b` / `https://ollama.com/v1`.
+[Официальная документация](https://docs.ollama.com/cloud).
+Ключ не подтверждает доступную квоту; credits и план автоматически не меняются.
+Точная доступность зависит от аккаунта:
 models API не доказывает inference. В TASK-010 `gemma4:31b` вернула настоящий код;
 scope проверки конкретной игры указан в [отчёте](docs/task-010-report.md).
 
@@ -168,13 +173,11 @@ scope проверки конкретной игры указан в [отчёт
 game contract/checker, без дополнительного LLM interpretation call. `.env.example` выбирает direct после единичного сравнения;
 это не гарантия лучшего качества любого запроса.
 
-**Ollama Local** — необязательный loopback резерв: установите Ollama и нужную
-модель отдельно, задайте `OLLAMA_BASE_URL=http://127.0.0.1:11434` и точный
-`OLLAMA_MODEL`, затем `LLM_LOCAL_FALLBACK=1`. Это явный третий route после cloud
-primary/secondary. Только local: `LIVE_PROVIDER=ollama`; local secondary без второго
-cloud: `LLM_FALLBACK=ollama`. Для OpenRouter secondary после Ollama Cloud primary —
-`LLM_FALLBACK=openrouter` с CLOUD_API_KEY/CLOUD_MODEL. Резерв включается только явно; недоступный
-маршрут получает cooldown, неизвестный платёжный исход не даёт бесконтрольных повторов.
+Существующий `.env` не переписывается. Legacy `CLOUD_MODEL`, `OLLAMA_CLOUD_MODEL`,
+`LLM_FALLBACK`, `SECONDARY_*`, `OLLAMA_*` для local и `LLM_LOCAL_FALLBACK`
+не разрешают дополнительные маршруты или модели; production использует только
+два маршрута выше. Legacy `LIVE_PROVIDER=cloud` означает OpenRouter Free,
+`LIVE_PROVIDER=ollama` — Auto. Для ясной конфигурации используйте новые значения.
 `npm run demo:live` выполняет три обычных игровых описания в отдельной `.local/live`,
 сохраняет exact HTML/evidence. Это набор сценариев, не рейтинг «лучшей» модели.
 
@@ -268,13 +271,17 @@ npm run performance:smoke
 [Известные ошибки и безопасное восстановление](docs/known-errors.md).
 [TASK-008: результаты runtime/tunnel и границы внешней проверки](docs/task-008-report.md).
 [TASK-010: облачные модели, recovery, игры и Telegram](docs/task-010-report.md).
-CI всегда выполняет FAST на чистом checkout Windows/Ubuntu и secret-scan;
+Обычный CI выполняет FAST на чистом checkout Windows/Ubuntu и secret-scan;
 для runtime/config/неизвестных изменений FULL добавляет реальный Chromium
 preflight, 12 frontend profiles и performance. Manual FULL обязателен перед
 релизом. [Режимы и ограничения защиты](docs/ci-economy.md),
 [замеры MICRO-018](docs/micro-018-report.md). Реальные LLM/физические клиенты отдельно.
-Задача завершена после hosted CI, merge, ff-only main и post-merge smoke.
-Защиту/CI обходить нельзя: [AGENTS](AGENTS.md), [CONTRIBUTING](CONTRIBUTING.md).
+По прямому разрешению владельца MICRO-019 hosted Actions временно выключены
+до 29 октября 2026; локальные typecheck/build, критические unit, короткий
+Playwright и secret scan выполняются отдельно и не считаются hosted PASS.
+Восстановление — только по команде владельца, [точный порядок](docs/ci-economy.md).
+Задача требует merge, ff-only main и post-merge smoke; защита не обходится:
+[AGENTS](AGENTS.md), [CONTRIBUTING](CONTRIBUTING.md).
 
 SQLite/HTML в игнорируемой `.local`; старые версии не переписываются. Sandbox/CSP
 не дают полной CPU/RAM изоляции. Экспорт теряет HTTP CSP, проверяйте его offline.

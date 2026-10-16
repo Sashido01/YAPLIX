@@ -1,8 +1,19 @@
 # Приёмка YAPLIX
 
-Исторические проверки TASK-007/009 сохранены ниже. Сценарий актуализирован для
-TASK-010; текущие результаты и границы — в [едином отчёте](task-010-report.md).
+Исторические проверки TASK-007/009/010 сохранены ниже; их маршруты и timings
+не считаются текущим результатом MICRO-019. [Отчёт TASK-010](task-010-report.md).
 Browser tests, реальные LLM, hosted CI и физические устройства имеют разные границы.
+
+Текущий сценарий MICRO-019: LIVE предлагает Auto / Ollama Cloud / OpenRouter Free.
+Допустимы только gemma4:31b на https://ollama.com/v1 и openrouter/free на
+https://openrouter.ai/api/v1. Auto может перейти от настроенного Ollama Cloud к
+OpenRouter без возврата; explicit provider не переключается. Проверьте отдельно
+каждый доступный маршрут, сохранение выбранного mode/исходного запроса/checkpoint
+при retry/restart, Cancel и повтор с тем же idempotency key. Default бюджет —
+4 calls / 300 s, ≤4 worker runs, lifetime ≤12 calls. Старые jobs не удаляются.
+Новый реальный LIVE PASS требует собственного evidence, он не следует из истории.
+Hosted Actions временно выключены владельцем до 29 октября 2026:
+[локальные проверки и восстановление](ci-economy.md).
 
 ## Сценарий 3–5 минут
 
@@ -70,7 +81,7 @@ Bot token проверяет telegram:check, независимо от Mini App 
 Android/iPhone/WebView/keyboard/safe-area/download требуют человеческой репетиции.
 Hosted CI этого не подтверждает.
 
-Для TASK-010 отдельно проверяются concrete бесплатная OpenRouter модель и Ollama
+В историческом TASK-010 отдельно проверялись concrete бесплатная OpenRouter модель и Ollama
 Cloud, автоматическое восстановление и реальные аркады. Уровни доказательства:
 структура HTML → выполнение JS → видимый UI → наблюдаемый gameplay →
 проверенный финал → соответствие конкретному prompt. Общий checker публикует только
@@ -122,3 +133,5 @@ TASK-010 schema v2 не меняет; добавляются recovery metadata �
 Приёмка сравнивает исходные rows/hashes/history/events, открывает старые игры,
 скачивает exact HTML. Old validationStatus сохраняется, passed задним числом не
 назначается. Новые версии только добавляются; failure не записывается.
+
+MICRO-019, 16.10.2026: LIVE «Собери игру три в ряд» не получила HTML: 4/4 inference POST (Ollama interruption, три OpenRouter timeout). Gameplay NOT VERIFIED; product acceptance PARTIAL. [Текущий evidence/handoff](SESSION_HANDOFF.md).

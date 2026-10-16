@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
-import { boundedText, requiredMethod } from './transport.ts';
+import { boundedText, requiredMethod, providerMode } from './transport.ts';
 import type { Generator } from './transport.ts';
 import { GenerationFailure } from './live.ts';
 import { demoArtifact } from './demo.ts';
@@ -105,10 +105,10 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.get('/api/jobs',c=>c.json({jobs:jobManager().list(owner(c))}));
   app.get('/api/jobs/:jobId',c=>c.json(jobManager().get(owner(c),c.req.param('jobId'))));
   app.post('/api/jobs',async c=>{
-    const body=object(await json(c.req.raw,12000),['spec','mode','previousVersionId','idempotencyKey','telegramConsent']);
+    const body=object(await json(c.req.raw,12000),['spec','mode','providerMode','previousVersionId','idempotencyKey','telegramConsent']);
     const consent=body.telegramConsent===true;if(body.telegramConsent!==undefined&&typeof body.telegramConsent!=='boolean')throw new Fault('INVALID_JOB_REQUEST');
     if(consent&&!telegram.user(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session')))throw new Fault('TELEGRAM_CONSENT_REQUIRES_SESSION',403);
-    return c.json(jobManager().create(owner(c),body.idempotencyKey,{spec:parseSpec(body.spec),mode:mode(body.mode)??'live',...(body.previousVersionId?{previousVersionId:uuid(body.previousVersionId)}:{}),telegramConsent:consent}),202);
+    return c.json(jobManager().create(owner(c),body.idempotencyKey,{spec:parseSpec(body.spec),mode:mode(body.mode)??'live',providerMode:providerMode(body.providerMode),...(body.previousVersionId?{previousVersionId:uuid(body.previousVersionId)}:{}),telegramConsent:consent}),202);
   });
   app.post('/api/jobs/:jobId/cancel',async c=>{object(await json(c.req.raw,32),[]);return c.json(jobManager().cancel(owner(c),c.req.param('jobId')));});
   app.post('/api/jobs/:jobId/continue',async c=>{object(await json(c.req.raw,32),[]);return c.json(jobManager().continue(owner(c),c.req.param('jobId')));});

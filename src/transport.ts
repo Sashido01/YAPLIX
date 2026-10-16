@@ -2,7 +2,14 @@ import { Fault } from './contracts.ts';
 import type { Artifact, GameSpec, GameVersion } from './contracts.ts';
 import type { GenerationAttempt } from './contracts.ts';
 export type TokenUsage={outputTokens?:number;reasoningTokens?:number};
+export type ProviderMode='auto'|'ollama-cloud'|'openrouter';
+export function providerMode(value:unknown):ProviderMode {
+  if(value===undefined)return 'auto';
+  if(value!=='auto'&&value!=='ollama-cloud'&&value!=='openrouter')throw new Fault('INVALID_PROVIDER_MODE');
+  return value;
+}
 export interface GenerationContext {
+  providerMode?:ProviderMode;
   checkpoint?:string; maxCalls?:number;
   blockedRoutes?:string[];
   checkpointOrigin?:{provider:string;requestedModel:string;model:string};
@@ -45,6 +52,9 @@ export class ProviderFailure extends Fault {
 export class CloudOutputFailure extends ProviderFailure {
   constructor(model:string,partial:string,usage:TokenUsage={}){super('LLM_OUTPUT_TRUNCATED',model,partial,usage);}
 }
+function providerError(status:number,detail=''){
+  return status===401||status===403?'LLM_AUTH':status===429?(/quota.{0,50}(exhaust|exceed)|daily.{0,40}(limit|exhaust)|free-models-per-day|insufficient.{0,20}credit/i.test(detail)?'LLM_QUOTA':'LLM_RATE_LIMIT'):status===402?'LLM_QUOTA':status===400&&/context|token.{0,20}(limit|maximum)|maximum.{0,20}context/i.test(detail)?'LLM_CONTEXT_LIMIT':status===404?'LLM_MODEL_NOT_FOUND':'LLM_HTTP';
+}
 export interface CodeTransport {
   route: 'primary' | 'secondary' | 'local'; provider: string; model: string;
   observesDispatch?:boolean;
@@ -69,7 +79,8 @@ export class CloudTransport implements CodeTransport {
     this.maxTokens = options.maxTokens ?? 12000; this.temperature = options.temperature; this.tokenField = options.tokenField ?? 'max_tokens';
     if (!this.key.trim() || /[\r\n]/.test(this.key) || this.key.length > 4096 || !this.model.trim() || this.model.length > 128 || this.provider.length > 128 || !Number.isSafeInteger(this.maxTokens) || this.maxTokens < 256 || this.maxTokens > 32000 || this.temperature !== undefined && (!Number.isFinite(this.temperature) || this.temperature < 0 || this.temperature > 2) || !['max_tokens','max_completion_tokens'].includes(this.tokenField)) throw new Fault('INVALID_LLM_CONFIGURATION');
     // This project's OpenRouter authorization is FREE ONLY, including secondary routes.
-    if (this.provider === 'openrouter' && (this.base.href !== 'https://openrouter.ai/api/v1/' || !(this.model==='openrouter/free'||this.model.endsWith(':free')))) throw new Fault('FREE_MODEL_REQUIRED');
+    if (this.provider === 'openrouter' && (this.base.href !== 'https://openrouter.ai/api/v1/' || this.model!=='openrouter/free')) throw new Fault('FREE_MODEL_REQUIRED');
+    if (this.provider === 'ollama.com' && (this.base.href !== 'https://ollama.com/v1/' || this.model!=='gemma4:31b')) throw new Fault('FREE_MODEL_REQUIRED');
   }
   private async request(path: string, signal: AbortSignal, body?: object) {
     const response=await this.response(path,signal,body);
@@ -82,26 +93,16 @@ export class CloudTransport implements CodeTransport {
       let detail='';try{detail=await boundedText(response,16000);}catch{}
       const retry=response.headers.get('retry-after');const delay=retry&&/^\d+(\.\d+)?$/.test(retry)?Number(retry)*1000:retry?Date.parse(retry)-Date.now():0;
       const retryAt=Number.isFinite(delay)&&delay>0?Date.now()+Math.min(delay,86400000):null;
-      const code=response.status===401||response.status===403?'LLM_AUTH':response.status===429?'LLM_RATE_LIMIT':response.status===402?'LLM_QUOTA':response.status===400&&/context|token.{0,20}(limit|maximum)|maximum.{0,20}context/i.test(detail)?'LLM_CONTEXT_LIMIT':response.status===404?'LLM_MODEL_NOT_FOUND':'LLM_HTTP';
+      const code=providerError(response.status,detail);
       throw new ProviderFailure(code,null,'',{},retryAt,response.status===429?429:502);
     }
     return response;
   }
   async complete(messages: Message[], signal: AbortSignal, context?:GenerationContext) {
     let budget=this.maxTokens;
-    // An explicit free ID must be present and have zero token pricing before
-    // every dispatch, including the legacy synchronous API. Fail closed.
-    if(this.provider==='openrouter'&&this.model!=='openrouter/free'){
-      const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(5000)]));
-      const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);
-      const zero=(value:unknown)=>value===0||typeof value==='string'&&/^0(?:\.0+)?$/.test(value);
-      if(!selected||!zero(selected.pricing?.prompt)||!zero(selected.pricing?.completion))throw new Fault('FREE_MODEL_REQUIRED',503);
-      const limit=selected.top_provider?.max_completion_tokens;
-      if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);
-    }
     if(context){
       try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
-      catch(error){if(signal.aborted||error instanceof Fault&&['LLM_AUTH','LLM_MODEL_NOT_FOUND'].includes(error.code))throw error;}
+      catch(error){if(signal.aborted||error instanceof Fault&&['LLM_AUTH','LLM_QUOTA','LLM_RATE_LIMIT','LLM_MODEL_NOT_FOUND'].includes(error.code))throw error;}
       if(budget<2048)throw new Fault('LLM_OUTPUT_BUDGET_TOO_SMALL',502);
     }
     const body={model:this.model,messages,stream:Boolean(context),[this.tokenField]:budget,...(context?{stream_options:{include_usage:true}}:{}),...(this.provider==='openrouter'?{reasoning:{effort:'low',exclude:true},provider:{require_parameters:true}}:{}),...(this.temperature===undefined?{}:{temperature:this.temperature})};
@@ -110,6 +111,7 @@ export class CloudTransport implements CodeTransport {
     const choice = result.choices?.[0];
     if(!result.error&&choice?.finish_reason==='length'&&typeof result.model==='string'&&result.model.trim()&&result.model.length<=128)throw new CloudOutputFailure(result.model,typeof choice.message?.content==='string'?choice.message.content:'');
     if (result.error || choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string' || typeof result.model !== 'string' || !result.model.trim() || result.model.length > 128) throw new Fault('LLM_INVALID_RESPONSE', 502);
+    if(this.provider==='ollama.com'&&result.model!==this.model)throw new Fault('LLM_INVALID_RESPONSE',502);
     // Free router intentionally reports the actual selected free model, not its router alias.
     return { code: choice.message.content, model: result.model,...usage(result.usage) };
   }
@@ -120,8 +122,8 @@ export class CloudTransport implements CodeTransport {
     const frame=(line:string)=>{
       if(!line.startsWith('data:'))return;const raw=line.slice(5).trim();if(!raw)return;if(raw==='[DONE]'){done=true;return;}
       let data;try{data=JSON.parse(raw);}catch{throw new ProviderFailure('LLM_INVALID_RESPONSE',model,code,tokens);}
-      if(typeof data.model==='string'&&data.model.trim()&&data.model.length<=128)model=data.model;
-      if(data.error)throw new ProviderFailure(Number(data.error.code)===402?'LLM_QUOTA':Number(data.error.code)===429?'LLM_RATE_LIMIT':'LLM_STREAM_ERROR',model,code,tokens);
+      if(typeof data.model==='string'&&data.model.trim()&&data.model.length<=128){if(this.provider==='ollama.com'&&data.model!==this.model)throw new ProviderFailure('LLM_INVALID_RESPONSE',null,code,tokens);model=data.model;}
+      if(data.error){const failure=providerError(Number(data.error.code),typeof data.error.message==='string'?data.error.message.slice(0,16000):'');throw new ProviderFailure(failure==='LLM_HTTP'?'LLM_STREAM_ERROR':failure,model,code,tokens);}
       tokens={...tokens,...usage(data.usage)};const choice=data.choices?.[0];if(choice?.finish_reason)finish=choice.finish_reason;
       const delta=choice?.delta?.content;if(typeof delta==='string'){code+=delta;if(Buffer.byteLength(code)>200000)throw new ProviderFailure('ARTIFACT_TOO_LARGE',model,code,tokens);checkpoint();}
     };

@@ -8,7 +8,7 @@ SQLite и sandbox. TypeScript/esbuild; Node/Chromium/модели устанав
 flowchart LR
   UI[Браузер / Telegram] --> API[Hono / auth]
   API --> Spec[GameSpec]
-  Spec --> LLM[Cloud / явный local transport]
+  Spec --> LLM[Ollama Cloud / OpenRouter Free]
   LLM --> Check[Extract / static / Chromium]
   Check --> Repair[Bounded repair]
   Repair --> LLM
@@ -26,17 +26,18 @@ flowchart LR
 по собственным GameSpec/event contracts. Нет substring жанровой классификации,
 готового каталога, сторонних промптов/шаблонов/assets. Iteration передаёт полный
 previous HTML, исходное описание и изменение. [transport.ts](../src/transport.ts)
-напрямую вызывает OpenAI-compatible HTTPS или явно выбранную локальную Ollama.
+напрямую вызывает два разрешённых OpenAI-compatible HTTPS endpoint.
 TLS проверяется, redirects запрещены, HTTP только loopback. Секреты только серверу.
 
 [live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
-(default 1), до трёх явно заданных routes. Один transport request по умолчанию
+(default 1), два production routes. Один transport request по умолчанию
 ограничен 60 s; jobs управляют bounded автоматическими retry и durable cooldown.
-Cloud default — google/gemma-4-31b-it:free. Concrete OpenRouter :free ID требует
-exact official base, наличие в models API и явно нулевые prompt/completion цены
-до dispatch; legacy openrouter/free совместим. Платные OpenRouter модели запрещены. Явные
-Ollama Cloud primary/secondary используют https://ollama.com/v1 и отдельные KEY/MODEL;
-local route опционален. Generic nonfree secondary для OpenRouter primary блокируется.
+MICRO-019 фиксирует Ollama Cloud gemma4:31b на https://ollama.com/v1 и
+OpenRouter openrouter/free на exact https://openrouter.ai/api/v1.
+Auto предпочитает настроенный Ollama Cloud, затем OpenRouter Free; explicit
+ollama-cloud/openrouter ограничивают dispatch одним provider. Legacy MODEL,
+secondary/fallback/local knobs не добавляют маршрутов. Concrete :free IDs,
+generic providers, local route и платный OpenRouter исключены из production.
 Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
 чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
 и может получить тот же один bounded repair, с требованием компактного HTML.
@@ -48,19 +49,23 @@ provider/requested/actual model, error, checkpoint и связь с version. О�
 Worker lease берётся после successful bind, heartbeat сохраняет exclusive ownership
 одной DB. Второй writer с этой DB блокируется. После crash подтверждённо отсутствующий
 PID позволяет immediate restart; живой/непроверяемый PID сохраняет lease до 60 s.
-Default automatic cycle: до 6 provider calls суммарно, до 4 worker runs и 600 s
+Default automatic cycle: до 4 provider calls суммарно, до 4 worker runs и 300 s
 включая ожидание. Manual Continue добавляет ограниченный бюджет, lifetime ≤12 calls.
-Cloud SSE и local NDJSON checkpoint
+Cloud SSE checkpoint
 записываются bounded порциями, usage/output/reasoning сохраняются, если возвращены.
 Legacy synchronous API получает полный ответ без streaming checkpoint.
-Provider/requested model фиксируются уже в queued. LIVE creation при настроенном
+Provider mode и initial provider/requested model фиксируются уже в queued.
+Смена provider блокирует предыдущий durable route в metadata; retry/Continue/restart
+не возвращают job к нему. Новый свежий запрос не обходит routes повторно внутри
+одного engine run; retries ограничивает durable worker budget.
+LIVE creation при настроенном
 generator ограничено 6/min owner и 12/min global; отдельный такой же лимит
 provider dispatch включает repair и ручное продолжение.
 
 Обрезанный output допускает bounded repair полного документа, не склейку частей.
 Retry-After задаёт durable ожидание `waiting_for_provider`; retry_scheduled использует
 exponential backoff от 2 s с cap 60 s. Quota/auth/model/context/output-budget закрывают
-route на 15 min и позволяют явно настроенный альтернативный route. Неизвестный
+route на 15 min и позволяют альтернативный provider только в Auto. Неизвестный
 potentially billed timeout/stream interruption не повторяется слепо на том же route.
 Restart сохраняет исходные deadline/calls/cooldown и восстанавливает допустимые
 действия. Старые recoverable needs_attention без automatic metadata получают один
