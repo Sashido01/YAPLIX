@@ -1,3 +1,33 @@
+# MICRO-022 — Production validation and bounded recovery
+
+16 октября 2026. Baseline main/origin/main `8465feac701932cf074e7215fa0d49fe6f9f921a`,
+ff-only pull; ветка `codex/micro-022-production-validation`. PDF/ignored user data
+сохранены. Production browser gate расширен runtime/input/restart evidence и
+ограниченными budgets. Format repairs: JSON-string document / missing doctype,
+без изменения JS. Original raw HTML и repair claim durable; даже incomplete repair,
+Continue и restart не обходят один rewrite. Cloud repair default off, требует
+отдельного разрешения через LLM_AUTO_REPAIR=1. 0 новых inference POST.
+
+VERIFIED: 217 Node tests (MICRO-022 17), typecheck/build, 11 runtime/CSP browser,
+10 mobile jobs/offline/session, 3 existing Snake/Tetris probes, Python19/policy8.
+Неизменённый MICRO-020: FAILED/null exception, original сохранён, versions0.
+Ранее вручную восстановленная копия: реальные match/refill, score, win1020/2moves,
+loss910/0moves, restart/pause, isolated SQLite reopen/WebKit/export PASS.
+7 checker samples median2713ms, range2705..2766ms; CPU/network не throttled.
+7/7 protected file hashes unchanged. Оригинальная typo не исправляется production
+regex; неизвестные механики и короткие win/loss остаются NOT_VERIFIED.
+
+CI: GitHub Actions disabled, hosted runs не запускались; FULL/Ubuntu/physical
+devices и новый LIVE не заявляются. Публикация выполняется разрешённым feature
+PR/merge; exact commit/merge SHA и post-merge smoke фиксируются в Git receipt.
+RUN: обычный launcher; isolated recovered game `.local/micro022/recovered.sqlite`
+(authored/manual-recovery), private artifacts только `.local/micro022`.
+NEXT: отдельное owner разрешение на fresh LIVE E2E; затем physical Android/iOS/
+Telegram acceptance. Перед release остаётся exact-commit FULL после разрешённого
+восстановления Actions. [Полный отчёт](micro-022-report.md), [checker](game-validation.md).
+
+---
+
 # MICRO-021 — Network Portability & Game Recovery
 
 16 октября 2026. FACT: исходный main `0b53a336eeadce0d258dfa839712f11867b274fc`

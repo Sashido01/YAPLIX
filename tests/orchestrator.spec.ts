@@ -203,7 +203,7 @@ test('real checker accepts orchestrator-assembly falling-blocks artifact at 320/
  const chosen=(selection.decision==='use-library')?selection.chosen:[];
  const html=buildHtml({title:'Falling blocks',rules:'Move with arrows or buttons, rotate with R, drop with space. Clear 2 lines to win.',derivation:JSON.stringify({space:os.spaceType,win:'2 lines'}),chosen,code:TETRIS_LOGIC,rulesBanner:'Goal: clear 2 lines | Lose: blocks reach the top | Win: 2 lines cleared'});
  const evidence=await browserCheck(html,AbortSignal.timeout(30000));
- expect(evidence).toEqual({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});
+ expect(evidence).toMatchObject({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});
 });
 
 // --- TASK-016 controlled gameplay probes (two control genres) ------------------

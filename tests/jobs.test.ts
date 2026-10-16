@@ -59,7 +59,7 @@ test('SSE chunks persist bounded partials, usage and cap advertised output; inte
     calls++;bodies.push(JSON.parse(options.body));if(mode==='success')return stream(html);
     const first='<!DOCTYPE html><html>'+(' '.repeat(5000));return new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({model:'actual',choices:[{delta:{content:first}}]})+'\n\n'));},pull(controller){controller.error(Error('synthetic lost network'));}}));
   });
-  const jobs=new GenerationJobs(store,new GenerationEngine([new CloudTransport({base:'http://127.0.0.1:9991/v1',key:'synthetic-key',model:'requested'})],{check:evidence}));
+  const jobs=new GenerationJobs(store,new GenerationEngine([new CloudTransport({base:'http://127.0.0.1:9991/v1',key:'synthetic-key',model:'requested'})],{allowLlmRepair:true,check:evidence}));
   try{const job=await settled(jobs,jobs.create('owner','stream-key',request).jobId);assert.equal(job.errorCode,'LLM_CONNECTION_INTERRUPTED');assert.ok(job.checkpoint.includes('<html>'));assert.ok(job.checkpointAt);assert.equal(calls,1);assert.equal(bodies[0].max_tokens,4096);assert.equal(bodies[0].stream,true);mode='success';const later=Date.now()+5001;t.mock.method(Date,'now',()=>later);jobs.continue('owner',job.jobId);const done=await settled(jobs,job.jobId);assert.equal(done.stage,'completed');assert.ok(bodies[1].messages.some((m:Message)=>m.content.includes(job.checkpoint)));assert.equal(done.outputTokens,300);assert.equal(done.reasoningTokens,12);assert.equal(store.list().length,1);}finally{await jobs.close();store.close();}
 });
 

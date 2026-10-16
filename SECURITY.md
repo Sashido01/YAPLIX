@@ -43,8 +43,9 @@ Backup/restore выполняются по [development-setup](docs/development-
 
 ## Cloud и Telegram
 
-TLS verification/redirect deny, OpenRouter explicit :free ID with confirmed zero token prices (legacy openrouter/free supported), paid secondary
-запрещён. Repair/deadline/response/concurrency bounded. Chromium checker с OS sandbox,
+TLS verification/redirect deny. MICRO-019 допускает только `gemma4:31b` на
+`https://ollama.com/v1` и `openrouter/free` на `https://openrouter.ai/api/v1`;
+concrete :free IDs и paid secondary запрещены. Repair/deadline/response/concurrency bounded. Chromium checker с OS sandbox,
 без server secrets в environment, offline/CSP; не полная защита от browser exploits
 или resource exhaustion. Не открывайте MVP как anonymous multi-tenant service.
 Telegram HMAC/age/allowlist до library/LLM; initDataUnsafe не доверяется.

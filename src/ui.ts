@@ -41,7 +41,14 @@ const errors: Record<string, string> = {
   JOB_DURATION_LIMIT:'Время автоматического восстановления истекло. Запрос и черновик сохранены.',
   LLM_ROUTES_UNAVAILABLE:'Настроенные маршруты недоступны. Запрос и черновик сохранены; проверьте доступность провайдеров.',
   JOB_QUEUE_FULL:'Очередь заполнена. Дождитесь завершения одного из заданий.',
-  LLM_UNSAFE_ARTIFACT:'Код не прошёл проверку безопасности после попытки исправления моделью. Уточните запрос.',
+  LLM_UNSAFE_ARTIFACT:'Код не прошёл проверку безопасности. Идея и исходный черновик сохранены.',
+  JAVASCRIPT_EXCEPTION:'В игре обнаружена ошибка JavaScript. Игра не готова; идея и исходный код сохранены.',
+  BROWSER_RESTART_FAILED:'Повторный запуск не работает. Игра не готова; исходный код сохранён.',
+  CHECKPOINT_ORIGIN_UNAVAILABLE:'Провайдер сохранённого черновика неизвестен или больше не настроен. Черновик сохранён. Для другого провайдера создайте новый запрос.',
+  BROWSER_TIMEOUT_STARTUP:'Не удалось завершить запуск проверяющего браузера вовремя. Работоспособность игры не подтверждена.',
+  BROWSER_TIMEOUT_RENDER:'Истекло время загрузки игры. Проверка не завершена; черновик сохранён.',
+  BROWSER_TIMEOUT_INTERACTION:'Истекло время проверки управления. Механика не подтверждена; черновик сохранён.',
+  BROWSER_TIMEOUT_RESTART:'Истекло время проверки повторного запуска. Результат не подтверждён; черновик сохранён.',
   LLM_HTTP:'LLM вернула ошибку. Проверьте запуск модели и её ресурсы.',
   LLM_NETWORK_OR_RESPONSE:'Не удалось получить полный ответ LLM. Проверьте подключение провайдера.',
   LLM_AUTH:'Провайдер не принял серверный API key.',
@@ -56,7 +63,7 @@ async function api(path: string, body?: unknown, token?: string, signal?: AbortS
   try {
     const response = await fetch(path, { signal: signal ?? deadline.signal, headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{}),...(telegramToken?{'X-Yaplix-Telegram-Session':telegramToken}:{})},...(body !== undefined ? { method:'POST',body:JSON.stringify(body) } : {}) });
     const data = await response.json();
-    if (!response.ok) throw new Error(errors[data.error] ?? (String(data.error).startsWith('BROWSER_')||data.error==='JAVASCRIPT_EXCEPTION'?'Игра не прошла браузерную проверку после исправления моделью ('+data.error+'). Уточните запрос.':`Не удалось выполнить действие (${data.error ?? response.status}).`));
+    if (!response.ok) throw new Error(errors[data.error] ?? (String(data.error).startsWith('BROWSER_')?'Игра не прошла браузерную проверку ('+data.error+'). Черновик сохранён.':`Не удалось выполнить действие (${data.error ?? response.status}).`));
     el('connection').hidden = true; return data;
   } catch (error) {
     if ((error as Error).name === 'TypeError' || !signal && deadline.signal.aborted) { el('connection').hidden = false; throw new Error('Сервер недоступен. Проверьте связь и повторите действие.'); }
@@ -134,6 +141,8 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   if(version.method==='authored')el('provenance').textContent='Авторская офлайн-игра · не LIVE';
   el('share').hidden=location.protocol!=='https:';
   if(version.generation)el('provenance').textContent+=` · попыток: ${version.generation.attempts.length}${version.generation.fallback?' · резервный маршрут':''} · запуск/пауза/offline 320/390 px · механики и финал не подтверждены`;
+  const restart=version.generation?.browser.checks?.find(c=>c.aspect==='restart-works');
+  if(restart?.level==='VERIFIED')el('provenance').textContent+=' · повторный запуск проверен';
   el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;
   const download=el<HTMLAnchorElement>('export');download.href=`/api/versions/${version.versionId}/export`;download.removeAttribute('aria-disabled');
   const select=el<HTMLSelectElement>('versions');select.replaceChildren();select.disabled=busy;

@@ -59,7 +59,7 @@ export class GenerationJobs {
     return{...request,...metadata,providerMode:providerMode(metadata.providerMode??request.providerMode),jobId:String(row.job_id),ownerId:owner,idempotencyKey:String(row.idempotency_key),stage:row.status,attempts:Number(row.attempts),checkpoint:String(row.checkpoint),createdAt:String(row.created_at),updatedAt:String(row.updated_at),versionId:version?.versionId??null,gameId:version?.gameId??null,notificationClaimed:row.notified===1};
   }
   summary(job:GenerationJob):JobSummary {
-    const {checkpoint,ownerId:_owner,idempotencyKey:_key,...rest}=job;return{...rest,checkpointBytes:Buffer.byteLength(checkpoint)};
+    const {checkpoint,originalCheckpoint:_original,ownerId:_owner,idempotencyKey:_key,...rest}=job;return{...rest,checkpointBytes:Buffer.byteLength(checkpoint)};
   }
   list(owner:string){
     this.presence.set(owner,Date.now());if(this.presence.size>1000){for(const[key,time]of this.presence)if(Date.now()-time>60000)this.presence.delete(key);}
@@ -79,7 +79,7 @@ export class GenerationJobs {
     const job:GenerationJob={...request,jobId:randomUUID(),ownerId:owner,idempotencyKey:key,provider:selected?.provider??null,requestedModel:selected?.model??null,actualModel:null,createdAt:now(),updatedAt:now(),stage:'queued',attempts:0,checkpoint:'',checkpointAt:null,history:[],errorCode:null,retryAt:null,versionId:null,gameId:null,notificationClaimed:false,telegramState:request.telegramConsent?'pending':'none',outputTokens:null,reasoningTokens:null,elapsedMs:0,automaticRuns:0,automaticLimit:this.maxCalls,deadlineAt:Date.now()+this.duration,blockedRoutes:[]};
     this.store.transaction(()=>{
       this.assertWorker();
-      const counts=this.store.db.prepare("SELECT COUNT(*) total,SUM(status IN ('queued','generating','validating','repairing')) pending,COALESCE(SUM(length(CAST(checkpoint AS BLOB))),0) bytes FROM generation_jobs").get()!;
+      const counts=this.store.db.prepare("SELECT COUNT(*) total,SUM(status IN ('queued','generating','validating','repairing')) pending,COALESCE(SUM(length(CAST(checkpoint AS BLOB))+COALESCE(length(CAST(json_extract(metadata,'$.originalCheckpoint') AS BLOB)),0)),0) bytes FROM generation_jobs").get()!;
       const ownerCount=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(owner)?.n);
       if(Number(counts.total)>=1000||Number(counts.bytes)>=100000000)throw new Fault('JOB_STORAGE_QUOTA',507);
       if(Number(counts.pending)>=20||ownerCount>=3)throw new Fault('JOB_QUEUE_FULL',429);
@@ -95,8 +95,8 @@ export class GenerationJobs {
   private write(job:GenerationJob) {
     this.assertWorker();
     job.updatedAt=now();job.checkpoint=boundedCode(job.checkpoint);
-    const total=Number(this.store.db.prepare('SELECT COALESCE(SUM(length(CAST(checkpoint AS BLOB))),0) bytes FROM generation_jobs WHERE job_id<>?').get(job.jobId)?.bytes);
-    if(total+Buffer.byteLength(job.checkpoint)>100000000)throw new Fault('JOB_STORAGE_QUOTA',507);
+    const total=Number(this.store.db.prepare("SELECT COALESCE(SUM(length(CAST(checkpoint AS BLOB))+COALESCE(length(CAST(json_extract(metadata,'$.originalCheckpoint') AS BLOB)),0)),0) bytes FROM generation_jobs WHERE job_id<>?").get(job.jobId)?.bytes);
+    if(total+Buffer.byteLength(job.checkpoint)+Buffer.byteLength(job.originalCheckpoint??'')>100000000)throw new Fault('JOB_STORAGE_QUOTA',507);
     const result=this.store.db.prepare('UPDATE generation_jobs SET status=?,attempts=?,checkpoint=?,metadata=?,updated_at=? WHERE job_id=? AND owner_id=? AND EXISTS(SELECT 1 FROM generation_worker WHERE slot=1 AND instance=? AND expires_at>?)').run(job.stage,job.attempts,job.checkpoint,JSON.stringify(this.metadata(job)),job.updatedAt,job.jobId,job.ownerId,this.instance,Date.now());
     if(result.changes!==1)throw new Fault('JOB_WORKER_BUSY',409);
   }
@@ -121,6 +121,11 @@ export class GenerationJobs {
     const cooldowns:Record<string,{until:number;code:string}>={};for(const row of this.store.db.prepare("SELECT metadata FROM generation_jobs WHERE json_extract(metadata,'$.routeCooldowns') IS NOT NULL").all()){const saved=JSON.parse(String(row.metadata)).routeCooldowns;for(const [key,value]of Object.entries(saved) as [string,{until:number;code:string}][])if(value.until>Date.now()&&value.until>(cooldowns[key]?.until??0))cooldowns[key]=value;}
     const context:GenerationContext={providerMode:job.providerMode,cooldowns,cooldownRoute:(route,until,code)=>update(j=>{j.routeCooldowns={...(j.routeCooldowns??{}),[route.provider+'/'+route.model]:{until,code}};}),checkpoint:job.checkpoint,blockedRoutes:job.blockedRoutes??[],...(job.checkpointOrigin?{checkpointOrigin:job.checkpointOrigin}:{}),blockRoute:(route)=>{const key=route.provider+'/'+route.model;if(!context.blockedRoutes!.includes(key))context.blockedRoutes!.push(key);update(j=>{j.blockedRoutes=[...context.blockedRoutes!];});},maxCalls:Math.min(6,(job.automaticLimit??this.maxCalls)-job.attempts),stage:stage=>update(j=>{if(!terminal.has(j.stage))j.stage=stage;}),dispatch:route=>{if(Date.now()>=(job.deadlineAt??0))throw new Fault('JOB_DURATION_LIMIT',409);if(job.attempts>=(job.automaticLimit??this.maxCalls))throw new Fault('JOB_ATTEMPT_LIMIT',409);try{this.limits.take('provider-global',12);this.limits.take('provider-'+owner,6);}catch(error){update(j=>{j.retryAt=Date.now()+60000;});throw error;}update(j=>{if(j.provider&&j.requestedModel&&j.provider!==route.provider){const previous=j.provider+'/'+j.requestedModel;if(!context.blockedRoutes!.includes(previous))context.blockedRoutes!.push(previous);j.blockedRoutes=[...context.blockedRoutes!];j.retiredRoutes=[...new Set([...(j.retiredRoutes??[]),previous])];}j.attempts++;j.provider=route.provider;j.requestedModel=route.model;j.actualModel=null;});},partial:(code,model,tokens)=>update(j=>{if(code){j.checkpoint=code;j.checkpointAt=now();j.checkpointOrigin=model&&j.provider&&j.requestedModel?{provider:j.provider,requestedModel:j.requestedModel,model}:undefined;}if(model)j.actualModel=model;if(tokens?.outputTokens!==undefined)j.outputTokens=tokens.outputTokens;if(tokens?.reasoningTokens!==undefined)j.reasoningTokens=tokens.reasoningTokens;}),attempt:attempt=>update(j=>{j.history.push(attempt);j.history=j.history.slice(-12);}),retryAt:at=>update(j=>{j.retryAt=Math.max(j.retryAt??0,at);})};
     try{
+      context.repairUsed=job.repairUsed;
+      context.validationFailure=job.validation?.level!=='VERIFIED'?job.validation?.code:undefined;
+      context.claimRepair=()=>{update(j=>{if(j.repairUsed)throw new Fault('LLM_REPAIR_LIMIT',409);j.repairUsed=true;});context.repairUsed=true;};
+      context.preserveOriginal=html=>update(j=>{j.originalCheckpoint??=boundedCode(html);});
+      context.validation=(diagnostic,repair)=>update(j=>{j.validation=diagnostic;if(repair)j.deterministicRepair=repair;});
       const previous=job.previousVersionId?this.store.getVersion(job.previousVersionId):undefined;
       if(job.mode==='live'&&!this.generator)throw new Fault('LLM_NOT_CONFIGURED',503);
       const artifact=job.mode==='demo'?demoArtifact(job.spec):await this.generator!.generate(job.spec,previous,'llm_code',AbortSignal.any([signal,AbortSignal.timeout(Math.max(1,(job.deadlineAt??Date.now()+this.duration)-Date.now()))]),context);

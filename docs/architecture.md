@@ -45,8 +45,10 @@ bounded retries/cooldowns и checkpoint recovery сохраняются. DNS/TCP
 получают отдельные коды; UI сохраняет идею/черновик, TLS не отключается.
 Результаты сети и gameplay — [MICRO-021](SESSION_HANDOFF.md).
 
-[live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
-(default 1), два production routes. Один transport request по умолчанию
+[live.ts](../src/live.ts): один active request, общий deadline до 300 s, максимум
+один LLM repair на job; production cloud repair по умолчанию выключен.
+`LLM_REPAIRS` принимает legacy 0..2, но 2 ограничивается одним rewrite, 0 отключает
+repair. Два production routes. Один transport request по умолчанию
 ограничен 60 s; jobs управляют bounded автоматическими retry и durable cooldown.
 MICRO-019 фиксирует Ollama Cloud gemma4:31b на https://ollama.com/v1 и
 OpenRouter openrouter/free на exact https://openrouter.ai/api/v1.
@@ -56,12 +58,13 @@ secondary/fallback/local knobs не добавляют маршрутов. Concr
 generic providers, local route и платный OpenRouter исключены из production.
 Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
 чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
-и может получить тот же один bounded repair, с требованием компактного HTML.
+и после отдельного owner разрешения (`LLM_AUTO_REPAIR=1`) может получить один
+bounded repair, с требованием компактного HTML. По умолчанию cloud repair выключен.
 
 UI отправляет request в [jobs.ts](../src/jobs.ts), а не держит HTTP генерацию до
 конца. SQLite хранит original spec, owner, idempotency key, stage, attempts,
 provider/requested/actual model, error, checkpoint и связь с version. Один worker,
-очередь 20/3, total 1000, ≤100 MB checkpoints суммарно и ≤200000 bytes на job;
+очередь 20/3, total 1000, ≤100 MB checkpoints/originals суммарно и ≤200000 bytes на каждый draft/original;
 Worker lease берётся после successful bind, heartbeat сохраняет exclusive ownership
 одной DB. Второй writer с этой DB блокируется. После crash подтверждённо отсутствующий
 PID позволяет immediate restart; живой/непроверяемый PID сохраняет lease до 60 s.
@@ -78,7 +81,8 @@ LIVE creation при настроенном
 generator ограничено 6/min owner и 12/min global; отдельный такой же лимит
 provider dispatch включает repair и ручное продолжение.
 
-Обрезанный output допускает bounded repair полного документа, не склейку частей.
+Обрезанный output допускает один bounded repair полного документа только при
+разрешённом LLM repair, без склейки частей и смены provider внутри repair.
 Retry-After задаёт durable ожидание `waiting_for_provider`; retry_scheduled использует
 exponential backoff от 2 s с cap 60 s. Quota/auth/model/context/output-budget закрывают
 route на 15 min и позволяют альтернативный provider только в Auto. Неизвестный
@@ -87,8 +91,10 @@ Restart сохраняет исходные deadline/calls/cooldown и восс�
 действия. Старые recoverable needs_attention без automatic metadata получают один
 bounded cycle с lifetime cap 12; cancelled/quota/auth/configuration отказы не принимаются.
 Полный checkpoint с подтверждённым origin сначала проверяется без POST;
-если нужен repair, он получает конкретные browser errors. Продолжение использует original
-spec и draft; provider не обещает resume с последнего токена. При исчерпании
+если нужен и разрешён repair, он получает конкретные browser errors. Неполный
+draft требует разрешённого rewrite; отсутствующий/ненастроенный origin блокирует
+dispatch. Продолжение использует original spec и допустимый draft; provider не
+обещает resume с последнего токена. При исчерпании
 бюджета/ресурсов остаётся needs_attention + failed_permanent metadata. Проверенная
 version и completed job сохраняются одной transaction. Сбой оставляет job/draft,
 не игровую passed version. Legacy synchronous games/versions API сохранён.
@@ -113,7 +119,13 @@ restart, touch и read-only diagnostic state; наличие diagnostic JSON с�
 `LLM_PROMPT_STYLE=direct` передаёт исходный естественный запрос, `spec` (code default)
 формирует specification. Общие contract/validation/security сохраняются. Generic
 browser evidence публикует только HTML_VALID, JS_EXECUTABLE, UI_VISIBLE,
-MOBILE_VERIFIED; отдельные gameplay/end/input correctness levels не выдаются.
+MOBILE_VERIFIED; MICRO-022 дополнительно сохраняет per-aspect checks с
+VERIFIED/FAILED/NOT_VERIFIED и elapsedMs, используя существующий gameplay summarizer.
+Win/loss коротким probe не подтверждаются; отсутствие наблюдаемой механики
+не равно подтверждённому дефекту. Marked restart проверяется реальным input и
+reset read-only state. Durable originalCheckpoint и repairUsed сохраняют исходник
+и лимит одного rewrite даже после incomplete output, Continue и restart.
+[Границы, format recovery и budgets](game-validation.md).
 Pause проверяет замороженное изображение, resume — фактическое продолжение через
 видимую Resume/Continue или data-yaplix-resume, затем pause-toggle fallback.
 
