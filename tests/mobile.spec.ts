@@ -55,7 +55,7 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
 test('generation cancellation, terminal errors, draft and offline diagnostics never leave a busy spinner', async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'Создать',exact:true}).click();
   await page.locator('#prompt').fill('Мой сохранённый черновик');
-  await page.locator('#mode').selectOption('live');const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');await page.locator('#generate').click();const job=await(await response).json();expect(job.jobId).toBeTruthy();await page.locator('#jobs-toggle').click();
+  const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');await page.locator('#generate').click();const job=await(await response).json();expect(job.jobId).toBeTruthy();await page.locator('#jobs-toggle').click();
   const row=page.locator('[data-job="'+job.jobId+'"]');await expect(row).toContainText('LIVE не настроен');await expect(row).toContainText('Мой сохранённый черновик');
   await row.getByRole('button',{name:'Продолжить генерацию'}).click();await expect(row).toContainText('LIVE не настроен');await expect(page.locator('#generate')).toBeEnabled();await expect(page.locator('iframe')).toHaveCount(0);
   await page.reload();await expect(page.locator('#prompt')).toHaveValue('Мой сохранённый черновик');

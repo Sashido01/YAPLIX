@@ -79,7 +79,7 @@ test('free router preserves actual truncated model, uses low reasoning and bound
  let calls=0;const bodies:any[]=[];
  t.mock.method(globalThis,'fetch',async(_url:unknown,options:any)=>{bodies.push(JSON.parse(options.body));return Response.json({model:'actual-free',choices:[{finish_reason:++calls===1?'length':'stop',message:{content:calls===1?'<!DOCTYPE html><html>':html}}]});});
  const cloud=new CloudTransport({base:'https://openrouter.ai/api/v1',model:'openrouter/free',key:'synthetic-test-key'});
- const output=await new GenerationEngine([cloud],{allowLlmRepair:true,check:evidence}).generate(spec);
+ const output=await new GenerationEngine([cloud],{defaultMode:'openrouter',allowLlmRepair:true,check:evidence}).generate(spec);
  assert.equal(calls,2);assert.deepEqual(bodies[0].reasoning,{effort:'low',exclude:true});assert.equal(output.generation!.attempts[0].model,'actual-free');assert.equal(output.generation!.attempts[0].errorCode,'LLM_OUTPUT_TRUNCATED');assert.ok(bodies[1].messages.at(-1).content.includes('budget was exhausted'));assert.equal(output.model,'actual-free');
 });
 

@@ -5,7 +5,7 @@ import { Fault } from '../src/contracts.ts';
 // Service GETs only: no generation engine, workers, SQLite or inference POSTs.
 try {
   const engine = configuredGenerator(process.argv.includes('--all')?{...process.env,LIVE_PROVIDER:'auto'}:process.env);
-  const routes = engine?.routesFor();
+  const routes = process.argv.includes('--all')?engine?.routes:engine?.routesFor();
   if (!routes?.length) throw new Fault('LLM_NOT_CONFIGURED');
   for (const route of routes) {
     if (!(route instanceof CloudTransport)) continue;

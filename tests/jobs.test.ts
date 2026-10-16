@@ -141,6 +141,6 @@ test('complete checkpoint is browser-validated after restart with zero repeated 
 test('legacy recoverable draft automatically adopts one bounded cycle; cancellation stays cancelled',async()=>{
  const store=new Store(':memory:');let jobs=new GenerationJobs(store);const id=jobs.create('owner','legacy-timeout',request).jobId;await settled(jobs,id);const cancelled=jobs.create('owner','legacy-cancel',request).jobId;jobs.cancel('owner',cancelled);await jobs.close();
  store.db.prepare("UPDATE generation_jobs SET attempts=2,metadata=json_set(json_remove(metadata,'$.automaticLimit','$.automaticRuns','$.deadlineAt'),'$.errorCode','LLM_TIMEOUT','$.provider','openrouter','$.requestedModel','specific:free') WHERE job_id=?").run(id);
- let calls=0;jobs=new GenerationJobs(store,new GenerationEngine([{...route(async()=>{calls++;return{code:html,model:'actual'};}),provider:'openrouter',model:'specific:free'}],{check:evidence}),undefined,true,{maxCalls:2,retryMs:10});
+ let calls=0;jobs=new GenerationJobs(store,new GenerationEngine([{...route(async()=>{calls++;return{code:html,model:'actual'};}),provider:'ollama.com',model:'gemma4:31b'}],{check:evidence}),undefined,true,{maxCalls:2,retryMs:10});
  try{const done=await settled(jobs,id);assert.equal(done.stage,'completed');assert.equal(done.attempts,3);assert.equal(calls,1);assert.equal(done.spec.prompt,spec.prompt);assert.equal(store.list().length,1);assert.equal(jobs.get('owner',cancelled).stage,'cancelled');}finally{await jobs.close();store.close();}
 });

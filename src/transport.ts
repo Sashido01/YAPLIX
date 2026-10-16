@@ -62,7 +62,7 @@ export class CloudOutputFailure extends ProviderFailure {
   constructor(model:string,partial:string,usage:TokenUsage={}){super('LLM_OUTPUT_TRUNCATED',model,partial,usage);}
 }
 function providerError(status:number,detail=''){
-  return status===401||status===403?'LLM_AUTH':status===429?(/quota.{0,50}(exhaust|exceed)|daily.{0,40}(limit|exhaust)|free-models-per-day|insufficient.{0,20}credit/i.test(detail)?'LLM_QUOTA':'LLM_RATE_LIMIT'):status===402?'LLM_QUOTA':status===400&&/context|token.{0,20}(limit|maximum)|maximum.{0,20}context/i.test(detail)?'LLM_CONTEXT_LIMIT':status===404?'LLM_MODEL_NOT_FOUND':'LLM_HTTP';
+  return status===401||status===403?'LLM_AUTH':status===429?(/quota.{0,50}(exhaust|exceed)|daily.{0,40}(limit|exhaust)|free-models-per-day|insufficient.{0,20}credit/i.test(detail)?'LLM_QUOTA':'LLM_RATE_LIMIT'):status===402?'LLM_QUOTA':status===413?'LLM_HTTP_BODY_TOO_LARGE':status===400&&/context|token.{0,20}(limit|maximum)|maximum.{0,20}context/i.test(detail)?'LLM_CONTEXT_LIMIT':status===404?'LLM_MODEL_NOT_FOUND':'LLM_HTTP';
 }
 export interface CodeTransport {
   route: 'primary' | 'secondary' | 'local'; provider: string; model: string;
@@ -96,6 +96,7 @@ export class CloudTransport implements CodeTransport {
     return this.response(path,signal,body,async response=>{
       let text:string;
       try { text=await boundedText(response,1_210_000); } catch(error) {
+        if(error instanceof Fault&&error.code==='BODY_TOO_LARGE')throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE');
         if(signal.aborted||error instanceof Fault)throw error;
         if(error instanceof TypeError&&(error as NodeJS.ErrnoException).code==='ERR_ENCODING_INVALID_ENCODED_DATA')throw new ProviderFailure('LLM_INVALID_RESPONSE');
         throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED');
@@ -132,10 +133,17 @@ export class CloudTransport implements CodeTransport {
   }
   async complete(messages: Message[], signal: AbortSignal, context?:GenerationContext):Promise<{code:string;model:string}&TokenUsage> {
     let budget=this.maxTokens;
+    // Bounded full source: never trim current HTML to make an edit fit.
+    const inputBytes=Buffer.byteLength(JSON.stringify(messages));
+    if(inputBytes>300000)throw new Fault('LLM_INPUT_TOO_LARGE',413);
     if(context){
-      try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
-      catch(error){if(signal.aborted||error instanceof Fault&&['LLM_AUTH','LLM_QUOTA','LLM_RATE_LIMIT','LLM_MODEL_NOT_FOUND','LLM_NETWORK_CONFIGURATION','LLM_PROXY_UNSUPPORTED','LLM_PROXY_AUTH','LLM_TLS','INSECURE_TLS_CONFIGURATION'].includes(error.code))throw error;}
+      try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);const contextLength=selected?.context_length;if(Number.isSafeInteger(contextLength)&&contextLength>0&&inputBytes+budget>contextLength)throw new Fault('LLM_CONTEXT_LIMIT',413);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
+      catch(error){if(signal.aborted||error instanceof Fault&&['LLM_CONTEXT_LIMIT','LLM_AUTH','LLM_QUOTA','LLM_RATE_LIMIT','LLM_MODEL_NOT_FOUND','LLM_NETWORK_CONFIGURATION','LLM_PROXY_UNSUPPORTED','LLM_PROXY_AUTH','LLM_TLS','INSECURE_TLS_CONFIGURATION'].includes(error.code))throw error;}
       if(budget<2048)throw new Fault('LLM_OUTPUT_BUDGET_TOO_SMALL',502);
+      // Conservative byte-based token allowance; no hidden source truncation.
+      // Router catalogue limits do not guarantee the selected upstream's context.
+      // Exact token counts depend on the provider tokenizer.
+
     }
     const body={model:this.model,messages,stream:Boolean(context),[this.tokenField]:budget,...(context?{stream_options:{include_usage:true}}:{}),...(this.provider==='openrouter'?{reasoning:{effort:'low',exclude:true},provider:{require_parameters:true}}:{}),...(this.temperature===undefined?{}:{temperature:this.temperature})};
     if(context){signal.throwIfAborted();context.dispatch(this);return this.response('chat/completions',signal,body,response=>this.stream(response,signal,context));}
@@ -162,7 +170,7 @@ export class CloudTransport implements CodeTransport {
     try{
       // SSE's terminal marker ends the response even if a proxy keeps the body
       // open. Still require a valid model and stop reason before accepting code.
-      for(;!done;){const part=await reader.read();if(part.done)break;total+=part.value.length;if(total>1210000)throw new ProviderFailure('BODY_TOO_LARGE',model,code,tokens);buffer+=decoder.decode(part.value,{stream:true});let end;while(!done&&(end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).replace(/\r$/,''));buffer=buffer.slice(end+1);}if(buffer.length>200000)throw new ProviderFailure('BODY_TOO_LARGE',model,code,tokens);}
+      for(;!done;){const part=await reader.read();if(part.done)break;total+=part.value.length;if(total>1210000)throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE',model,code,tokens);buffer+=decoder.decode(part.value,{stream:true});let end;while(!done&&(end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).replace(/\r$/,''));buffer=buffer.slice(end+1);}if(Buffer.byteLength(buffer)>1210000)throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE',model,code,tokens);}
       if(!done){buffer+=decoder.decode();if(buffer.trim())frame(buffer.replace(/\r$/,''));}checkpoint(true);
       if(finish==='length'&&model)throw new CloudOutputFailure(model,code,tokens);
       if(!done||finish!=='stop'||!model)throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED',model,code,tokens);

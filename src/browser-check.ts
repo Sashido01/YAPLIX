@@ -5,6 +5,7 @@ import { parseEvent, Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import { PROJECT_ROOT } from './store.ts';
 import { summarizeSession } from './orchestrator/gameplay-check.ts';
+import { checkFullHtml } from './full-html-check.ts';
 import type { EvidenceLevel, ValidationAspect } from './validation.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
@@ -12,7 +13,7 @@ const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
 for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
-export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause'; levels?:string[]; checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number };
+export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause' | 'full-html'; levels?:string[]; checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number };
 export const VALIDATION_BUDGETS = Object.freeze({ totalMs:18000, startupMs:8000, renderMs:3500, criticalMs:100, interactionMs:6000, restartMs:2500 });
 export class BrowserFailure extends Fault {
   readonly feedback:string;
@@ -44,6 +45,8 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
   const abort=()=>void browser.close().catch(()=>{});deadline.addEventListener('abort',abort,{once:true});
   if(deadline.aborted)abort();
   try {
+    // Existing instrumented games retain their stricter lifecycle checks.
+    if(!/data-yaplix-start\b/.test(html))return await checkFullHtml(browser,html,deadline);
     let checks:BrowserEvidence['checks'];
     for(const width of [320,390]) {
       if(deadline.aborted)throw new Fault('BROWSER_TIMEOUT',504);
