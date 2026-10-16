@@ -37,12 +37,17 @@ git push -u origin HEAD
 выполняемых проверок: docs-only не запускает browsers, unit-only запускает все
 unit обеих ОС, runtime/config/неизвестный diff требует FULL. Имена checks
 не меняются. Исправляйте ошибки новыми коммитами, снова ждите CI.
+Исключение владельца MICRO-019 до 29 октября 2026: repository Actions временно
+выключены. В этот период выполняйте локальные typecheck/build, критические unit,
+короткий Playwright и secret scan; отсутствие hosted run не является зелёным CI.
+Объём FAST/FULL и файлы workflow сохранены. [Состояние и восстановление](docs/ci-economy.md).
 Перед release вручную выполните FULL на точном release commit. Повторного
 полного Actions run на push main нет; post-merge smoke выполняется локально.
 Текущие ограничения server protection описаны в [аудите](docs/micro-018-report.md).
 
 Владелец разрешает самостоятельно выполнить стандартный merge обычной задачи
-после успешных проверок. Не ждите участников ради внутренних инженерных решений.
+после успешных проверок (в период MICRO-019 — указанных локальных проверок).
+Не ждите участников ради внутренних инженерных решений.
 Если GitHub protection требует review, выполните требование; обход запрещён.
 Используйте разрешённый настройками merge method, предпочтительно merge commit
 для сохранения истории. Не используйте `--admin`. После ошибки merge сначала
@@ -68,7 +73,9 @@ git status --short
 Финальный отчёт: MAIN, MERGED, RUN, VERIFIED, MVP, LIVE, DOCS, NEXT.
 
 Запрещены force-push, прямой push/удаление main, reset --hard/clean для разрешения
-конфликтов, отключение CI и изменение permissions. Локальный pre-push запрещает
+конфликтов, отключение CI и изменение permissions вне прямого временного
+разрешения MICRO-019. Восстановление Actions требует команды владельца.
+Локальный pre-push запрещает
 remote refs/heads/main, но не заменяет серверную защиту:
 [ограничения](docs/github-ruleset.md). Установка — [development-setup](docs/development-setup.md).
 

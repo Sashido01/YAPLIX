@@ -10,7 +10,7 @@ import {createApp} from '../src/api.ts';
 import {Fault} from '../src/contracts.ts';
 import {html,spec} from './helpers.ts';
 const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
-function route(complete:CodeTransport['complete'],name:'primary'|'secondary'|'local'='primary'):CodeTransport{return{route:name,provider:'synthetic',model:'requested-model',complete,readiness:async()=>'ready'};}
+function route(complete:CodeTransport['complete'],name:'primary'|'secondary'|'local'='primary'):CodeTransport{return{route:name,provider:'synthetic',model:name==='secondary'?'backup-requested':'requested-model',complete,readiness:async()=>'ready'};}
 
 test('independent specification preserves arbitrary mechanics, audience and previous code without classification',()=>{
  const request={...spec,prompt:'Арканоид: победа после 12 кирпичей; стрелками.',genre:'custom/new-genre',mechanics:['reflect','collect']};
@@ -47,9 +47,9 @@ test('HTTP failures are not retried; only explicit configured fallback runs and 
  let calls=0;const failed=route(async()=>{calls++;throw new Fault('LLM_RATE_LIMIT',429);});const secondary=route(async()=>({code:html,model:'secondary-actual'}),'secondary');
  await assert.rejects(new GenerationEngine([failed],{check:evidence}).generate(spec),/LLM_RATE_LIMIT/);assert.equal(calls,1);
  const output=await new GenerationEngine([failed,secondary],{check:evidence}).generate(spec);assert.equal(output.generation!.fallback,true);assert.equal(output.generation!.attempts[0].route,'primary');assert.equal(output.model,'secondary-actual');
- assert.throws(()=>configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_API_KEY:'synthetic',CLOUD_MODEL:'openai/paid-model'}),/FREE_MODEL_REQUIRED/);
+ assert.equal(configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_API_KEY:'synthetic',CLOUD_MODEL:'openai/paid-model'})!.routes[0].model,'openrouter/free');
  assert.throws(()=>configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_BASE_URL:'https://openrouter.ai./api/v1',CLOUD_API_KEY:'synthetic',CLOUD_MODEL:'openai/paid-model'}),/FREE_MODEL_REQUIRED/);
- assert.throws(()=>configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_API_KEY:'synthetic',LLM_FALLBACK:'secondary',SECONDARY_API_KEY:'synthetic',SECONDARY_BASE_URL:'https://paid.example/v1',SECONDARY_MODEL:'paid'}),/FREE_MODEL_REQUIRED/);
+ assert.equal(configuredGenerator({LIVE_PROVIDER:'cloud',CLOUD_API_KEY:'synthetic',LLM_FALLBACK:'secondary',SECONDARY_API_KEY:'synthetic',SECONDARY_BASE_URL:'https://paid.example/v1',SECONDARY_MODEL:'paid'})!.routes.length,1);
  assert.equal(configuredGenerator({}),undefined);
 });
 test('single concurrency slot, deadline, abort and close bound the entire generation pipeline',async()=>{

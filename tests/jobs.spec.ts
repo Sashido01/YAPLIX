@@ -6,13 +6,23 @@ import {createApp} from '../src/api.ts';
 import {GenerationEngine} from '../src/live.ts';
 import {demoArtifact} from '../src/demo.ts';
 import {GenerationJobs} from '../src/jobs.ts';
-test('controlled LIVE worker runs while touch round continues; completed checked version never opens automatically',async({page,context},info)=>{
+
+test('LIVE exposes exactly three provider modes and restores the selected mode and idea',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'Создать',exact:true}).click();
+  await page.locator('#mode').selectOption('live');
+  expect(await page.locator('#provider-mode option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value))).toEqual(['auto','ollama-cloud','openrouter']);
+  await page.locator('#provider-mode').selectOption('openrouter');await page.locator('#prompt').fill('Собери игру три в ряд');
+  await page.reload();await page.getByRole('button',{name:'Создать',exact:true}).click();
+  await expect(page.locator('#provider-mode')).toHaveValue('openrouter');await expect(page.locator('#prompt')).toHaveValue('Собери игру три в ряд');
+  const selector=await page.locator('#provider-mode').boundingBox();expect(selector!.x).toBeGreaterThanOrEqual(0);expect(selector!.width).toBeLessThanOrEqual(await page.evaluate(()=>innerWidth));
+});
+test('controlled LIVE worker runs while touch round continues; completed checked version never opens automatically',async({page,context,baseURL},info)=>{
   test.setTimeout(35000);
   test.skip(!['chromium-320','webkit-390'].includes(info.project.name),'Controlled LIVE worker on small Chromium/WebKit; other profiles run key-free background scenario.');
   const store=new Store(':memory:');let release!:()=>void;const held=new Promise<void>(done=>release=done);
   const engine=new GenerationEngine([{route:'primary',provider:'synthetic',model:'fixture-model',readiness:async()=>'ready',complete:async()=>{await held;return{code:html,model:'actual-fixture-model'};}}],{timeoutMs:15000});
   const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);const previous=store.save(spec,demoArtifact(spec));
-  await context.route('http://127.0.0.1:3210/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:req.headers(),...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:req.headers(),...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
   try{await page.goto('/?game='+previous.gameId);const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Старт',exact:true}).tap();await game.getByRole('button',{name:'Вправо',exact:true}).tap();const realm=await page.locator('iframe').elementHandle();await page.getByRole('button',{name:'Создать',exact:true}).click();await page.locator('#mode').selectOption('live');await page.locator('#generate').click();await page.locator('#jobs-toggle').click();await expect(page.locator('#jobs-list')).toContainText('Генерация');await expect(page.locator('#versions')).toBeEnabled();await page.getByRole('button',{name:'Игра',exact:true}).click();await game.getByRole('button',{name:'Вправо',exact:true}).tap();await expect(game.locator('#score')).toHaveText('2');release();await expect(page.locator('#job-toast-open')).toBeVisible({timeout:16000});await expect(game.locator('#score')).toHaveText('2');expect(await realm!.evaluate(node=>node===document.querySelector('iframe'))).toBe(true);await expect(page.locator('#export')).toHaveAttribute('href','/api/versions/'+previous.versionId+'/export');const completed=jobs.list('owner')[0];expect(completed.stage).toBe('completed');expect(store.getVersion(completed.versionId!).validationStatus).toBe('passed');}finally{release();await jobs.close();store.close();}
 });
 test('background completion preserves live round, iframe realm, touch, navigation, single toast and durable job',async({page,context,isMobile})=>{

@@ -1,35 +1,66 @@
-# TASK-011 — точка продолжения
+# MICRO-019 — текущее состояние
 
-База: main `ec97f37edd29485d5095382fc1a646065307eeb8` (TASK-010, PR #15).
-Implementation HEAD: `c10ae6b8616a6b1fb4d51c87e6a31cc9766d728b`.
-Рабочая ветка: `codex/task-011-mvp-worker`; документационный checkpoint `8f824569fc8d675fc624f2ba1155da17fd9e2ab6`.
-PR [#16](https://github.com/Sashido01/YAPLIX/pull/16) создан, hosted CI запущен; этот снимок сделан до merge. Новая сессия должна сначала проверить actual PR state, не создавать повторный PR и не начинать исправления заново.
+Работа от main `4ea156eca6881eb58269459205ecbd6fc1739f47`, ветка
+`codex/micro-019-reliable-generation`. Дата: 16 октября 2026.
+Git delivery и фактический merge SHA подтверждаются в PR receipt/итоговом ответе;
+этот файл фиксирует проверку продукта до публикации.
 
-## Реализовано
+## Реализовано и проверено локально
 
-- LIVE больше не скрывает исходный отказ ошибкой бюджета repair; лимиты не увеличены.
-- Telegram bootstrap повторяет временный API отказ с backoff 2–60 s; close отменяет ожидание. Identity/auth/webhook/consumer conflicts остаются блокирующими.
-- Worker/DEMO не переписывались: production сценарий уже работает.
+- Два production route: Ollama Cloud `gemma4:31b` и OpenRouter `openrouter/free`.
+  UI: Auto / Ollama Cloud / OpenRouter Free; backend проверяет выбор.
+- Auto переключается к резерву максимум один раз в задании; retired route
+  сохраняется через restart и ручной Continue. Без providerMode старые задания
+  нормализуются в Auto, без удаления исходных requests/черновиков.
+- Нет повторного обхода provider list. Default budget 4 calls/300 s, bounded
+  backoff, Retry-After, request default <=60 s, lifetime 12 calls/job.
+- HTTP/SSE auth/quota не повторяются на том же route; quota в models API
+  останавливает dispatch. Cancel, checkpoints, idempotency и SQLite сохраняются.
+- Удаление ключа недоступного route не блокирует startup/доступ к старым jobs.
+  Idempotent replay старого запроса не требует доступности текущего provider.
+- Typecheck/build и 94 целевых generation/platform/MVP/network tests PASS.
+  Python checker/tests (19), CI policy tests (8), diff secret scan PASS.
+- Selector/draft reload: Chromium 320/360/390/430, tablet/desktop, WebKit390:
+  7/7 PASS. Ещё 4/4 controlled worker/background smoke на Chromium320/WebKit390
+  проверили sandbox, touch, сохранение и reload (LLM transport synthetic). Это эмуляция, не физические Android/iOS/Telegram клиенты.
 
-## Проверено реально
+## LIVE — PARTIAL, не PASS
 
-- Production backend с существующей .env/DB на loopback: DEMO job completed, игра сохранена.
-- Один реальный Ollama Cloud ответ отклонён за JS; один targeted repair того же job завершился completed и сохранил checked LIVE version. Всего два generation POST, массовые пробы не нужны.
-- Реальные getMe/getWebhookInfo/setMyCommands/getChatMenuButton: HTTP 200/ok. Consumer сообщил TELEGRAM_POLLING_READY. Это ещё не подтверждение ответов всех команд в физическом Telegram.
-- Реальный getUpdates long poll: HTTP 200/ok, пустая очередь. Без входящих owner messages нельзя объявлять реальные command replies PASS.
-- npm test: 108/108 PASS, build/typecheck пройдены. Новый тест сначала воспроизвёл JOB_ATTEMPT_LIMIT вместо JAVASCRIPT_EXCEPTION; после исправления PASS. Независимый focused source review: без actionable P1/P2. Gitleaks staged diff: clean.
-- .env не редактировалась. Пользовательские старые rows не удалялись; добавлены разрешённые DEMO/LIVE проверки. docs/Keys_Bilayn.pdf остаётся локальным untracked.
-- Итог .env SHA-256 совпал; SQLite quick_check=ok, FK errors=0, 16 games/34 versions после добавления двух проверочных игр.
+Playwright отправил точный запрос «Собери игру три в ряд» через production
+createApp/GenerationJobs в отдельной `.local/micro019/live.sqlite`.
+Ровно **4 inference HTTP POST из 4 разрешённых**:
 
-## Оставшееся / команды
+1. Ollama Cloud `gemma4:31b`: `LLM_CONNECTION_INTERRUPTED`, 11.0 s.
+2. OpenRouter `openrouter/free`: `LLM_TIMEOUT`, 45.0 s.
+3. Тот же разрешённый резерв: `LLM_TIMEOUT`, 45.0 s.
+4. Тот же резерв: `LLM_TIMEOUT`, 45.0 s.
 
-- Подтвердить реальные owner-команды /start /games /new /status /help и четыре текстовые кнопки: отправить их боту при работающем YAPLIX. Controlled regression проверяет команды, реальные ответы без входящих updates не заявлять.
-- Нет подтверждённого VPN/proxy дефекта: не менять сеть/transport вслепую. HTTPS Mini App отложен.
-- Запуск: Windows YAPLIX.cmd; Ubuntu Node 24.18+ (24.x), npm run app. После обновления закрыть только свой старый backend.
-- Проверки: npm test (включает build); npm run typecheck; node --test tests/task011.test.ts tests/telegram-bot.test.ts. Hosted Windows/Ubuntu/secret-scan обязательны перед merge.
-- Evidence (private ignored): .local/task-011/{regression-before.log,targeted.log,unit.log,runtime.log,telegram-api.jsonl}. Не публиковать env/SQLite/сырые сообщения.
-- Не повторять общий аудит TASK-010, модельные бенчмарки, семь performance baseline runs и Quick Tunnel эксперименты. Исходные ошибки/решения: [known-errors](known-errors.md).
+Job закончил `needs_attention`, сохранил идею, 4 attempts и исходную историю;
+получено 0 HTML bytes, сохранено 0 игровых версий. Повторных обращений к Ollama
+после switch не было. Причина сетевой недоступности не установлена; VPN/proxy
+или исчерпание квоты по этим таймаутам не доказаны. Шаблон не подставлялся.
+Gameplay (swap/match/score/goal/restart/touch и повторное открытие LIVE-игры)
+**NOT VERIFIED**, потому что provider не вернул игру. Ещё inference без нового
+разрешения владельца запрещён. Локальные synthetic PASS этого не заменяют.
+Evidence (private ignored): `.local/micro019/live-job.json`,
+`.local/micro019/inference-count.json`, `.local/micro019-units.log`,
+`.local/micro019-final-units.log`, `.local/micro019-browser.log`,
+`.local/micro019-jobs-browser.log`.
 
-## Git delivery
+## CI и продолжение
 
-Текущий этап — review/CI/merge согласно AGENTS.md. Перед продолжением: git status --short; git log -3 --oneline; проверить authoritative PR state. Завершённый PR не оставлять открытым. Финальные SHA/PR и post-merge smoke фиксируются в PR receipt и ответе; этот файл — pre-merge snapshot.
+Actions выключены на уровне **только этого private repo**: REST
+`actions/permissions.enabled=false`. Исходно enabled=true, allowed_actions=all,
+sha_pinning_required=false. Repository checks ID379465037 disabled_manually;
+dynamic Dependabot ID379465492 не допускает отдельный disable (422), но
+repository-wide off блокирует и его. Running/pending runs: 0. Main protected=false,
+required checks/contexts пусты. Permissions/protection не обходились и не менялись.
+[FAST/FULL и восстановление](ci-economy.md) сохранены; включать только по команде
+владельца. Нельзя называть отсутствие hosted runs зелёным CI.
+
+Windows запуск — `YAPLIX.cmd`; после обновления повторный запуск штатно заменяет
+свой backend. `.env`, пользовательская SQLite, существующие игры и
+`docs/Keys_Bilayn.pdf` не изменяются проверкой MICRO-019. Экспериментальный
+Game Orchestrator, Telegram и внешняя сеть не исправляются в этой задаче.
+Следующая продуктовая проверка — новый разрешённый live-бюджет при доступном API
+и реальные Playwright действия до цели; без этого MVP приёмка остаётся PARTIAL.

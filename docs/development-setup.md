@@ -41,7 +41,10 @@ Hosted FAST: npm ci/cache, Python и policy tests, types/build, все Ubuntu un
 и Windows contracts/SQLite smoke. FULL по риску/вручную добавляет все Windows
 units, реальный server-side Chromium checker, 12 frontend-профилей, performance.
 LLM transport синтетический, реальный inference отдельно. Actions SHA pinned,
-обязательны green exact PR head, merge и smoke main. Перед релизом manual FULL;
+обычно обязательны green exact PR head, merge и smoke main. MICRO-019 до 29 октября
+2026 временно выключает hosted Actions по разрешению владельца: локально нужны
+typecheck/build, критические unit, короткий Playwright и secret scan. Эти результаты
+не заменяют доказательство Windows/Ubuntu hosted PASS. Перед релизом manual FULL;
 post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 [workflow](../CONTRIBUTING.md).
 
@@ -52,51 +55,44 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | Параметр | Значение / ограничение |
 | --- | --- |
 | PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
-| LIVE_PROVIDER | cloud default; ollama-cloud/ollama/none; no OpenRouter key отключает только LIVE |
-| CLOUD_BASE_URL / MODEL / API_KEY | exact base / concrete model ID / secret; default model google/gemma-4-31b-it:free |
+| LIVE_PROVIDER | auto default; ollama-cloud/openrouter/none; без обоих ключей отключается только LIVE |
+| CLOUD_BASE_URL / CLOUD_API_KEY | только https://openrouter.ai/api/v1 / secret; model фиксирован openrouter/free |
 | LLM_TIMEOUT_MS | 1000..300000, default 180000, один запуск engine |
 | LLM_REQUEST_TIMEOUT_MS | 1000..LLM_TIMEOUT_MS, default min(60000, LLM_TIMEOUT_MS), один transport request |
-| LLM_MAX_ATTEMPTS | 1..12, default 6, provider-call budget автоматического цикла; lifetime ≤12/job |
-| LLM_MAX_DURATION_MS | 1000..1800000, default 600000, durable deadline цикла включая ожидание |
+| LLM_MAX_ATTEMPTS | 1..12, default 4, provider-call budget автоматического цикла; lifetime ≤12/job |
+| LLM_MAX_DURATION_MS | 1000..1800000, default 300000, durable deadline цикла включая ожидание |
 | LLM_RETRY_MS | 10..60000, default 2000, exponential backoff с cap 60000 |
 | LLM_MAX_TOKENS | 256..32000, default 12000; доступный completion cap из models API может снизить бюджет |
 | LLM_TOKEN_FIELD | max_tokens default или max_completion_tokens |
 | LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
 | LLM_REPAIRS | 0..2, default 1 |
 | LLM_PROMPT_STYLE | spec code default; direct явно передаёт естественный запрос; .env.example выбирает direct |
-| LLM_FALLBACK | none default; explicit secondary/ollama-cloud/openrouter/ollama |
-| OLLAMA_CLOUD_API_KEY / MODEL | оба обязательны для Ollama Cloud; fixed https://ollama.com/v1; exact ID из API |
-| LLM_LOCAL_FALLBACK | 1 добавляет необязательный local route после явно настроенного cloud |
-| SECONDARY_BASE_URL / MODEL / API_KEY | все три при secondary |
-| OLLAMA_BASE_URL / MODEL | loopback 11434 / qwen2.5-coder:14b default |
+| OLLAMA_CLOUD_API_KEY | server secret; только gemma4:31b на https://ollama.com/v1 |
+| Legacy model/fallback/local knobs | CLOUD_MODEL, OLLAMA_CLOUD_MODEL, LLM_FALLBACK, SECONDARY_*, OLLAMA_BASE_URL/MODEL, LLM_LOCAL_FALLBACK игнорируются при production routing |
 | YAPLIX_MODE / HOST / PUBLIC_URL | local loopback; explicit LAN/HTTPS |
 | YAPLIX_ACCESS_KEY | random URL-safe 32..128 chars, shared team access |
 | TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS | server token / один положительный ID владельца для публичного HTTPS |
 | TELEGRAM_AUTH_MAX_AGE | 30..900 s, default 300; session TTL 1 h |
 | TELEGRAM_UPDATES | token + single owner включают одного poller; off явно отключает |
 
-OpenRouter exact base https://openrouter.ai/api/v1, default model
-**google/gemma-4-31b-it:free**; разрешены concrete `:free` IDs из models API с явно
-нулевыми pricing.prompt и pricing.completion. Проверка выполняется до каждого
-provider dispatch, включая legacy synchronous API; отсутствие модели/нулевой цены
-блокирует вызов. `openrouter/free` сохраняет совместимость, не default selection.
-Платные OpenRouter модели запрещены. [Официальный каталог и pricing](https://openrouter.ai/docs/api/api-reference/models/get-model).
-Ollama Cloud включается явно как secondary
-или primary; generic nonfree secondary для OpenRouter primary блокируется.
-Для прямого Ollama Cloud используйте ID из [официального API](https://ollama.com/api/tags)
-и [документации](https://docs.ollama.com/cloud), server проверяет models API.
-Альтернативный provider/Gateway21t требует
-официально известные base/model, не угадываются. TLS bypass, credentials/query в
-base запрещены. Readiness GET models не доказывает successful inference.
+MICRO-019 ограничивает production LIVE двумя фиксированными маршрутами:
+`gemma4:31b` на `https://ollama.com/v1` и `openrouter/free` на
+`https://openrouter.ai/api/v1`. Никаких concrete `:free` IDs, generic providers,
+локальной модели или платного OpenRouter fallback. [Ollama Cloud](https://docs.ollama.com/cloud).
+В UI Auto предпочитает настроенный Ollama Cloud, затем OpenRouter Free;
+явные Ollama Cloud/OpenRouter Free никогда не переключают provider.
+Переход Auto записывается durable: после него job не возвращается к предыдущему
+provider при retry/Continue/restart. `.env` и существующие jobs не удаляются.
+Legacy `LIVE_PROVIDER=cloud` сопоставляется с openrouter, `ollama` с auto.
+TLS bypass, credentials/query в base запрещены. Readiness GET models не доказывает
+successful inference или квоту аккаунта. Кредиты/план автоматически не меняются.
 
-При создании cloud-задания запрашивается SSE stream с usage; Local Ollama job
-использует native NDJSON stream. Checkpoint записывается
+При создании cloud-задания запрашивается SSE stream с usage. Checkpoint записывается
 порциями (около 4 KB или 750 ms при поступлении данных), плюс при завершении/обрыве;
 данные usage могут отсутствовать у конкретного провайдера. Полученный completion
 cap уменьшает запрошенный output budget; меньше 2048 tokens для задания даёт
 `LLM_OUTPUT_BUDGET_TOO_SMALL`. Reasoning usage сохраняется отдельно, если возвращён.
-Local job сохраняет output tokens из eval_count, если получен; legacy synchronous
-API получает полный ответ без streaming checkpoints.
+Legacy synchronous API получает полный ответ без streaming checkpoints.
 
 `npm run benchmark:generation` — один ordinary prompt, один provider dispatch,
 repair/fallback отключены, generation deadline 60 s. Benchmark не использует
@@ -120,7 +116,7 @@ X-Yaplix-Telegram-Session. Events дополнительно session bearer. Ori
 | GET /api/jobs | последние 50 заданий своего principal, без raw checkpoint |
 | GET /api/gallery | две авторские игры, без автоматической записи в library |
 | POST /api/gallery/:id | `{}` → сохранённая authored/unverified version по явному действию |
-| POST /api/jobs | `{spec,mode?,previousVersionId?,idempotencyKey,telegramConsent?}` → job summary 202 |
+| POST /api/jobs | `{spec,mode?,providerMode?,previousVersionId?,idempotencyKey,telegramConsent?}` → job summary 202; providerMode: auto/ollama-cloud/openrouter |
 | GET /api/jobs/:jobId | своё задание, исходный запрос/checkpoint/metadata |
 | POST /api/jobs/:jobId/cancel | `{}` → cancelled; запрос/черновик остаются |
 | POST /api/jobs/:jobId/continue | `{}` → queued для needs_attention/failed/cancelled; Retry-After и attempt cap |
@@ -154,12 +150,13 @@ Job idempotencyKey — 8..100 букв/цифр/`_`/`-`, уникален вну
 идентичного request возвращает job, другой request с тем же key даёт conflict.
 Telegram consent принимается только с signed Telegram session. Один worker,
 pending ≤20 глобально/≤3 на владельца, total ≤1000 jobs, checkpoints ≤100 MB
-суммарно/≤200000 bytes на job. Default автоматический цикл — до 6 provider calls,
-до 4 запусков worker и 600 s суммарно с ожиданием; lifetime limit 12 calls/job.
+суммарно/≤200000 bytes на job. Default автоматический цикл — до 4 provider calls,
+до 4 запусков worker и 300 s суммарно с ожиданием; lifetime limit 12 calls/job.
 `Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
 Отдельный лимит фактических вызовов генерации к провайдерам — 6/min owner и 12/min
-global, включая repair и Continue. Recoverable ошибки получают bounded retry/fallback,
+global, включая repair и Continue. Recoverable ошибки получают bounded retry,
+а другой provider допускается только в Auto;
 а rate limit — Retry-After. Cooldown и scheduled retry хранятся в job metadata;
 неизвестный потенциально оплаченный исход не повторяется слепо по тому же route.
 Действия — [known errors](known-errors.md).
@@ -180,7 +177,7 @@ playable version и completed job записываются одной SQLite tra
 переключение игры происходит по явному «Открыть»/«Играть».
 
 Quota/auth/model/context/output-budget отказ охлаждает route на 15 min, не покупает
-credits и позволяет другой явно настроенный route. При `429` cooldown соответствует
+credits и позволяет другой provider только в Auto. При обычном `429` cooldown соответствует
 Retry-After (если отсутствует — 60 s). Исчерпание automatic calls/runs/duration,
 отсутствие всех routes или обязательного Chromium оставляют needs_attention.
 Авторская gallery никогда не участвует в LIVE recovery; authored/unverified

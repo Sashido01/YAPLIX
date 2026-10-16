@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Fault, parseSpec, uuid } from './contracts.ts';
 import { demoArtifact } from './demo.ts';
-import { boundedCode } from './transport.ts';
+import { boundedCode, providerMode } from './transport.ts';
 import type { Generator, GenerationContext, CodeTransport } from './transport.ts';
 import type { Store } from './store.ts';
 import type { GenerationJob, JobSummary } from './job-contracts.ts';
 import { RateLimit } from './rate-limit.ts';
 
-type Request = Pick<GenerationJob,'spec'|'mode'|'previousVersionId'|'telegramConsent'>;
+type Request = Pick<GenerationJob,'spec'|'mode'|'previousVersionId'|'telegramConsent'|'providerMode'>;
 const terminal=new Set(['completed','cancelled','failed','needs_attention']);
 const now=()=>new Date().toISOString();
 function processAlive(pid:number){if(!Number.isSafeInteger(pid)||pid<=0)return true;try{process.kill(pid,0);return true;}catch(error){return(error as NodeJS.ErrnoException).code!=='ESRCH';}}
@@ -21,7 +21,7 @@ export class GenerationJobs {
   private wake?:ReturnType<typeof setTimeout>; private maxCalls:number;private duration:number;private retryMs:number;
   constructor(store:Store,generator?:Generator,notify?:GenerationJobs['notify'],autoStart=true,policy:{maxCalls?:number;durationMs?:number;retryMs?:number}={}) {
     this.store=store;this.generator=generator;this.notify=notify;
-    this.maxCalls=policy.maxCalls??6;this.duration=policy.durationMs??600000;this.retryMs=policy.retryMs??2000;
+    this.maxCalls=policy.maxCalls??4;this.duration=policy.durationMs??300000;this.retryMs=policy.retryMs??2000;
     if(!Number.isSafeInteger(this.maxCalls)||this.maxCalls<1||this.maxCalls>12||!Number.isSafeInteger(this.duration)||this.duration<1000||this.duration>1800000||!Number.isSafeInteger(this.retryMs)||this.retryMs<10||this.retryMs>60000)throw new Fault('INVALID_JOB_POLICY');
     if(autoStart)this.start();
   }
@@ -38,15 +38,15 @@ export class GenerationJobs {
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='needs_attention' AND json_extract(metadata,'$.automaticLimit') IS NULL").all()){
       const job=this.get(String(row.owner_id),String(row.job_id));if(!['LLM_TIMEOUT','LLM_OUTPUT_TRUNCATED','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_RATE_LIMIT','JOB_RESTART_UNCERTAIN'].includes(job.errorCode??'')||job.attempts>=12)continue;
       job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;
-      if(job.provider&&!['openrouter','ollama'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
+      if(job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
       job.stage='queued';job.recoveryState='retry_scheduled';job.retryAt=Math.max(job.retryAt??0,Date.now()+this.retryMs);this.write(job);
     }
     // Recover within the original durable budget. Unknown billed dispatches
     // exclude that route; another configured route may recover the draft.
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status IN ('generating','validating','repairing')").all()){
       const job=this.get(String(row.owner_id),String(row.job_id));job.errorCode='JOB_RESTART_UNCERTAIN';
-      if(job.provider&&!['openrouter','ollama'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
-      job.deadlineAt??=Date.now()+this.duration;job.automaticLimit??=this.maxCalls;const routes=(this.generator as Generator&{routes?:CodeTransport[]}|undefined)?.routes;const available=!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))||/<\/html>\s*$/i.test(job.checkpoint);job.stage=this.canRetry(job)&&available?'queued':'needs_attention';job.retryAt=Date.now()+this.retryMs;job.recoveryState=job.stage==='queued'?'retry_scheduled':'failed_permanent';this.write(job);
+      if(job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
+      job.deadlineAt??=Date.now()+this.duration;job.automaticLimit??=this.maxCalls;const routes=this.routes(job);const available=!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))||/<\/html>\s*$/i.test(job.checkpoint);job.stage=this.canRetry(job)&&available?'queued':'needs_attention';job.retryAt=Date.now()+this.retryMs;job.recoveryState=job.stage==='queued'?'retry_scheduled':'failed_permanent';this.write(job);
     }
     if(this.notify){this.notificationTimer=setInterval(()=>void this.notifications().catch(()=>{}),5000);this.notificationTimer.unref();}
     this.kick();
@@ -56,7 +56,7 @@ export class GenerationJobs {
     if(!row)throw new Fault('JOB_NOT_FOUND',404);
     const request=JSON.parse(String(row.request)),metadata=JSON.parse(String(row.metadata));
     const version=row.version_id?this.store.getVersion(String(row.version_id)):null;
-    return{...request,...metadata,jobId:String(row.job_id),ownerId:owner,idempotencyKey:String(row.idempotency_key),stage:row.status,attempts:Number(row.attempts),checkpoint:String(row.checkpoint),createdAt:String(row.created_at),updatedAt:String(row.updated_at),versionId:version?.versionId??null,gameId:version?.gameId??null,notificationClaimed:row.notified===1};
+    return{...request,...metadata,providerMode:providerMode(metadata.providerMode??request.providerMode),jobId:String(row.job_id),ownerId:owner,idempotencyKey:String(row.idempotency_key),stage:row.status,attempts:Number(row.attempts),checkpoint:String(row.checkpoint),createdAt:String(row.created_at),updatedAt:String(row.updated_at),versionId:version?.versionId??null,gameId:version?.gameId??null,notificationClaimed:row.notified===1};
   }
   summary(job:GenerationJob):JobSummary {
     const {checkpoint,ownerId:_owner,idempotencyKey:_key,...rest}=job;return{...rest,checkpointBytes:Buffer.byteLength(checkpoint)};
@@ -68,13 +68,14 @@ export class GenerationJobs {
   create(owner:string,key:unknown,request:Request) {
     this.assertWorker();
     if(typeof key!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(key))throw new Fault('IDEMPOTENCY_KEY_REQUIRED');
-    request={...request,spec:parseSpec(request.spec)};if(!['demo','live'].includes(request.mode)||typeof request.telegramConsent!=='boolean')throw new Fault('INVALID_JOB_REQUEST');
+    request={...request,spec:parseSpec(request.spec),providerMode:providerMode(request.providerMode)};if(!['demo','live'].includes(request.mode)||typeof request.telegramConsent!=='boolean')throw new Fault('INVALID_JOB_REQUEST');
     if(request.previousVersionId)this.store.getVersion(uuid(request.previousVersionId));
     const encoded=JSON.stringify(request);
     const found=this.store.db.prepare('SELECT job_id,request FROM generation_jobs WHERE owner_id=? AND idempotency_key=?').get(owner,key);
-    if(found){if(found.request!==encoded)throw new Fault('IDEMPOTENCY_CONFLICT',409);return this.summary(this.get(owner,String(found.job_id)));}
+    if(found){const canonical=(r:Request)=>JSON.stringify([parseSpec(r.spec),r.mode,r.previousVersionId??null,r.telegramConsent,providerMode(r.providerMode)]);if(canonical(JSON.parse(String(found.request)))!==canonical(request))throw new Fault('IDEMPOTENCY_CONFLICT',409);return this.summary(this.get(owner,String(found.job_id)));}
+    if(request.mode==='live')this.routes(request,true);
     if(request.mode==='live'&&this.generator){this.limits.take('jobs-global',12);this.limits.take('jobs-'+owner,6);}
-    const selected=request.mode==='live'?(this.generator as Generator&{routes?:CodeTransport[]}|undefined)?.routes?.[0]:undefined;
+    const selected=request.mode==='live'?this.routes(request)?.[0]:undefined;
     const job:GenerationJob={...request,jobId:randomUUID(),ownerId:owner,idempotencyKey:key,provider:selected?.provider??null,requestedModel:selected?.model??null,actualModel:null,createdAt:now(),updatedAt:now(),stage:'queued',attempts:0,checkpoint:'',checkpointAt:null,history:[],errorCode:null,retryAt:null,versionId:null,gameId:null,notificationClaimed:false,telegramState:request.telegramConsent?'pending':'none',outputTokens:null,reasoningTokens:null,elapsedMs:0,automaticRuns:0,automaticLimit:this.maxCalls,deadlineAt:Date.now()+this.duration,blockedRoutes:[]};
     this.store.transaction(()=>{
       this.assertWorker();
@@ -85,6 +86,10 @@ export class GenerationJobs {
       this.store.db.prepare('INSERT INTO generation_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,0)').run(job.jobId,owner,key,encoded,job.stage,0,'',JSON.stringify(this.metadata(job)),job.createdAt,job.updatedAt,null);
     });
     this.kick();return this.summary(job);
+  }
+  private routes(job:Pick<GenerationJob,'providerMode'>,strict=false){
+    const engine=this.generator as (Generator&{routes?:CodeTransport[];routesFor?:(mode?:GenerationJob['providerMode'])=>CodeTransport[]})|undefined;
+    try{return engine?.routesFor?engine.routesFor(job.providerMode??'auto'):engine?.routes;}catch(error){if(strict)throw error;return [];}
   }
   private metadata(job:GenerationJob){const{jobId:_id,ownerId:_owner,idempotencyKey:_key,spec:_spec,mode:_mode,previousVersionId:_previous,telegramConsent:_consent,stage:_stage,attempts:_attempts,checkpoint:_checkpoint,createdAt:_created,updatedAt:_updated,versionId:_version,gameId:_game,notificationClaimed:_claim,...metadata}=job;return metadata;}
   private write(job:GenerationJob) {
@@ -97,7 +102,7 @@ export class GenerationJobs {
   }
   private assertWorker(){if(!this.started||!this.store.db.prepare('SELECT 1 FROM generation_worker WHERE slot=1 AND instance=? AND expires_at>?').get(this.instance,Date.now()))throw new Fault('JOB_WORKER_BUSY',409);}
   cancel(owner:string,id:string){const job=this.get(owner,id);if(job.stage==='completed')throw new Fault('JOB_STATE',409);job.stage='cancelled';job.errorCode='REQUEST_CANCELLED';this.write(job);if(this.active?.id===id)this.active.controller.abort();return this.summary(job);}
-  continue(owner:string,id:string){const job=this.get(owner,id);if(!['needs_attention','failed','cancelled'].includes(job.stage))throw new Fault('JOB_STATE',409);if(job.attempts>=12)throw new Fault('JOB_ATTEMPT_LIMIT',409);if(job.retryAt&&Date.now()<job.retryAt)throw new Fault('JOB_RETRY_AFTER',429);const pending=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE status IN ('queued','generating','validating','repairing')").get()?.n),owned=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(owner)?.n);if(pending>=20||owned>=3)throw new Fault('JOB_QUEUE_FULL',429);job.stage='queued';job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[];job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;this.write(job);this.kick();return this.summary(job);}
+  continue(owner:string,id:string){const job=this.get(owner,id);if(!['needs_attention','failed','cancelled'].includes(job.stage))throw new Fault('JOB_STATE',409);if(job.attempts>=12)throw new Fault('JOB_ATTEMPT_LIMIT',409);if(job.retryAt&&Date.now()<job.retryAt)throw new Fault('JOB_RETRY_AFTER',429);const pending=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE status IN ('queued','generating','validating','repairing')").get()?.n),owned=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(owner)?.n);if(pending>=20||owned>=3)throw new Fault('JOB_QUEUE_FULL',429);job.stage='queued';job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;this.write(job);this.kick();return this.summary(job);}
   claim(owner:string,id:string){this.get(owner,id);return this.store.db.prepare("UPDATE generation_jobs SET notified=1 WHERE job_id=? AND owner_id=? AND status='completed' AND notified=0").run(id,owner).changes===1;}
   private canRetry(job:GenerationJob){return(job.attempts<(job.automaticLimit??this.maxCalls)||Boolean(job.checkpointOrigin&&/<\/html>\s*$/i.test(job.checkpoint)))&&(job.automaticRuns??0)<4&&Date.now()<(job.deadlineAt??0);}
   private kick(){
@@ -114,7 +119,7 @@ export class GenerationJobs {
     const initialElapsed=job.elapsedMs;
     const update=(action:(job:GenerationJob)=>void)=>{job=this.get(owner,id);action(job);job.elapsedMs=initialElapsed+Date.now()-began;this.write(job);};
     const cooldowns:Record<string,{until:number;code:string}>={};for(const row of this.store.db.prepare("SELECT metadata FROM generation_jobs WHERE json_extract(metadata,'$.routeCooldowns') IS NOT NULL").all()){const saved=JSON.parse(String(row.metadata)).routeCooldowns;for(const [key,value]of Object.entries(saved) as [string,{until:number;code:string}][])if(value.until>Date.now()&&value.until>(cooldowns[key]?.until??0))cooldowns[key]=value;}
-    const context:GenerationContext={cooldowns,cooldownRoute:(route,until,code)=>update(j=>{j.routeCooldowns={...(j.routeCooldowns??{}),[route.provider+'/'+route.model]:{until,code}};}),checkpoint:job.checkpoint,blockedRoutes:job.blockedRoutes??[],...(job.checkpointOrigin?{checkpointOrigin:job.checkpointOrigin}:{}),blockRoute:(route)=>update(j=>{j.blockedRoutes=[...new Set([...(j.blockedRoutes??[]),route.provider+'/'+route.model])];}),maxCalls:Math.min(6,(job.automaticLimit??this.maxCalls)-job.attempts),stage:stage=>update(j=>{if(!terminal.has(j.stage))j.stage=stage;}),dispatch:route=>{if(Date.now()>=(job.deadlineAt??0))throw new Fault('JOB_DURATION_LIMIT',409);if(job.attempts>=(job.automaticLimit??this.maxCalls))throw new Fault('JOB_ATTEMPT_LIMIT',409);try{this.limits.take('provider-global',12);this.limits.take('provider-'+owner,6);}catch(error){update(j=>{j.retryAt=Date.now()+60000;});throw error;}update(j=>{j.attempts++;j.provider=route.provider;j.requestedModel=route.model;j.actualModel=null;});},partial:(code,model,tokens)=>update(j=>{if(code){j.checkpoint=code;j.checkpointAt=now();j.checkpointOrigin=model&&j.provider&&j.requestedModel?{provider:j.provider,requestedModel:j.requestedModel,model}:undefined;}if(model)j.actualModel=model;if(tokens?.outputTokens!==undefined)j.outputTokens=tokens.outputTokens;if(tokens?.reasoningTokens!==undefined)j.reasoningTokens=tokens.reasoningTokens;}),attempt:attempt=>update(j=>{j.history.push(attempt);j.history=j.history.slice(-12);}),retryAt:at=>update(j=>{j.retryAt=Math.max(j.retryAt??0,at);})};
+    const context:GenerationContext={providerMode:job.providerMode,cooldowns,cooldownRoute:(route,until,code)=>update(j=>{j.routeCooldowns={...(j.routeCooldowns??{}),[route.provider+'/'+route.model]:{until,code}};}),checkpoint:job.checkpoint,blockedRoutes:job.blockedRoutes??[],...(job.checkpointOrigin?{checkpointOrigin:job.checkpointOrigin}:{}),blockRoute:(route)=>{const key=route.provider+'/'+route.model;if(!context.blockedRoutes!.includes(key))context.blockedRoutes!.push(key);update(j=>{j.blockedRoutes=[...context.blockedRoutes!];});},maxCalls:Math.min(6,(job.automaticLimit??this.maxCalls)-job.attempts),stage:stage=>update(j=>{if(!terminal.has(j.stage))j.stage=stage;}),dispatch:route=>{if(Date.now()>=(job.deadlineAt??0))throw new Fault('JOB_DURATION_LIMIT',409);if(job.attempts>=(job.automaticLimit??this.maxCalls))throw new Fault('JOB_ATTEMPT_LIMIT',409);try{this.limits.take('provider-global',12);this.limits.take('provider-'+owner,6);}catch(error){update(j=>{j.retryAt=Date.now()+60000;});throw error;}update(j=>{if(j.provider&&j.requestedModel&&j.provider!==route.provider){const previous=j.provider+'/'+j.requestedModel;if(!context.blockedRoutes!.includes(previous))context.blockedRoutes!.push(previous);j.blockedRoutes=[...context.blockedRoutes!];j.retiredRoutes=[...new Set([...(j.retiredRoutes??[]),previous])];}j.attempts++;j.provider=route.provider;j.requestedModel=route.model;j.actualModel=null;});},partial:(code,model,tokens)=>update(j=>{if(code){j.checkpoint=code;j.checkpointAt=now();j.checkpointOrigin=model&&j.provider&&j.requestedModel?{provider:j.provider,requestedModel:j.requestedModel,model}:undefined;}if(model)j.actualModel=model;if(tokens?.outputTokens!==undefined)j.outputTokens=tokens.outputTokens;if(tokens?.reasoningTokens!==undefined)j.reasoningTokens=tokens.reasoningTokens;}),attempt:attempt=>update(j=>{j.history.push(attempt);j.history=j.history.slice(-12);}),retryAt:at=>update(j=>{j.retryAt=Math.max(j.retryAt??0,at);})};
     try{
       const previous=job.previousVersionId?this.store.getVersion(job.previousVersionId):undefined;
       if(job.mode==='live'&&!this.generator)throw new Fault('LLM_NOT_CONFIGURED',503);
@@ -125,8 +130,8 @@ export class GenerationJobs {
       this.store.saveAndCompleteJob(id,owner,job.spec,artifact,job.previousVersionId,this.instance);
     }catch(error){job=this.get(owner,id);if(job.stage==='completed')return;job.stage=job.stage==='cancelled'?'cancelled':'needs_attention';job.errorCode=Date.now()>=(job.deadlineAt??Infinity)?'JOB_DURATION_LIMIT':this.stopping?'JOB_RESTART_UNCERTAIN':signal.aborted?'REQUEST_CANCELLED':error instanceof Fault?error.code:'JOB_PERSISTENCE_ERROR';job.elapsedMs=initialElapsed+Date.now()-began;
       if(!this.stopping&&!signal.aborted&&['LLM_TIMEOUT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_OUTPUT_TRUNCATED','LLM_HTTP','LLM_RATE_LIMIT','RATE_LIMIT','LLM_NETWORK_OR_RESPONSE'].includes(job.errorCode)&&this.canRetry(job)){
-        if(job.errorCode==='LLM_TIMEOUT'&&job.provider&&!['openrouter','ollama'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
-        const routes=(this.generator as Generator&{routes?:CodeTransport[]})?.routes;
+        if(job.errorCode==='LLM_TIMEOUT'&&job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
+        const routes=this.routes(job);
         if(!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))){job.stage='queued';job.retryAt=Math.max(job.retryAt??0,Date.now()+Math.min(60000,this.retryMs*2**((job.automaticRuns??1)-1)));job.recoveryState=job.errorCode==='LLM_RATE_LIMIT'?'waiting_for_provider':'retry_scheduled';}
       }
       if(job.stage==='needs_attention')job.recoveryState='failed_permanent';this.write(job);}

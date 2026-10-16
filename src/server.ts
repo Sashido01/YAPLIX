@@ -20,7 +20,7 @@ const adapter = configuredGenerator();
 const telegram = new TelegramSessions();
 const control = new RuntimeControl(policy, runtimeKey(), () => telegram.singleOwner());
 control.onShutdown = () => stop();
-const jobs=new GenerationJobs(store,adapter,(owner,gameId,versionId)=>telegram.notifyReady(owner,gameId,versionId,policy.mode==='https'?policy.origin:undefined),false,{maxCalls:Number(process.env.LLM_MAX_ATTEMPTS??6),durationMs:Number(process.env.LLM_MAX_DURATION_MS??600000),retryMs:Number(process.env.LLM_RETRY_MS??2000)});
+const jobs=new GenerationJobs(store,adapter,(owner,gameId,versionId)=>telegram.notifyReady(owner,gameId,versionId,policy.mode==='https'?policy.origin:undefined),false,{maxCalls:Number(process.env.LLM_MAX_ATTEMPTS??4),durationMs:Number(process.env.LLM_MAX_DURATION_MS??300000),retryMs:Number(process.env.LLM_RETRY_MS??2000)});
 const bot=telegram.singleOwner()&&process.env.TELEGRAM_UPDATES!=='off'?new TelegramBot(store,jobs,process.env,{publicEndpoint:()=>control.active()&&policy.mode==='https'&&policy.origin&&policy.origin!=='https://pending.invalid'?{origin:policy.origin,instance:control.instance}:undefined}):undefined;
 let botStartup:Promise<void>|undefined;
 const app = createApp(store, adapter, async () => {

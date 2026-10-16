@@ -1,8 +1,42 @@
 # Экономный CI (MICRO-018)
 
+## Временная пауза MICRO-019
+
+По прямому разрешению владельца 16 октября 2026 hosted Actions временно выключены
+на уровне репозитория до 29 октября 2026. Проверенный REST state —
+`actions/permissions: enabled:false`; отсутствие новых runs не является CI PASS.
+До изменения были `enabled:true`, `allowed_actions:all`,
+`sha_pinning_required:false`. Workflow-файлы и FAST/FULL policy ниже не изменены.
+
+Исходно активны `Repository checks` (ID 379465037) и dynamic
+`Dependabot Updates` (ID 379465492). Dynamic workflow отверг отдельное disable
+с HTTP 422, поэтому authoritative pause — repository-wide `enabled:false`;
+поле workflow state может по-прежнему показывать active. На момент паузы
+активных runs не было. В этот период локально выполняются typecheck/build,
+критические unit, короткий Playwright и secret scan. Реальный LIVE проверяется
+отдельно; локальный Windows результат не подтверждает hosted Ubuntu/Windows.
+
+Восстановление выполняется **только по команде владельца**, без автоматического
+таймера. Из корня клона через аутентифицированный GitHub CLI:
+
+1. Прочитайте `gh api repos/Sashido01/yaplix/actions/permissions` и состояния
+   `gh api repos/Sashido01/yaplix/actions/workflows`. При необходимости верните
+   исходно активные workflows через `PUT .../actions/workflows/ID/enable`.
+2. Выполните команду ниже; сохраните исходное
+   `sha_pinning_required:false`, не меняйте protection, permissions token или тариф.
+3. Повторным GET подтвердите `enabled:true`, `allowed_actions:all` и исходное
+   значение SHA pinning, затем проверьте workflow states и новые runs.
+4. Перед release выполните manual FULL на **точном intended release SHA** и
+   дождитесь Windows, Ubuntu и secret-scan. Сама дата окончания паузы не является
+   разрешением выпустить релиз без этой проверки.
+
+```sh
+gh api --method PUT repos/Sashido01/yaplix/actions/permissions -F enabled=true -f allowed_actions=all
+```
+
 ## Что выполняется
 
-Один workflow `Repository checks` запускается на каждом `pull_request`,
+При включённых Actions один workflow `Repository checks` запускается на каждом `pull_request`,
 на `merge_group`, вручную (`workflow_dispatch`) и при опубликованном release.
 Нет `paths`/`paths-ignore`, расписания и повторного полного run на `push main`.
 Перед релизом нужно вручную запустить FULL на точном release commit и дождаться
@@ -55,7 +89,7 @@ Typecheck и build разнесены на отдельные steps, чтобы 
 Protection/rulesets endpoints вернули 403 с требованием Pro/Public.
 Настройки не изменены. Checks выявляют отказ, но текущая серверная защита
 не запрещает merge красного PR. Обязательное ожидание checks остаётся правилом
-команды. Для технического запрета merge нужна отдельная разрешённая настройка
+команды вне временного owner exception MICRO-019 выше. Для технического запрета merge нужна отдельная разрешённая настройка
 доступной серверной защиты; workflow не способен заменить её.
 См. [границы защиты](github-ruleset.md).
 
