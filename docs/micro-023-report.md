@@ -102,7 +102,15 @@ Hosted Windows/Ubuntu/FULL не заявляются. Production baseline и п�
 
 ## LIVE-приёмка — только после разрешения владельца
 
-**LIVE NOT_TESTED. Реальных inference POST в MICRO-023: 0.**
+В реализации MICRO-023 было 0 inference POST. Следующая приёмка MICRO-023L
+выполнила 1 разрешённый Ollama POST на main d66151a: полный HTML/сохранение/export
+успешны, desktop сбор20/20/win/loss/restart подтверждены, но mobile touch FAILED
+в Chromium emulation из-за `'ontouchstart' in window` feature detection.
+**LIVE PARTIAL; editing NOT_RUN** по owner stop condition. Исходник не исправлялся
+вручную; все private evidence в `.local/micro023l/`, факты — [handoff](SESSION_HANDOFF.md).
+Процедура ниже описывает подготовку приёмки; её не следует автоматически повторять
+или расходовать неиспользованный второй POST без нового разрешения.
+
 Минимум **2 inference POST**: 1 создание + 1 изменение одной игры через Ollama.
 Без automatic retries, repairs или OpenRouter; при ошибке остановиться, новый
 POST требует нового разрешения. Существующий .env не редактировать.
