@@ -66,7 +66,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
   const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'15000'});
   try {
-    await page.goto(server.url);await page.getByRole('button',{name:'Создать',exact:true}).click();await page.locator('#mode').selectOption('live');if(scenario==='success'||scenario==='repair')await createAndOpen(page);else {await page.locator('#generate').click();await page.locator('#jobs-toggle').click();}
+    await page.goto(server.url);await page.getByRole('button',{name:'Создать',exact:true}).click();if(scenario==='success'||scenario==='repair')await createAndOpen(page,'Создать игру',false);else {await page.locator('#generate').click();await page.locator('#jobs-toggle').click();}
     if(scenario==='success'||scenario==='repair'){
       // The real server-side checker is included in the 15-second generation
       // deadline above. Wait for that contract, rather than a five-second poll.

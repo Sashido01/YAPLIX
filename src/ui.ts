@@ -2,12 +2,15 @@ import { mountGame } from './runtime.ts';
 import type { GameVersion, GameSpec, GameEvent } from './contracts.ts';
 import type { JobSummary } from './job-contracts.ts';
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const prompt = el<HTMLTextAreaElement>('prompt'), mode = el<HTMLSelectElement>('mode'), message = el('message');
+const prompt = el<HTMLTextAreaElement>('prompt'), message = el('message');
 let current: GameVersion | null = null, unmount: (() => void) | undefined, busy = false, action: AbortController | undefined;
 let telegramToken:string|undefined;
 const versions = new Map<string, GameVersion>(); // Bounded read cache, at most 3 × 200 KB HTML.
 const errors: Record<string, string> = {
-  INVALID_PROVIDER_MODE:'Выберите Auto, Ollama Cloud или OpenRouter Free.',
+  INVALID_PROVIDER_MODE:'Выберите Ollama Cloud или OpenRouter Free.',
+  LLM_INPUT_TOO_LARGE:'Текущий HTML слишком велик для выбранного запроса. Исходная версия сохранена.',
+  LLM_HTTP_BODY_TOO_LARGE:'Внешний HTTP-сервис отклонил размер запроса (413). Проверьте диагностику провайдера и прокси.',
+  LLM_RESPONSE_BODY_TOO_LARGE:'Ответ модели превысил безопасный лимит транспорта. Полная игра не получена; черновик сохранён.',
   LLM_NOT_CONFIGURED:'LIVE не настроен. Добавьте серверный API key и откройте диагностику.',
   BROWSER_INSTALL_REQUIRED:'Для LIVE установите браузер проверки: npm run checker:install.',
   BROWSER_SANDBOX_UNAVAILABLE:'Браузер проверки не смог запустить защищённую среду. Проверьте настройку Chromium sandbox по инструкции Ubuntu.',
@@ -71,7 +74,7 @@ async function api(path: string, body?: unknown, token?: string, signal?: AbortS
   } finally {clearTimeout(timer);}
 }
 function lock(value: boolean) {
-  busy=value; el<HTMLButtonElement>('generate').disabled=value; el<HTMLButtonElement>('improve').disabled=value||!current; mode.disabled=value;
+  busy=value; el<HTMLButtonElement>('generate').disabled=value; el<HTMLButtonElement>('improve').disabled=value||!current; el<HTMLSelectElement>('provider-mode').disabled=value;el<HTMLSelectElement>('edit-provider-mode').disabled=value;
   el<HTMLSelectElement>('versions').disabled=value||!current;el<HTMLButtonElement>('replay').disabled=value||!current;
   el('cancel').hidden=!value; document.body.classList.toggle('waiting',value);
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.disabled=value||button.dataset.view==='play'&&!current);
@@ -132,33 +135,35 @@ function mount(version:GameVersion,session:Parameters<typeof mountGame>[2]&{toke
 async function show(version:GameVersion,signal?:AbortSignal) {
   const [history,session]=await Promise.all([api('/api/games/'+version.gameId,undefined,undefined,signal),api(`/api/versions/${version.versionId}/sessions`,{},undefined,signal)]);
   if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
-  current=version;remember(version);mode.value=version.method==='mock'?'demo':'live';help();
+  current=version;remember(version);
   const title=history.versions[0]?.spec.prompt??version.spec.prompt;
   el('game-title').textContent=title.length>100?title.slice(0,100)+'…':title;
   const bytes=new TextEncoder().encode(version.html).length;
   el('artifact-info').textContent=`HTML: ${(bytes/1024).toFixed(1)} КБ.`+(bytes>100_000?' Большая игра: запуск и расход памяти могут увеличиться.':'');
-  el('provenance').textContent=version.method==='mock'?'DEMO · без LLM':`${version.method} · ${version.model??'модель неизвестна'}`;
+  el('provenance').textContent=version.method==='mock'?'Тестовая игра · без LLM':'Игра создана · '+(version.provider==='openrouter'?'OpenRouter Free':'Ollama Cloud');
   if(version.method==='authored')el('provenance').textContent='Авторская офлайн-игра · не LIVE';
   el('share').hidden=location.protocol!=='https:';
-  if(version.generation)el('provenance').textContent+=` · попыток: ${version.generation.attempts.length}${version.generation.fallback?' · резервный маршрут':''} · запуск/пауза/offline 320/390 px · механики и финал не подтверждены`;
+  if(version.generation)el('provenance').textContent+=' · техническая проверка пройдена · '+(version.generation.browser.checks?.some(c=>c.aspect==='gameplay-observed'&&c.level==='VERIFIED')?'gameplay проверен частично':'механика не проверена')+'; победа и поражение не подтверждены';
   const restart=version.generation?.browser.checks?.find(c=>c.aspect==='restart-works');
   if(restart?.level==='VERIFIED')el('provenance').textContent+=' · повторный запуск проверен';
   el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;
   const download=el<HTMLAnchorElement>('export');download.href=`/api/versions/${version.versionId}/export`;download.removeAttribute('aria-disabled');
   const select=el<HTMLSelectElement>('versions');select.replaceChildren();select.disabled=busy;
-  history.versions.forEach((v:Omit<GameVersion,'html'>,i:number)=>{const option=document.createElement('option');option.value=v.versionId;option.textContent=`Версия ${i+1} · ${new Date(v.createdAt).toLocaleString()} · ${v.method}`;option.selected=v.versionId===version.versionId;select.append(option);});
+  history.versions.forEach((v:Omit<GameVersion,'html'>,i:number)=>{const option=document.createElement('option');option.value=v.versionId;option.textContent=`Версия ${i+1} · ${new Date(v.createdAt).toLocaleString()}`;option.selected=v.versionId===version.versionId;select.append(option);});
   const address=new URL(location.href);address.searchParams.set('game',version.gameId);address.searchParams.set('version',version.versionId);window.history.replaceState(null,'',address);
   view('play');mount(version,session);await Promise.all([stats(version),list(signal)]);
 }
-function help(){el('mode-help').textContent=mode.value==='demo'?'DEMO использует авторскую игру «Звёздный курьер». Число в запросе задаёт цель. Это не LLM.':'LIVE создаёт HTML/JS моделью. Ожидание может занять несколько минут. Ошибка не переключает режим на DEMO.';}
-mode.addEventListener('change',help);
-const providerSelect=el<HTMLSelectElement>('provider-mode');
-try{const saved=sessionStorage.getItem('yaplix-provider-mode');if(saved&&['auto','ollama-cloud','openrouter'].includes(saved))providerSelect.value=saved;}catch{}
-providerSelect.addEventListener('change',()=>{try{sessionStorage.setItem('yaplix-provider-mode',providerSelect.value);}catch{}});
+const providerSelect=el<HTMLSelectElement>('provider-mode'),editProviderSelect=el<HTMLSelectElement>('edit-provider-mode');
+try{const saved=sessionStorage.getItem('yaplix-provider-mode');if(saved&&['ollama-cloud','openrouter'].includes(saved))providerSelect.value=saved;}catch{}
+editProviderSelect.value=providerSelect.value;
+for(const select of [providerSelect,editProviderSelect])select.addEventListener('change',()=>{
+  providerSelect.value=editProviderSelect.value=select.value;
+  try{sessionStorage.setItem('yaplix-provider-mode',select.value);}catch{}
+});
 const submitting=new Set<string>();
 async function submitJob(buttonId:string,text:string,previousVersionId?:string){
   if(submitting.has(buttonId))return;submitting.add(buttonId);const button=el<HTMLButtonElement>(buttonId);button.disabled=true;
-  const request={spec:spec(text),mode:mode.value,providerMode:el<HTMLSelectElement>('provider-mode').value,...(previousVersionId?{previousVersionId}:{}),telegramConsent:Boolean(telegramToken&&el<HTMLInputElement>('telegram-notify').checked)};
+  const request={spec:spec(text),mode:'live',providerMode:(previousVersionId?editProviderSelect:providerSelect).value,...(previousVersionId?{previousVersionId}:{}),telegramConsent:Boolean(telegramToken&&el<HTMLInputElement>('telegram-notify').checked)};
   // randomUUID is unavailable on private-IP HTTP LAN; getRandomValues works there.
   const bytes=crypto.getRandomValues(new Uint8Array(16));let key=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');try{const old=JSON.parse(sessionStorage.getItem('yaplix-pending-'+buttonId)??'null');if(old?.request===JSON.stringify(request))key=old.key;sessionStorage.setItem('yaplix-pending-'+buttonId,JSON.stringify({key,request:JSON.stringify(request)}));}catch{}
   try{await api('/api/jobs',{...request,idempotencyKey:key});try{sessionStorage.removeItem('yaplix-pending-'+buttonId);}catch{}message.textContent='Задание сохранено. Можно продолжать играть.';await pollJobs();}
@@ -181,14 +186,15 @@ window.addEventListener('offline',()=>{el('connection').hidden=false;});window.a
 try{prompt.value=sessionStorage.getItem('yaplix-draft')??prompt.value;}catch{}
 prompt.addEventListener('input',()=>{try{sessionStorage.setItem('yaplix-draft',prompt.value);}catch{}});
 window.visualViewport?.addEventListener('resize',()=>{document.body.dataset.keyboard=String(innerHeight-visualViewport!.height-visualViewport!.offsetTop>150);});
-const stageNames:Record<string,string>={retry_scheduled:'Автоматический повтор',waiting_for_provider:'Ожидание провайдера',failed_permanent:'Нужно действие',queued:'В очереди',generating:'Генерация',validating:'Проверка',repairing:'Исправление',completed:'Готово',needs_attention:'Нужно действие',cancelled:'Отменено',failed:'Ошибка'};
+const stageNames:Record<string,string>={retry_scheduled:'Автоматический повтор',waiting_for_provider:'Ожидание провайдера',failed_permanent:'Нужно действие',queued:'В очереди',generating:'Генерация',validating:'Проверка',repairing:'Исправление',completed:'Готово · игра создана',needs_attention:'Генерация не завершена',cancelled:'Отменено',failed:'Ошибка'};
 let polling=false,pollTimer:ReturnType<typeof setTimeout>|undefined,toast:JobSummary|undefined,closed=false;
 function openJob(job:JobSummary){if(job.versionId){el('jobs-panel').hidden=true;return attempt(async signal=>{await api('/api/jobs/'+job.jobId+'/notification',{},undefined,signal);if(toast?.jobId===job.jobId)dismissToast();await show(await readVersion(job.versionId!,signal),signal);message.textContent=job.previousVersionId?'Новая версия сохранена. Предыдущая доступна в списке.':'Игра сохранена. Можно играть.';});}}
 function renderJobs(jobs:JobSummary[]){
   const count=jobs.filter(j=>['queued','generating','repairing','validating'].includes(j.stage)).length;el('jobs-toggle').textContent='Задания'+(count?' ('+count+')':'');
   const container=el('jobs-list');container.replaceChildren();if(!jobs.length)container.textContent='Заданий пока нет.';
-  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=(job.providerMode?({auto:'Auto','ollama-cloud':'Ollama Cloud',openrouter:'OpenRouter Free'}[job.providerMode]+' · '):'')+`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`+((job.actualModel??job.requestedModel)?' · '+(job.actualModel??job.requestedModel):'');row.append(title,status);
-    const failures=job.history.filter(attempt=>attempt.errorCode).slice(-3);if(failures.length){const reasons=document.createElement('p');reasons.className='muted';reasons.textContent='Предыдущие попытки: '+failures.map(attempt=>`${attempt.provider} / ${attempt.model??attempt.requestedModel}: ${errors[attempt.errorCode!]??attempt.errorCode}`).join(' · ');row.append(reasons);}
+  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=(job.providerMode?({auto:'Ollama Cloud (прежний Auto)','ollama-cloud':'Ollama Cloud',openrouter:'OpenRouter Free'}[job.providerMode]+' · '):'')+`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`;row.append(title,status);if(job.actualModel||job.requestedModel){const details=document.createElement('details'),summary=document.createElement('summary'),model=document.createElement('p');summary.textContent='Диагностика модели';model.textContent='Маршрут: '+(job.provider??'не выбран')+'; запрошено: '+(job.requestedModel??'нет')+'; ответ: '+(job.actualModel??'не получен');details.append(summary,model);row.append(details);}
+    if(job.validation){const validation=document.createElement('p');validation.textContent=job.validation.level==='FAILED'?'Обнаружена ошибка при проверке игры.':job.validation.level==='VERIFIED'?'Техническая проверка пройдена; полная механика не подтверждена.':'Проверка не завершена.';row.append(validation);}
+    const failures=job.history.filter(attempt=>attempt.errorCode).slice(-3);if(failures.length){const reasons=document.createElement('p');reasons.className='muted';reasons.textContent='Предыдущие попытки: '+failures.map(attempt=>`${attempt.provider} / ${attempt.model??attempt.requestedModel}: ${errors[attempt.errorCode!]??attempt.errorCode}`).join(' · ');const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Диагностика попыток';details.append(summary,reasons);row.append(details);}
     if(job.errorCode){const error=document.createElement('p');error.textContent=(errors[job.errorCode]??`Черновик сохранён (${job.errorCode}).`)+(job.retryAt?' Повтор после '+new Date(job.retryAt).toLocaleTimeString()+'.':'');row.append(error);}
     const actions=document.createElement('div');actions.className='actions';const add=(label:string,work:()=>Promise<unknown>|void)=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>{button.disabled=true;void Promise.resolve().then(work).then(()=>pollJobs()).catch(error=>{message.textContent=error.message;button.disabled=false;});});actions.append(button);return button;};
       if(job.stage==='completed')add('Играть',()=>openJob(job));

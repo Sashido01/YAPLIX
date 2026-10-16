@@ -10,7 +10,7 @@ import {html,spec} from './helpers.ts';
 
 const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
 const request={spec,mode:'live' as const,telegramConsent:false};
-const route=(complete:CodeTransport['complete'],provider='openrouter',name:CodeTransport['route']='primary'):CodeTransport=>({route:name,provider,model:provider+'-requested',complete,readiness:async()=>'ready'});
+const route=(complete:CodeTransport['complete'],provider='synthetic-free',name:CodeTransport['route']='primary'):CodeTransport=>({route:name,provider,model:provider+'-requested',complete,readiness:async()=>'ready'});
 const pause=(ms=5)=>new Promise<void>(done=>setTimeout(done,ms));
 async function waitFor(jobs:GenerationJobs,id:string,predicate:(job:GenerationJob)=>boolean){for(let i=0;i<400;i++){const job=jobs.get('owner',id);if(predicate(job))return job;await pause();}throw Error('JOB_WAIT_TIMEOUT');}
 const terminal=(job:GenerationJob)=>['completed','needs_attention','cancelled','failed'].includes(job.stage);
@@ -24,12 +24,12 @@ test('a zero-byte secondary failure cannot relabel the inherited checkpoint or i
  const id=jobs.create('owner','origin-checkpoint',request).jobId;
  try{
   const draft=await waitFor(jobs,id,terminal);assert.equal(draft.stage,'needs_attention');assert.equal(draft.checkpoint,html);
-  assert.deepEqual(draft.checkpointOrigin,{provider:'openrouter',requestedModel:primary.model,model:'primary-actual'});
+  assert.deepEqual(draft.checkpointOrigin,{provider:'synthetic-free',requestedModel:primary.model,model:'primary-actual'});
   assert.equal(draft.history.at(-1)?.model,'secondary-actual');assert.equal(a,1);assert.equal(b,1);
   await jobs.close();metadata(store,id,{retryAt:null},'validating');
   jobs=new GenerationJobs(store,new GenerationEngine([primary,secondary],{check:evidence}),undefined,true,{retryMs:10});
   const done=await waitFor(jobs,id,terminal);assert.equal(done.stage,'completed');assert.equal(done.actualModel,'primary-actual');
-  const artifact=store.getVersion(done.versionId!);assert.equal(artifact.provider,'openrouter');assert.equal(artifact.model,'primary-actual');assert.equal(a,1);assert.equal(b,1);assert.equal(store.list().length,1);
+  const artifact=store.getVersion(done.versionId!);assert.equal(artifact.provider,'synthetic-free');assert.equal(artifact.model,'primary-actual');assert.equal(a,1);assert.equal(b,1);assert.equal(store.list().length,1);
  }finally{await jobs.close();store.close();}
 });
 
@@ -71,7 +71,7 @@ test('a queued deadline ends the job before a later provider Retry-After',async(
 
 test('cancelled recovered-checkpoint browser validation cannot save a late successful result',async()=>{
  const store=new Store(':memory:');let jobs=new GenerationJobs(store);const id=jobs.create('owner','late-checkpoint-check',request).jobId;let release!:()=>void;const held=new Promise<void>(done=>release=done);let validating=false,calls=0;
- try{await waitFor(jobs,id,terminal);await jobs.close();metadata(store,id,{deadlineAt:Date.now()+60000,automaticLimit:6,checkpointOrigin:{provider:'openrouter',requestedModel:'openrouter-requested',model:'checkpoint-actual'}},'validating',html);
+ try{await waitFor(jobs,id,terminal);await jobs.close();metadata(store,id,{deadlineAt:Date.now()+60000,automaticLimit:6,checkpointOrigin:{provider:'synthetic-free',requestedModel:'synthetic-free-requested',model:'checkpoint-actual'}},'validating',html);
   jobs=new GenerationJobs(store,new GenerationEngine([route(async()=>{calls++;return{code:html,model:'fresh'};})],{check:async()=>{validating=true;await held;return evidence();}}),undefined,true,{retryMs:10});
   for(let i=0;i<400&&!validating;i++)await pause();assert.equal(validating,true);jobs.cancel('owner',id);release();await jobs.close();
   assert.equal(jobs.get('owner',id).stage,'cancelled');assert.equal(jobs.get('owner',id).versionId,null);assert.equal(calls,0);assert.equal(store.list().length,0);
@@ -89,7 +89,7 @@ test('durable call budget stops repeated refusals and an idempotent result creat
 
 test('a recovered checkpoint finishing browser validation after its durable deadline creates no version',async()=>{
  const store=new Store(':memory:');let jobs=new GenerationJobs(store);const id=jobs.create('owner','late-deadline-check',request).jobId;let release!:()=>void;const held=new Promise<void>(done=>release=done);let checkSignal:AbortSignal|undefined,calls=0;
- try{await waitFor(jobs,id,terminal);await jobs.close();metadata(store,id,{deadlineAt:Date.now()+120,automaticLimit:6,checkpointOrigin:{provider:'openrouter',requestedModel:'openrouter-requested',model:'checkpoint-actual'}},'validating',html);
+ try{await waitFor(jobs,id,terminal);await jobs.close();metadata(store,id,{deadlineAt:Date.now()+120,automaticLimit:6,checkpointOrigin:{provider:'synthetic-free',requestedModel:'synthetic-free-requested',model:'checkpoint-actual'}},'validating',html);
   jobs=new GenerationJobs(store,new GenerationEngine([route(async()=>{calls++;return{code:html,model:'fresh'};})],{check:async(_html,signal)=>{checkSignal=signal;await held;return evidence();}}),undefined,true,{retryMs:10});
   for(let i=0;i<400&&!checkSignal?.aborted;i++)await pause();assert.equal(checkSignal?.aborted,true);release();const result=await waitFor(jobs,id,terminal);assert.equal(result.stage,'needs_attention');assert.equal(result.errorCode,'JOB_DURATION_LIMIT');assert.equal(result.versionId,null);assert.equal(calls,0);assert.equal(store.list().length,0);
  }finally{release();await jobs.close();store.close();}

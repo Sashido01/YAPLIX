@@ -19,7 +19,7 @@ function placement(board:number[][],initial:number[][]){
 
 test('authored falling blocks: touch, rotation, collision, gravity, locking, lines/explosions, win/loss, restart and offline',async({page,context})=>{
   test.setTimeout(45000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('/');await page.locator('#gallery button').filter({hasText:'Искры'}).click();const game=page.frameLocator('#game iframe');
+  await page.goto('/');await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#gallery button').filter({hasText:'Искры'}).click();const game=page.frameLocator('#game iframe');
   await game.locator('[data-yaplix-start]').click();const start=await state(game);expect(start.piece.matrix).toHaveLength(1);
   await game.locator('#rotate').click();expect((await state(game)).piece.matrix).toHaveLength(4);
   await game.locator('#left').click();const moved=await state(game);expect(moved.piece.x).toBeLessThan(start.piece.x);
@@ -41,7 +41,7 @@ function path(walls:number[][],from:{x:number;y:number},target:{x:number;y:numbe
   for(let i=0;i<queue.length;i++){const item=queue[i];if(item.x===target.x&&item.y===target.y)return item.keys;for(const [key,dx,dy]of [['ArrowLeft',-1,0],['ArrowRight',1,0],['ArrowUp',0,-1],['ArrowDown',0,1]] as const){const x=item.x+dx,y=item.y+dy,k=x+','+y;if(walls[y]?.[x]===0&&!seen.has(k)&&!blocked.some(e=>e.x===x&&e.y===y)){seen.add(k);queue.push({x,y,keys:[...item.keys,key]});}}}return null;
 }
 test('authored maze: walls, real movement/score, pursuing enemies, attainable end, restart and offline',async({page,context})=>{
-  await page.goto('/');await page.locator('#gallery button').filter({hasText:'лабиринт'}).click();const game=page.frameLocator('#game iframe');await game.locator('[data-yaplix-start]').click();
+  await page.goto('/');await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#gallery button').filter({hasText:'лабиринт'}).click();const game=page.frameLocator('#game iframe');await game.locator('[data-yaplix-start]').click();
   await game.locator('#up').click();expect((await state(game)).player).toEqual({x:1,y:1});
   const initial=await state(game);await expect.poll(async()=>(await state(game)).enemies).not.toEqual(initial.enemies);
   const enemy=(await state(game)).enemies[0],current=await state(game),loss=path(current.walls,current.player,enemy)!;

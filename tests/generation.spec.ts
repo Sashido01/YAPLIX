@@ -4,6 +4,17 @@ import {GenerationEngine} from '../src/live.ts';
 import {Store} from '../src/store.ts';
 import {createApp} from '../src/api.ts';
 import {html,spec} from './helpers.ts';
+
+test('MICRO-023 arbitrary full HTML runs without telemetry or fixed selectors; critical errors still fail',async()=>{
+ test.setTimeout(40000);
+ const plain=html.replaceAll('data-yaplix-','data-custom-').replace('<main>','<main><canvas hidden></canvas><button disabled>Unavailable action</button>');
+ const report=await browserCheck(plain,AbortSignal.timeout(18000));
+ expect(report.scope).toBe('full-html');expect(report.checks?.find(c=>c.aspect==='html-runs')?.level).toBe('VERIFIED');
+ for(const aspect of ['gameplay-observed','win-reachable','loss-reachable','restart-works'])expect(report.checks?.find(c=>c.aspect===aspect)?.level).toBe('NOT_VERIFIED');
+ for(const fault of ['throw Error("startup");','Promise.reject(Error("promise"));'])await expect(browserCheck(plain.replace('draw();\nfunction emit',fault+'draw();\nfunction emit'),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
+ const restart=plain.replace('</main>','<button onclick="throw Error(\'restart\')">Restart</button></main>');
+ await expect(browserCheck(restart,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
+});
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Server-side Chromium checker is independent of the frontend browser profile.'));
 test('real checker accepts authored fixture at 320/390 and offline',async()=>{
  const evidence=await browserCheck(html,AbortSignal.timeout(18000));

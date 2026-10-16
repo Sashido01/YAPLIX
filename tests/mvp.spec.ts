@@ -75,9 +75,9 @@ test('LIVE without configuration gives an honest error and preserves the display
   await expect(page.locator('#message')).toContainText('Игра сохранена');
   const exported = await page.locator('#export').getAttribute('href');
   await page.getByRole('button', { name: 'Создать', exact: true }).click();
-  await page.locator('#mode').selectOption('live');
-  await page.locator('#generate').click();await page.locator('#jobs-toggle').click();
+
+  await page.unroute('**/api/jobs');await page.locator('#generate').click();await page.locator('#jobs-toggle').click();
   await expect(page.locator('#jobs-list')).toContainText('LIVE не настроен');
-  await expect(page.locator('#provenance')).toHaveText('DEMO · без LLM');
+  await expect(page.locator('#provenance')).toHaveText('Тестовая игра · без LLM');
   expect(await page.locator('#export').getAttribute('href')).toBe(exported);
 });

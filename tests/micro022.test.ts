@@ -47,7 +47,7 @@ test('one mocked LLM repair is pinned to the route, revalidated, and cannot crea
 
 test('broken repair stops after one rewrite; original, diagnostic and repair claim survive SQLite reopen and Continue',async()=>{
   const path='.local/tests/micro022-'+randomUUID()+'.sqlite';let calls=0;
-  const engine=new GenerationEngine([route(async()=>({code:html+'\n<!-- attempt '+(++calls)+' -->',model:'gemma4:31b'}))],{repairs:2,check:async()=>{throw new BrowserFailure('JAVASCRIPT_EXCEPTION','Cannot set properties of null');}});
+  const engine=new GenerationEngine([route(async()=>({code:html.replace('</html>','<!-- attempt '+(++calls)+' --></html>'),model:'gemma4:31b'}))],{repairs:2,check:async()=>{throw new BrowserFailure('JAVASCRIPT_EXCEPTION','Cannot set properties of null');}});
   let store=new Store(path),jobs=new GenerationJobs(store,engine);let id='',original='';
   try{
     id=jobs.create('owner','bad-repair-durable',{spec,mode:'live',telegramConsent:false}).jobId;const failed=await settled(jobs,id);original=failed.originalCheckpoint!;
@@ -70,7 +70,7 @@ test('checkpoint repair stays on its original free provider even when a new prim
   let primary=0,secondary=0,checks=0,claims=0;
   const secondaryRoute={...route(async()=>{secondary++;return{code:html,model:'actual-free'};}),provider:'openrouter',model:'openrouter/free',route:'secondary' as const};
   const engine=new GenerationEngine([route(async()=>{primary++;return{code:html,model:'gemma4:31b'};}),secondaryRoute],{check:async()=>{if(++checks===1)throw new BrowserFailure('JAVASCRIPT_EXCEPTION','checkpoint defect');return evidence();}});
-  const context:GenerationContext={checkpoint:html,checkpointOrigin:{provider:'openrouter',requestedModel:'openrouter/free',model:'actual-free'},stage:()=>{},dispatch:()=>{},partial:()=>{},attempt:()=>{},claimRepair:()=>{claims++;}};
+  const context:GenerationContext={providerMode:'openrouter',checkpoint:html,checkpointOrigin:{provider:'openrouter',requestedModel:'openrouter/free',model:'actual-free'},stage:()=>{},dispatch:()=>{},partial:()=>{},attempt:()=>{},claimRepair:()=>{claims++;}};
   const result=await engine.generate(spec,undefined,'llm_code',undefined,context);
   assert.equal(primary,0);assert.equal(secondary,1);assert.equal(claims,1);assert.equal(result.provider,'openrouter');assert.equal(checks,2);
 });

@@ -22,12 +22,13 @@ export class GenerationEngine implements Generator {
     if(!routes.length||routes.length>3||!Number.isSafeInteger(this.timeout)||this.timeout<1000||this.timeout>300000||!Number.isSafeInteger(this.repairs)||this.repairs<0||this.repairs>2)throw new Fault('INVALID_LLM_CONFIGURATION');
     this.requestTimeout=options.requestTimeoutMs??Math.min(this.timeout,60000);
     this.allowLlmRepair=options.allowLlmRepair??!routes.some(r=>r instanceof CloudTransport);
-    this.promptStyle=options.promptStyle??'spec';if(!['spec','direct'].includes(this.promptStyle))throw new Fault('INVALID_LLM_CONFIGURATION');
+    this.promptStyle=options.promptStyle??'direct';if(!['spec','direct'].includes(this.promptStyle))throw new Fault('INVALID_LLM_CONFIGURATION');
     if(!Number.isSafeInteger(this.requestTimeout)||this.requestTimeout<1000||this.requestTimeout>this.timeout)throw new Fault('INVALID_LLM_CONFIGURATION');
   }
   routesFor(mode:ProviderMode=this.defaultMode){
     if(!['auto','ollama-cloud','openrouter'].includes(mode))throw new Fault('INVALID_PROVIDER_MODE');
-    const routes=mode==='auto'?this.routes:this.routes.filter(r=>r.provider===(mode==='ollama-cloud'?'ollama.com':'openrouter'));
+    // Auto is a legacy alias for Ollama; it never authorizes OpenRouter.
+    const routes=this.routes.filter(r=>r.provider===(mode==='openrouter'?'openrouter':'ollama.com')||!['ollama.com','openrouter'].includes(r.provider)&&mode==='auto');
     if(!routes.length)throw new Fault('LLM_NOT_CONFIGURED',503);return routes;
   }
   close(){this.active?.abort();}
@@ -55,6 +56,7 @@ export class GenerationEngine implements Generator {
       }
       const checkDocument=async(raw:string)=>{
         context?.stage('validating');
+        context?.preserveOriginal?.(raw);
         try{
           const prepared=prepareDocument(raw);
           if(prepared.repair){context?.preserveOriginal?.(raw);context?.validation?.({level:'NOT_VERIFIED',code:prepared.repair,phase:'format',feedback:'Format repair requires full revalidation.'},prepared.repair);}
@@ -76,7 +78,7 @@ export class GenerationEngine implements Generator {
           if(complete){
             context.stage('validating');
             try{const checked=await checkDocument(partial),evidence=checked.evidence;complete=checked.code;if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);const attempt:GenerationAttempt={route:route.route,provider:origin.provider,requestedModel:origin.requestedModel,model:origin.model,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-started),requestMs:0,validationMs:Math.round(performance.now()-started)};context.attempt(attempt);
-              return parseArtifact({html:complete,method:'llm_code',provider:origin.provider,model:origin.model,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[attempt],fallback:route!==this.routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
+              return parseArtifact({html:complete,method:'llm_code',provider:origin.provider,model:origin.model,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[attempt],fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
             }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE/.test(error.code)))throw error;
               context?.claimRepair?.();repairUsed=true;recoveryRoute=route;}
           }else{
@@ -114,7 +116,7 @@ export class GenerationEngine implements Generator {
             const checkBegan=performance.now();let checked;try{checked=await checkDocument(response.code);}finally{validationMs=Math.round(performance.now()-checkBegan);}code=checked.code;const evidence=checked.evidence;
             if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
             attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-begin),requestMs,validationMs,...tokens});context?.attempt(attempts.at(-1)!);
-            return parseArtifact({html:code,method:'llm_code',provider:route.provider,model:actual,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts,fallback:route!==this.routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
+            return parseArtifact({html:code,method:'llm_code',provider:route.provider,model:actual,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts,fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
           }catch(error){
             if(controller.signal.aborted){attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:'failed',errorCode:signal?.aborted?'REQUEST_CANCELLED':'LLM_TIMEOUT',elapsedMs:Math.round(performance.now()-begin),requestMs:requestMs||Math.round(performance.now()-begin),validationMs,...tokens});context?.attempt(attempts.at(-1)!);throw error;}
             if(error instanceof ProviderFailure){actual=error.actualModel;code=error.partial;tokens=error.usage;if(code)partial=code;context?.partial(code,actual,tokens);if(error.retryAt)context?.retryAt?.(error.retryAt);}
@@ -139,7 +141,7 @@ export class GenerationEngine implements Generator {
             if(!actual||!repairable)break;
             if(!this.allowLlmRepair||repairUsed||repair>=Math.min(1,this.repairs)||/BROWSER_TIMEOUT|INCONCLUSIVE/.test(lastCode))throw new GenerationFailure(lastCode,attempts);
             context?.preserveOriginal?.(partial);context?.claimRepair?.();repairUsed=true;
-            messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return concise complete HTML, below 250 lines, with little reasoning and no commentary.':'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
+            messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return complete HTML within the available token budget, without explanations; preserve all requested mechanics.':'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
           }finally{clearTimeout(requestTimer);}
         }
         if(repairUsed)throw new GenerationFailure(lastCode,attempts);
@@ -160,5 +162,5 @@ export function configuredGenerator(env:NodeJS.ProcessEnv=process.env):Generatio
   if(env.OLLAMA_CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://ollama.com/v1',key:env.OLLAMA_CLOUD_API_KEY,model:'gemma4:31b',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
   if(env.CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://openrouter.ai/api/v1',key:env.CLOUD_API_KEY,model:'openrouter/free',route:routes.length?'secondary':'primary',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
   if(!routes.length)return;
-  return new GenerationEngine(routes,{allowLlmRepair:env.LLM_AUTO_REPAIR==='1',defaultMode:selected as ProviderMode,timeoutMs:Number(env.LLM_TIMEOUT_MS??180000),requestTimeoutMs:Number(env.LLM_REQUEST_TIMEOUT_MS??Math.min(Number(env.LLM_TIMEOUT_MS??180000),60000)),repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'spec') as 'spec'|'direct'});
+  return new GenerationEngine(routes,{allowLlmRepair:env.LLM_AUTO_REPAIR==='1',defaultMode:selected as ProviderMode,timeoutMs:Number(env.LLM_TIMEOUT_MS??180000),requestTimeoutMs:Number(env.LLM_REQUEST_TIMEOUT_MS??Math.min(Number(env.LLM_TIMEOUT_MS??180000),60000)),repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'direct') as 'spec'|'direct'});
 }

@@ -3,7 +3,7 @@
 Git, Node 24.18+ (24.x), npm; для разработки Python 3.11+. Установка — [README](../README.md).
 Команды из корня клона, секреты/данные/браузеры/инструменты только локально.
 Пользовательский запуск: Windows `YAPLIX.cmd` двойным щелчком, Windows/Ubuntu
-`npm run app`. Launcher собирает клиент и открывает каталог; первый `npm ci`
+`npm run app`. Launcher собирает клиент и открывает «Создать»; первый `npm ci`
 выполняется автоматически только при отсутствии node_modules. Неполный existing
 node_modules сохраняется, дальнейшее исправление явное. Ручной server: build/start.
 
@@ -22,7 +22,7 @@ git diff --check
 
 Ubuntu: python3; при недостающих OS libraries:
 `node scripts/browser-tests.mjs install --with-deps chromium webkit firefox`.
-Production LIVE достаточно checker:install, DEMO не нужен Chromium.
+Production LIVE достаточно checker:install; авторские офлайн-примеры не требуют Chromium.
 Ubuntu 23.10+ ограничивает user namespaces. Checker сохраняет Chromium sandbox:
 при наличии использует root-owned setuid helper `/opt/google/chrome/chrome-sandbox`
 из установленного Google Chrome. CI проверяет helper по реестру установленного
@@ -55,7 +55,7 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | Параметр | Значение / ограничение |
 | --- | --- |
 | PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
-| LIVE_PROVIDER | auto default; ollama-cloud/openrouter/none; без обоих ключей отключается только LIVE |
+| LIVE_PROVIDER | ollama-cloud default; auto aliases Ollama only; openrouter manual; none disables LIVE |
 | CLOUD_BASE_URL / CLOUD_API_KEY | только https://openrouter.ai/api/v1 / secret; model фиксирован openrouter/free |
 | LLM_TIMEOUT_MS | 1000..300000, default 180000, один запуск engine |
 | LLM_REQUEST_TIMEOUT_MS | 1000..LLM_TIMEOUT_MS, default min(60000, LLM_TIMEOUT_MS), один transport request |
@@ -67,7 +67,7 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
 | LLM_REPAIRS | 0..2 accepted, cap 1 per job; 0 disables repair |
 | LLM_AUTO_REPAIR | default 0 for production CloudTransport; 1 only after owner authorization for extra inference; see [validation](game-validation.md) |
-| LLM_PROMPT_STYLE | spec code default; direct явно передаёт естественный запрос; .env.example выбирает direct |
+| LLM_PROMPT_STYLE | direct code default; spec is a legacy structured envelope |
 | OLLAMA_CLOUD_API_KEY | server secret; только gemma4:31b на https://ollama.com/v1 |
 | Legacy model/fallback/local knobs | CLOUD_MODEL, OLLAMA_CLOUD_MODEL, LLM_FALLBACK, SECONDARY_*, OLLAMA_BASE_URL/MODEL, LLM_LOCAL_FALLBACK игнорируются при production routing |
 | YAPLIX_MODE / HOST / PUBLIC_URL | local loopback; explicit LAN/HTTPS |
@@ -80,10 +80,9 @@ MICRO-019 ограничивает production LIVE двумя фиксирова
 `gemma4:31b` на `https://ollama.com/v1` и `openrouter/free` на
 `https://openrouter.ai/api/v1`. Никаких concrete `:free` IDs, generic providers,
 локальной модели или платного OpenRouter fallback. [Ollama Cloud](https://docs.ollama.com/cloud).
-В UI Auto предпочитает настроенный Ollama Cloud, затем OpenRouter Free;
-явные Ollama Cloud/OpenRouter Free никогда не переключают provider.
-Переход Auto записывается durable: после него job не возвращается к предыдущему
-provider при retry/Continue/restart. `.env` и существующие jobs не удаляются.
+MICRO-023: UI предлагает Ollama Cloud по умолчанию и OpenRouter Free вручную.
+Legacy Auto означает только Ollama Cloud; автоматического перехода между
+provider нет при creation/edit/retry/Continue/restart. `.env` и существующие jobs не удаляются.
 Legacy `LIVE_PROVIDER=cloud` сопоставляется с openrouter, `ollama` с auto.
 TLS bypass, credentials/query в base запрещены. Readiness GET models не доказывает
 successful inference или квоту аккаунта. Кредиты/план автоматически не меняются.
@@ -156,9 +155,8 @@ pending ≤20 глобально/≤3 на владельца, total ≤1000 job
 `Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
 Отдельный лимит фактических вызовов генерации к провайдерам — 6/min owner и 12/min
-global, включая repair и Continue. Recoverable ошибки получают bounded retry,
-а другой provider допускается только в Auto;
-а rate limit — Retry-After. Cooldown и scheduled retry хранятся в job metadata;
+global, включая repair и Continue. Recoverable ошибки получают bounded retry
+на выбранном provider, rate limit — Retry-After. Cooldown и scheduled retry хранятся в job metadata;
 неизвестный потенциально оплаченный исход не повторяется слепо по тому же route.
 Действия — [known errors](known-errors.md).
 
@@ -181,7 +179,7 @@ playable version и completed job записываются одной SQLite tra
 переключение игры происходит по явному «Открыть»/«Играть».
 
 Quota/auth/model/context/output-budget отказ охлаждает route на 15 min, не покупает
-credits и позволяет другой provider только в Auto. При обычном `429` cooldown соответствует
+credits и не переключает provider, включая legacy Auto. При обычном `429` cooldown соответствует
 Retry-After (если отсутствует — 60 s). Исчерпание automatic calls/runs/duration,
 отсутствие всех routes или обязательного Chromium оставляют needs_attention.
 Авторская gallery никогда не участвует в LIVE recovery; authored/unverified
@@ -289,3 +287,12 @@ URL-файл отражает только подтверждённую теку
 через тот же Direct/HTTP(S) proxy transport, что inference, без запуска worker и
 SQLite. Настройки, Auto/NO_PROXY, VPN/PAC ограничения и TLS CA —
 [сетевая инструкция](llm-network.md). Изменение серверного `.env` требует restart.
+
+## Full HTML contract и размер ответа (MICRO-023)
+
+[Контракт/процедура LIVE](micro-023-report.md). Envelope ≤300000 bytes без усечения
+current HTML; известный context cap проверяется консервативно по UTF-8 bytes.
+HTML ≤200000 bytes; JSON/SSE response ≤1210000 bytes. HTTP/API input limits
+не увеличены. LLM_RESPONSE_BODY_TOO_LARGE — локальный response cap,
+LLM_HTTP_BODY_TOO_LARGE — внешний HTTP 413, не доказанная ошибка модели/proxy.
+Legacy Auto больше не authorize provider switch. Старые DB и версии без миграции.

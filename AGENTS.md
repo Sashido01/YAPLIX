@@ -33,7 +33,7 @@ of the actual merge SHA and critical post-merge smoke tests. Delete a temporary
 local/remote branch only when fully merged and unused by other worktrees.
 
 MVP must run from a clean clone: clear Windows/Ubuntu setup, key-free labelled
-DEMO, available real LLM path, playable sandbox, persistence/restart, versions,
+authored offline examples (DEMO fixtures/API only), available real LLM path, playable sandbox, persistence/restart, versions,
 offline HTML export, diagnostics, backup and update instructions. The generator
 and prompts are independently authored here. Do not fetch/read/use BGen or its
 old local checkout, templates, assets or docs as a reference. Do not modify external
@@ -41,10 +41,12 @@ repositories. Preserve unknown ignored files. Cloud is primary; OpenRouter is
 FREE ONLY. MICRO-019 supersedes TASK-010 model selection: production LIVE routes
 are only gemma4:31b at https://ollama.com/v1 with an explicit server credential,
 and openrouter/free at exactly https://openrouter.ai/api/v1. No concrete :free
-selection, generic provider, local route, paid or hidden fallback. UI modes are
-auto, ollama-cloud and openrouter; only auto may switch providers, preferring
-configured Ollama Cloud then OpenRouter Free, without returning to the previous
-provider within a job. Legacy model/fallback/local knobs cannot authorize routes.
+selection, generic provider, local route, paid or hidden fallback. MICRO-023: UI providers are ollama-cloud (default) and openrouter (manual only).
+Legacy auto aliases Ollama Cloud and never falls back to OpenRouter. This applies
+to creation, editing, continuation and authorized repair. Full HTML is the core
+contract; preserve current full source on edits, older versions and validator/CSP.
+Optional telemetry, visual kits and genre-specific state are not core requirements.
+Never launch real inference/repair without the owner's explicit request budget. Legacy model/fallback/local knobs cannot authorize routes.
 Never buy credits or change plans automatically or infer paid entitlement.
 Preserve existing jobs, checkpoints, cancellation, idempotency and restart state.
 Implement the minimal UI here when no integrated UI exists.

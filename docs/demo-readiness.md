@@ -4,20 +4,20 @@
 не считаются текущим результатом MICRO-019. [Отчёт TASK-010](task-010-report.md).
 Browser tests, реальные LLM, hosted CI и физические устройства имеют разные границы.
 
-Текущий сценарий MICRO-019: LIVE предлагает Auto / Ollama Cloud / OpenRouter Free.
-Допустимы только gemma4:31b на https://ollama.com/v1 и openrouter/free на
-https://openrouter.ai/api/v1. Auto может перейти от настроенного Ollama Cloud к
-OpenRouter без возврата; explicit provider не переключается. Проверьте отдельно
-каждый доступный маршрут, сохранение выбранного mode/исходного запроса/checkpoint
-при retry/restart, Cancel и повтор с тем же idempotency key. Default бюджет —
-4 calls / 300 s, ≤4 worker runs, lifetime ≤12 calls. Старые jobs не удаляются.
-Новый реальный LIVE PASS требует собственного evidence, он не следует из истории.
+Текущий сценарий MICRO-023: создание и редактирование предлагают Ollama Cloud
+по умолчанию и OpenRouter Free вручную. Допустимы только gemma4:31b на
+https://ollama.com/v1 и openrouter/free на https://openrouter.ai/api/v1.
+Legacy Auto означает только Ollama, автоматического fallback нет. Базовый
+контракт — полный offline HTML/CSS/JS; gameplay и технический запуск различаются.
+Старые версии/jobs/checkpoints сохранены. Новых inference POST: 0, LIVE NOT_TESTED.
+[Точная приёмка: минимум 2 запроса после разрешения](micro-023-report.md).
 Hosted Actions временно выключены владельцем до 29 октября 2026:
 [локальные проверки и восстановление](ci-economy.md).
 
 ## Сценарий 3–5 минут
 
-1. Чистый клон, YAPLIX.cmd или npm run app без ключей: каталог и DEMO лабиринт.
+1. Чистый клон, YAPLIX.cmd или npm run app: создание; без ключей доступны
+   сохранённые игры/авторские примеры. DEMO fixtures остаются только для тестов/API.
 2. Задание → явное «Открыть» → Старт/движение/победа; Replay/поражение,
    library/new version/old version. Генерация другой игры не прерывает текущий раунд.
 3. Exact HTML export, offline управление; restart server сохраняет историю.

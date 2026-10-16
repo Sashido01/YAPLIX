@@ -36,8 +36,10 @@ Lockfile фиксирует зависимости; Playwright проверяе�
 испытываются отдельно от authored fixture; границы указаны в demo-readiness. Генерация и gameplay имеют разные
 требования к сети. Детали — в [архитектуре](architecture.md).
 
-Frontend/backend — один процесс npm start; .env читается автоматически. DEMO
-не требует внешних сервисов. Для LIVE server Chromium и cloud key по README. Ollama — явная альтернатива.
+Frontend/backend — один процесс npm start; .env читается автоматически.
+Авторские офлайн-примеры не требуют внешних сервисов; DEMO fixtures остаются в API/тестах.
+Для новой генерации нужны server Chromium и ключ выбранного облака по README;
+Ollama Cloud — default, OpenRouter Free выбирается вручную. Legacy Auto не переключает provider.
 CI не вызывает реальные модели.
 
 ## Mobile First: платформа и способ проверки
@@ -53,7 +55,8 @@ CI не вызывает реальные модели.
 | Telegram Mini App Android/iOS | Synthetic SDK/HMAC/HTTPS на Chromium/WebKit | Реальные Telegram клиенты и HTTPS URL |
 
 Это engine emulation, а не идентичные устройства. Версии движков зафиксированы
-Playwright lockfile; hosted Windows/Ubuntu CI проверяет все 12 профилей.
+Playwright lockfile; hosted Windows/Ubuntu FULL настроен на все 12 профилей.
+Actions временно выключены по MICRO-019: [границы локальных проверок](ci-economy.md).
 Клиент не использует Node, Ollama, внешние шрифты, библиотеки или install step.
 Запуск/генерация требуют сети до сервера; inference находится на сервере.
 После загрузки gameplay не зависит от связи; события при долгом offline могут
