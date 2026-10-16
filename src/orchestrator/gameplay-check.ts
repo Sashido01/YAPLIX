@@ -351,6 +351,7 @@ export async function gameplayCheck(
       eventTypes:(await readEvents()).map(ev=>ev.type),
     }, target);
   } catch (error) {
+    if (deadline.aborted) return { aspects: [{ aspect: 'html-runs', level: 'FAILED', detail: 'gameplay watchdog expired while browser was unresponsive' }, { aspect: 'win-reachable', level: 'NOT_VERIFIED', detail: 'no completed proof before watchdog' }], events: [], finalScore: null, notes: ['BROWSER_GAMEPLAY_TIMEOUT'] };
     if (error instanceof Fault) return { aspects: [{ aspect: 'html-runs', level: 'FAILED', detail: 'checker fault ' + error.code }], events: [], finalScore: null, notes: [error.code] };
     return { aspects: [{ aspect: 'html-runs', level: 'FAILED', detail: 'unexpected checker error' }], events: [], finalScore: null, notes: [String(error).slice(0, 200)] };
   } finally { deadline.removeEventListener('abort',browserLaunchAbort); await browser.close().catch(()=>{}); }

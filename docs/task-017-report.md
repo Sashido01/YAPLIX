@@ -142,6 +142,14 @@ score_changed/финальные 50 — отдельное подтвержде�
   PR, merge SHA и post-merge smoke подтверждаются в итоговом GitHub handoff.
 - `npm audit` (все locked dependencies): **0 vulnerabilities**.
 
+Первый hosted Ubuntu run `38861148019` выявил ошибку бюджета controlled hang
+test: он завершился за 2.0 s до ввода в заведомо зависающий handler (остальные
+232 browser tests прошли). Fixture получает 6 s до watchdog + 12 s и проверяет
+явный BROWSER_GAMEPLAY_TIMEOUT; генерация и audit 30/150 s не меняются.
+Локально после исправления: typecheck/build, 149 unit и все 16 Chromium tests
+PASS (1.6 min); реальное зависание оборвано watchdog через 18.0 s. После
+исправления обязательны заново checks нового head на обеих ОС.
+
 Дальше: исправить генерацию временных единиц/сброса отдельной задачей; расширять
 проверяемые visual adapters и выборку настоящих игр. До этого — **ITERATE**,
 без production-интеграции и без обещания прохождения произвольной LLM-игры.

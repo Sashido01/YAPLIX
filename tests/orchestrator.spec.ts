@@ -316,8 +316,12 @@ test('rules-aware browser: hard action budget bounds an unreachable target',asyn
 test('rules-aware browser: an unresponsive game is bounded and never verifies',async()=>{
  test.setTimeout(25000);
  const start=Date.now();
- const report=await gameplayCheck(numericGame('unresponsive',7),{win:'reach 7 points',loss:null,objective:null},{budgetSeconds:2,rulesAware:{sequence:['right'],maxActions:4}});
+ // Leave room for sandbox startup/first-frame baseline on shared runners;
+ // the 2s probe could expire before sending any key, so it never exercised
+ // the deliberately blocked handler on Ubuntu (TASK-017 hosted evidence).
+ const report=await gameplayCheck(numericGame('unresponsive',7),{win:'reach 7 points',loss:null,objective:null},{budgetSeconds:6,rulesAware:{sequence:['right'],maxActions:4}});
  expect(report.aspects.some(a=>a.level==='FAILED')).toBe(true);
+ expect(report.notes).toContain('BROWSER_GAMEPLAY_TIMEOUT');
  expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).not.toBe('VERIFIED');
- expect(Date.now()-start).toBeLessThan(20000);
+ expect(Date.now()-start).toBeLessThan(22000);
 });
