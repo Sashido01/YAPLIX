@@ -397,7 +397,7 @@ test('task-016 gameplay: summarizeSession maps observations to honest evidence l
   assert.equal(byAspect['html-runs'], 'VERIFIED');
   assert.equal(byAspect['input-works'], 'VERIFIED');
   assert.equal(byAspect['gameplay-observed'], 'VERIFIED');
-  assert.equal(byAspect['win-reachable'], 'VERIFIED');
+  assert.equal(byAspect['win-reachable'], 'NOT_VERIFIED', 'legacy game_won alone never proves victory');
   assert.equal(byAspect['loss-reachable'], 'NOT_VERIFIED', 'unproven loss stays NOT VERIFIED, never PASS');
   assert.equal(byAspect['restart-works'], 'VERIFIED');
 
