@@ -3,6 +3,7 @@ import type { NetworkDiagnostic } from './llm-network.ts';
 import { Fault } from './contracts.ts';
 import type { Artifact, GameSpec, GameVersion } from './contracts.ts';
 import type { GenerationAttempt } from './contracts.ts';
+import type { ValidationDiagnostic, FormatRepair } from './validation.ts';
 export type TokenUsage={outputTokens?:number;reasoningTokens?:number};
 export type ProviderMode='auto'|'ollama-cloud'|'openrouter';
 export function providerMode(value:unknown):ProviderMode {
@@ -23,6 +24,11 @@ export interface GenerationContext {
   partial(code:string,model:string|null,usage?:TokenUsage):void;
   attempt(attempt:GenerationAttempt):void;
   retryAt?(at:number):void;
+  preserveOriginal?(html:string):void;
+  validation?(diagnostic:ValidationDiagnostic,repair?:FormatRepair):void;
+  repairUsed?:boolean;
+  validationFailure?:string;
+  claimRepair?():void;
 }
 
 export interface Generator {

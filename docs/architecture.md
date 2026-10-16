@@ -56,12 +56,13 @@ secondary/fallback/local knobs не добавляют маршрутов. Concr
 generic providers, local route и платный OpenRouter исключены из production.
 Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
 чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
-и может получить тот же один bounded repair, с требованием компактного HTML.
+и после отдельного owner разрешения (`LLM_AUTO_REPAIR=1`) может получить один
+bounded repair, с требованием компактного HTML. По умолчанию cloud repair выключен.
 
 UI отправляет request в [jobs.ts](../src/jobs.ts), а не держит HTTP генерацию до
 конца. SQLite хранит original spec, owner, idempotency key, stage, attempts,
 provider/requested/actual model, error, checkpoint и связь с version. Один worker,
-очередь 20/3, total 1000, ≤100 MB checkpoints суммарно и ≤200000 bytes на job;
+очередь 20/3, total 1000, ≤100 MB checkpoints/originals суммарно и ≤200000 bytes на каждый draft/original;
 Worker lease берётся после successful bind, heartbeat сохраняет exclusive ownership
 одной DB. Второй writer с этой DB блокируется. После crash подтверждённо отсутствующий
 PID позволяет immediate restart; живой/непроверяемый PID сохраняет lease до 60 s.
@@ -113,7 +114,13 @@ restart, touch и read-only diagnostic state; наличие diagnostic JSON с�
 `LLM_PROMPT_STYLE=direct` передаёт исходный естественный запрос, `spec` (code default)
 формирует specification. Общие contract/validation/security сохраняются. Generic
 browser evidence публикует только HTML_VALID, JS_EXECUTABLE, UI_VISIBLE,
-MOBILE_VERIFIED; отдельные gameplay/end/input correctness levels не выдаются.
+MOBILE_VERIFIED; MICRO-022 дополнительно сохраняет per-aspect checks с
+VERIFIED/FAILED/NOT_VERIFIED и elapsedMs, используя существующий gameplay summarizer.
+Win/loss коротким probe не подтверждаются; отсутствие наблюдаемой механики
+не равно подтверждённому дефекту. Marked restart проверяется реальным input и
+reset read-only state. Durable originalCheckpoint и repairUsed сохраняют исходник
+и лимит одного rewrite даже после incomplete output, Continue и restart.
+[Границы, format recovery и budgets](game-validation.md).
 Pause проверяет замороженное изображение, resume — фактическое продолжение через
 видимую Resume/Continue или data-yaplix-resume, затем pause-toggle fallback.
 

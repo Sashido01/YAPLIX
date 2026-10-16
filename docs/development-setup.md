@@ -65,7 +65,8 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | LLM_MAX_TOKENS | 256..32000, default 12000; доступный completion cap из models API может снизить бюджет |
 | LLM_TOKEN_FIELD | max_tokens default или max_completion_tokens |
 | LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
-| LLM_REPAIRS | 0..2, default 1 |
+| LLM_REPAIRS | 0..2 accepted, cap 1 per job; 0 disables repair |
+| LLM_AUTO_REPAIR | default 0 for production CloudTransport; 1 only after owner authorization for extra inference; see [validation](game-validation.md) |
 | LLM_PROMPT_STYLE | spec code default; direct явно передаёт естественный запрос; .env.example выбирает direct |
 | OLLAMA_CLOUD_API_KEY | server secret; только gemma4:31b на https://ollama.com/v1 |
 | Legacy model/fallback/local knobs | CLOUD_MODEL, OLLAMA_CLOUD_MODEL, LLM_FALLBACK, SECONDARY_*, OLLAMA_BASE_URL/MODEL, LLM_LOCAL_FALLBACK игнорируются при production routing |

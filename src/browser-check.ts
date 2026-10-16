@@ -4,21 +4,26 @@ import { randomUUID } from 'node:crypto';
 import { parseEvent, Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import { PROJECT_ROOT } from './store.ts';
+import { summarizeSession } from './orchestrator/gameplay-check.ts';
+import type { EvidenceLevel, ValidationAspect } from './validation.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
 const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
 for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
-export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause'; levels?:string[] };
+export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause'; levels?:string[]; checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number };
+export const VALIDATION_BUDGETS = Object.freeze({ totalMs:18000, startupMs:8000, renderMs:3500, criticalMs:100, interactionMs:6000, restartMs:2500 });
 export class BrowserFailure extends Fault {
   readonly feedback:string;
   constructor(code:string,feedback:string){super(code,502);this.feedback=feedback.slice(0,512);}
 }
 export function checkerReady() { return existsSync(chromium.executablePath()); }
 export async function browserCheck(html: string, signal: AbortSignal): Promise<BrowserEvidence> {
+  const began=performance.now();let phase='startup';
+  if(signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
   if (!checkerReady()) throw new Fault('BROWSER_INSTALL_REQUIRED',503);
-  const deadline=AbortSignal.any([signal,AbortSignal.timeout(18000)]);
+  const deadline=AbortSignal.any([signal,AbortSignal.timeout(VALIDATION_BUDGETS.totalMs)]);
   const env=Object.fromEntries(['PATH','Path','SystemRoot','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','DISPLAY','XDG_RUNTIME_DIR','LANG'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!]));
   // Chromium's supported root-owned helper preserves its sandbox on Ubuntu's
   // restricted user namespaces. Never change AppArmor or use --no-sandbox.
@@ -30,13 +35,20 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
       env.CHROME_DEVEL_SANDBOX=helper;
     }else if(process.env.CHROME_DEVEL_SANDBOX)throw new Fault('BROWSER_SANDBOX_CONFIGURATION',503);
   }
-  const browser=await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
+  const launch=chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:VALIDATION_BUDGETS.startupMs,env});
+  const cancelLaunch=()=>void launch.then(b=>b.close()).catch(()=>{});
+  deadline.addEventListener('abort',cancelLaunch,{once:true});
+  let browser;
+  try{browser=await launch;}catch{throw new Fault(deadline.aborted?(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT_STARTUP'):'BROWSER_SANDBOX_UNAVAILABLE',503);}
+  finally{deadline.removeEventListener('abort',cancelLaunch);}
   const abort=()=>void browser.close().catch(()=>{});deadline.addEventListener('abort',abort,{once:true});
+  if(deadline.aborted)abort();
   try {
+    let checks:BrowserEvidence['checks'];
     for(const width of [320,390]) {
       if(deadline.aborted)throw new Fault('BROWSER_TIMEOUT',504);
       const context=await browser.newContext({viewport:{width,height:700},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
-      const page=await context.newPage();page.setDefaultTimeout(3500);const errors:string[]=[];
+      phase='render';let phaseBudgetExceeded=false;let profileChecks:BrowserEvidence['checks'];const page=await context.newPage();page.setDefaultTimeout(VALIDATION_BUDGETS.renderMs);const errors:string[]=[];
       let exception='';page.on('pageerror',error=>{errors.push('JAVASCRIPT_EXCEPTION');exception=error.message.slice(0,250);});
       page.on('console',message=>{if(message.type()==='error')errors.push('BROWSER_CONSOLE_ERROR');});
       page.on('dialog',dialog=>{errors.push('NATIVE_DIALOG');void dialog.dismiss();});
@@ -53,6 +65,7 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
         },{html,session,csp:GAME_CSP,compat:UUID_COMPAT});
         await page.waitForFunction(()=>(window as any).checkEvents.length>0);
         const frame=page.frames().find(f=>f!==page.mainFrame())!;
+        await page.waitForTimeout(VALIDATION_BUDGETS.criticalMs);
         const start=frame.locator('[data-yaplix-start]');
         if(await start.count()!==1)throw new BrowserFailure('BROWSER_START_CONTROL','Mark exactly one initial Start button data-yaplix-start. Do not give this attribute to Restart. Ensure the initial Start is visible and no overlay intercepts it.');
         const box=await start.boundingBox();if(!box||box.height<44||box.x<0||box.x+box.width>width+2)throw new BrowserFailure('BROWSER_MOBILE_LAYOUT','At viewport '+width+'px the Start button is missing, outside the viewport, or under 44px tall. Give ALL buttons min-height:44px and constrain the layout to 100% viewport width.');
@@ -63,6 +76,8 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
         if(await frame.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2))throw new Fault('BROWSER_HORIZONTAL_OVERFLOW',502);
         const before=await page.evaluate(()=>(window as any).checkEvents);
         if(before.some((e:{type:string})=>e.type==='game_started'))throw new Fault('BROWSER_AUTOSTART',502);
+        phase='interaction';const interactionTimer=setTimeout(()=>{phaseBudgetExceeded=true;void context.close().catch(()=>{});},VALIDATION_BUDGETS.interactionMs);
+        try{
         await start.tap();await page.waitForFunction(()=>(window as any).checkEvents.some((e:{type:string})=>e.type==='game_started'));
         const terminal=()=>page.evaluate(()=>(window as any).checkEvents.some((e:{type:string})=>e.type==='session_ended'));
         if(await terminal())throw new Fault('BROWSER_INSTANT_END',502);
@@ -84,8 +99,15 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
           return changed/(cur.length/4);
         });
         const preInput=await capture();
+        const hud=()=>frame.evaluate(()=>document.querySelector('[data-yaplix-state]')?.textContent??null);
+        const hudStates=new Set<string>();const observe=async()=>{const value=await hud();if(value)hudStates.add(value);};await observe();
+        if(await input.isDisabled())throw new BrowserFailure('BROWSER_INPUT_DISABLED','Start left the marked gameplay control disabled.');
         await input.tap();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowRight');await page.waitForTimeout(180);
+        await observe();
         const inputEffective=await capture()!==preInput;
+        if(canvases.length&&await frame.locator('canvas').count()===0)throw new BrowserFailure('BROWSER_GAME_AREA','A real input action removed the game canvas.');
+        const surviving=await input.boundingBox();
+        if(!surviving||surviving.width<20||surviving.height<20)throw new BrowserFailure('BROWSER_GAME_AREA','A real input action destroyed or hid the game area.');
         if(!await terminal()){
           const pause=frame.locator('[data-yaplix-pause]');if(await pause.count()!==1)throw new Fault('BROWSER_PAUSE_CONTROL',502);
           await pause.tap();
@@ -128,10 +150,9 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
             const count=Math.min(4,await actions.count());
             for(let i=0;i<count&&!resumed;i++){await actions.nth(i).tap();await page.waitForTimeout(80);if(await changed())resumed=true;}
           }
-          if(!resumed)throw new BrowserFailure(inputEffective?'BROWSER_RESUME_NOT_WORKING':'BROWSER_INPUT_NO_EFFECT',inputEffective
-            ?'After pause the game remained frozen despite resuming and real input. Make the marked pause control toggle, or provide a visible button marked data-yaplix-resume. Resume must retain the world/score and restart exactly one animation loop; input must visibly act again on resume.'
-            :'Resuming did not reveal working input: keyboard and pointer input produced no visible change before or after pause. The pause control toggled, but movement ignored Arrow keys and taps. Check that the keydown listener reads the correct key values (event.code vs event.key), is attached while playing, calls the drawing path, and that touch/pointer handlers move the game state.');
+          if(!resumed&&inputEffective)throw new BrowserFailure('BROWSER_RESUME_NOT_WORKING','After pause the game remained frozen despite resuming and real input. Make the marked pause control toggle, or provide a visible button marked data-yaplix-resume. Resume must retain the world/score and restart exactly one animation loop; input must visibly act again on resume.');
         }
+        await observe();
         const events=await page.evaluate(()=>(window as any).checkEvents);let started=false,ended=false,result=false;
         for(let i=0;i<events.length;i++){
           let event;try{event=parseEvent(events[i]);}catch{throw new Fault('BROWSER_EVENT_CONTRACT',502);}
@@ -143,14 +164,44 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
           if(event.type==='game_error')throw new Fault('BROWSER_GAME_ERROR',502);
         }
         if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in the generated document: '+exception:'The game attempted a forbidden browser operation or logged an error.');
+        {
+          const scoreEvents=events.filter((e:{type:string})=>e.type==='score_changed').length;
+          const report=summarizeSession({startWorks:true,inputChanged:inputEffective&&(hudStates.size>1||scoreEvents>0),hudStates:hudStates.size,scoreEvents,ended,won:false,lost:false,finalScore:null,errors:[],restartWorks:null,eventTypes:events.map((e:{type:string})=>e.type)},null);
+          profileChecks=report.aspects.map(({aspect,level})=>({aspect,level}));
+          // A terminal event alone cannot establish that the declared rule held.
+          for(const check of profileChecks)if(['win-reachable','loss-reachable'].includes(check.aspect))check.level='NOT_VERIFIED';
+        }
+        }finally{clearTimeout(interactionTimer);}
+        phase='restart';
         await page.goto('about:blank');
         await page.setContent('<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="'+GAME_CSP+'"><script>'+UUID_COMPAT+'</script>'+html);
-        await page.locator('[data-yaplix-start]').tap();await page.locator('[data-yaplix-input]').first().tap();await page.waitForTimeout(100);
+        const standaloneState=()=>page.evaluate(()=>document.querySelector('[data-yaplix-state]')?.textContent??null);
+        await page.locator('[data-yaplix-start]').tap();const initialState=await standaloneState();await page.locator('[data-yaplix-input]').first().tap();await page.waitForTimeout(100);
+        const restart=page.locator('[data-yaplix-restart]').filter({visible:true});
+        if(await restart.count()===1){
+          const restartTimer=setTimeout(()=>{phaseBudgetExceeded=true;void context.close().catch(()=>{});},VALIDATION_BUDGETS.restartMs);
+          try{
+            const state=standaloneState;
+            const prior=await state();await restart.tap();await page.waitForTimeout(100);
+            const area=page.locator('[data-yaplix-input]').first();
+            if(!await area.isVisible())throw new BrowserFailure('BROWSER_RESTART_FAILED','Restart removed or hid the game input.');
+            const again=page.locator('[data-yaplix-start]');if(await again.isVisible()&&!await again.isDisabled())await again.tap();
+            if(await area.isDisabled())throw new BrowserFailure('BROWSER_RESTART_FAILED','Restart left the game input disabled.');
+            const reset=await state();await area.tap();await page.keyboard.press('ArrowRight');await page.waitForTimeout(100);const after=await state();
+            let progressed=false;
+            try{const initial=JSON.parse(initialState??'null'),p=JSON.parse(prior??'null'),r=JSON.parse(reset??'null'),a=JSON.parse(after??'null');if(initial&&p&&r&&a&&typeof initial.score==='number'&&typeof p.score==='number'&&p.score!==initial.score&&typeof r.score==='number'){
+              if(r.score!==initial.score)throw new BrowserFailure('BROWSER_RESTART_FAILED','Restart did not restore the observed initial score.');
+              progressed=JSON.stringify(initial)===JSON.stringify(r)&&JSON.stringify(a)!==JSON.stringify(r)&&a.score!==r.score;
+            }}catch(error){if(error instanceof BrowserFailure)throw error;}
+            if(progressed)profileChecks!.find(c=>c.aspect==='restart-works')!.level='VERIFIED';
+          }finally{clearTimeout(restartTimer);}
+        }
         if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in the standalone document: '+exception:'The offline document attempted a forbidden operation or logged an error.');
-      }catch(error){if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in generated code: '+exception:'A forbidden browser operation or console error occurred.');throw error;}
+        if(!checks)checks=profileChecks;else for(const check of checks)if(profileChecks!.find(c=>c.aspect===check.aspect)!.level!==check.level)check.level='NOT_VERIFIED';
+      }catch(error){if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in generated code: '+exception:'A forbidden browser operation or console error occurred.');if(!(error instanceof Fault))throw new BrowserFailure(phaseBudgetExceeded||(error as Error).name==='TimeoutError'?'BROWSER_TIMEOUT_'+phase.toUpperCase():'BROWSER_CHECK_INCONCLUSIVE','NOT_VERIFIED: '+phase+' could not be completed.');throw error;}
       finally{await context.close().catch(()=>{});}
     }
-    return {profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']};
-  }catch(error){if(deadline.aborted)throw new Fault(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT',signal.aborted?499:504);if(error instanceof Fault)throw error;throw new Fault('BROWSER_STARTUP_FAILED',502);}
+    return {profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],checks,elapsedMs:Math.round(performance.now()-began)};
+  }catch(error){if(deadline.aborted)throw new Fault(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT_'+phase.toUpperCase(),signal.aborted?499:504);if(error instanceof Fault)throw error;throw new Fault('BROWSER_STARTUP_FAILED',502);}
   finally{deadline.removeEventListener('abort',abort);await browser.close();}
 }

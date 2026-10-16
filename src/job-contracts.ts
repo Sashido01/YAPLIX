@@ -1,5 +1,6 @@
 import type { GameSpec, GenerationAttempt } from './contracts.ts';
 import type {ProviderMode} from './transport.ts';
+import type {ValidationDiagnostic, FormatRepair} from './validation.ts';
 export type JobStage = 'queued'|'generating'|'validating'|'repairing'|'completed'|'needs_attention'|'cancelled'|'failed';
 export interface GenerationJob {
   jobId: string; ownerId: string; idempotencyKey: string;
@@ -15,5 +16,9 @@ export interface GenerationJob {
   checkpointOrigin?:{provider:string;requestedModel:string;model:string};
   routeCooldowns?:Record<string,{until:number;code:string}>;
   automaticRuns?:number; automaticLimit?:number; deadlineAt?:number; blockedRoutes?:string[];retiredRoutes?:string[];
+  originalCheckpoint?:string;
+  validation?:ValidationDiagnostic;
+  deterministicRepair?:FormatRepair;
+  repairUsed?:boolean;
 }
-export type JobSummary = Omit<GenerationJob,'checkpoint'|'ownerId'|'idempotencyKey'> & {checkpointBytes:number};
+export type JobSummary = Omit<GenerationJob,'checkpoint'|'originalCheckpoint'|'ownerId'|'idempotencyKey'> & {checkpointBytes:number};
