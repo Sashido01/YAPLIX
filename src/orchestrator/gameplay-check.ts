@@ -157,7 +157,7 @@ export async function gameplayCheck(
     chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
   deadline.addEventListener('abort',browserLaunchAbort,{once:true});
   const browser=await browserLaunchPromise;
-  const startedAt=Date.now();
+  let startedAt=Date.now();
   const remaining=()=>Math.max(0,budgetMs-(Date.now()-startedAt));
   try {
     const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
@@ -211,7 +211,12 @@ export async function gameplayCheck(
     if(!started){
       return summarizeSession({ startWorks:false,inputChanged:false,hudStates:0,scoreEvents:0,ended:false,won:false,lost:false,finalScore:null,errors:errors.slice(0,6),restartWorks:null,eventTypes:[] }, target);
     }
-    if (options.rulesAware) return await runRulesGameplay(page, gameFrame, readEvents, rules, options.rulesAware, remaining, errors);
+    if (options.rulesAware) {
+      // Active play gets its declared budget after real Start. Startup still
+      // shares the original hard watchdog (budget + 12s); no unbounded setup.
+      startedAt=Date.now();
+      return await runRulesGameplay(page, gameFrame, readEvents, rules, options.rulesAware, remaining, errors);
+    }
     const sig0=await snap();
     const hudSeen=new Set<string>();
     const hudOf=(text:string)=>text.slice(text.indexOf('|')+1);

@@ -190,7 +190,11 @@ Bridge дополнительно фильтруется по source/origin/sess
 HUD в произвольном недоверенном HTML; визуальные адаптеры дают дополнительный
 независимый сигнал. Win-event сам по себе недостаточен.
 
-Probe ограничен 2–180 s, watchdog budget + 12 s, 1000 action records,
+Активный probe budget 2–180 s начинается после настоящего game_started;
+общий watchdog budget + 12 s включает browser startup. Pending FIRE/Pause
+отменяется при terminal event, если завершение возникло между наблюдением и
+actionability click; proof всё равно требует независимого подтверждения.
+Ограничения: 1000 action records,
 2048 samples и 512 bridge events. Оpaque iframe, offline, OS sandbox, CSP и
 secrets-free browser environment сохранены. Прямого доступа к переменным,
 RNG/таймерам/победе или вызова игровых функций из Playwright нет.

@@ -105,16 +105,26 @@ export async function runRulesGameplay(
     if (pixels !== previousPixels || sample.progress !== previousProgress) { lastChange = Date.now(); previousPixels = pixels; previousProgress = sample.progress; }
     return sample;
   };
+  const terminalPending = async () => (await readEvents()).some(e => ['game_won', 'game_lost', 'session_ended'].includes(e.type));
   const pause = async (value: boolean) => {
     if (paused === value || actions.length >= maxActions || remaining() < 200) return;
-    await frame().locator('[data-yaplix-pause]').click({ timeout: Math.min(1500, remaining()) });
+    if (await terminalPending()) return;
+    try { await frame().locator('[data-yaplix-pause]').click({ timeout: Math.min(1500, remaining()) }); }
+    catch (error) { if (await terminalPending()) return; throw error; }
     paused = value; log('button', value ? 'pause' : 'continue');
   };
   const control = async (value: string) => {
     if (actions.length >= maxActions || remaining() < 200) return;
+    if (await terminalPending()) return;
     const button = frame().locator('[data-yaplix-action="' + value + '"]');
     if (await button.count() !== 1 || !await button.isVisible()) { stopReason = 'unsupported or missing real control: ' + value; return; }
-    await button.click({ timeout: Math.min(1500, remaining()) }); log('button', value);
+    try { await button.click({ timeout: Math.min(1500, remaining()) }); log('button', value); }
+    catch (error) {
+      // The game can finish while Playwright checks actionability. A real
+      // terminal overlay cancels the pending input; proof is still evaluated
+      // from goal/progress/screen below. Never force a click through it.
+      if (!await terminalPending()) throw error;
+    }
   };
   let current = await observe();
   // Initial HUD can legitimately be written on the first rAF after Start.
@@ -134,6 +144,7 @@ export async function runRulesGameplay(
     if (options.snake && current.pixels) {
       await pause(true);
       current = await observe();
+      if (current.terminal.visible || await terminalPending()) { stopReason = 'terminal observed'; break; }
       const key = snakeStep({ ...options.snake, cells: current.pixels! }, options.snake.palette);
       if (!key) { stopReason = 'no observable safe path to a single visible collectible'; break; }
       // Fire is a normal gameplay action; this adapter can only use it when the

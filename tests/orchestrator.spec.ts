@@ -250,6 +250,7 @@ test('controlled gameplay: snake with enemies grows, shoots, wins by real play',
  // head, so riding "up" eats the trail; occasional fire taps exercise the
  // shooting mechanic during the run.
  const report=await gameplayCheck(probe.html,{win:'collect 5 apples',loss:'enemy catch or self-crash',objective:'5 apples'},{budgetSeconds:90,rulesAware:{sequence:[...Array(24).fill('up') as 'up'[]].flatMap((s,i)=>i%7===6?['up','fire' as const]:[s])}});
+ await test.info().attach('rules-proof',{body:JSON.stringify(report,null,2),contentType:'application/json'});
  const byAspect=Object.fromEntries(report.aspects.map(a=>[a.aspect,a.level]));
  expect(byAspect['html-runs']).toBe('VERIFIED');
  expect(byAspect['input-works']).toBe('VERIFIED');
@@ -324,4 +325,11 @@ test('rules-aware browser: an unresponsive game is bounded and never verifies',a
  expect(report.notes).toContain('BROWSER_GAMEPLAY_TIMEOUT');
  expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).not.toBe('VERIFIED');
  expect(Date.now()-start).toBeLessThan(22000);
+});
+test('rules-aware browser: active budget begins after a real delayed Start',async()=>{
+ test.setTimeout(15000);
+ const delayed=numericGame('normal',3).replace('</style>','@keyframes setup{from{transform:translateX(100px)}to{transform:translateX(0)}}#yapStart{animation:setup 2.4s linear}</style>');
+ const report=await gameplayCheck(delayed,{win:'reach 3 points',loss:null,objective:null},{budgetSeconds:6,rulesAware:{sequence:['right'],maxActions:8}});
+ expect(report.aspects.find(a=>a.aspect==='win-reachable')?.level).toBe('VERIFIED');
+ expect(report.evidence!.actions.filter(a=>a.kind==='key'&&a.value==='ArrowRight')).toHaveLength(3);
 });

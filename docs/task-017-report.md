@@ -111,7 +111,8 @@ score_changed/финальные 50 — отдельное подтвержде�
   отсутствия hidden/visibility/opacity-block и перекрытия result другим UI.
   Неожиданный ready/start/reload до окончания proof отвергается. Restart
   проверяется после запечатывания evidence первого run.
-- Бюджеты: 2–180 s активной сессии; watchdog закрывает только свой браузер
+- Бюджеты: 2–180 s активной сессии после подтверждённого game_started;
+  browser setup не съедает active budget. Watchdog закрывает только свой браузер
   не позднее budget + 12 s (startup/teardown, в том числе зависший JS).
   ≤1000 записей действий, ≤2048 drive samples (+ bounded baseline/final),
   ≤512 принятых bridge events. Audit: 30/150 s, ≤900 действий, stall 10 s.
@@ -149,6 +150,20 @@ test: он завершился за 2.0 s до ввода в заведомо �
 Локально после исправления: typecheck/build, 149 unit и все 16 Chromium tests
 PASS (1.6 min); реальное зависание оборвано watchdog через 18.0 s. После
 исправления обязательны заново checks нового head на обеих ОС.
+
+Второй hosted run `38862850604`: Ubuntu полностью PASS; Windows нашла
+terminal race (FIRE перехвачен честным end-overlay), расходование 6 s active
+budget на setup (Start tap 2.58 s) и общий 20 s timeout старого многошагового
+LAN acceptance на финальном export assertion. Исправление: отмена pending input
+при terminal с прежним независимым proof; active clock после game_started при
+неизменном общем watchdog; только Windows test budget этого LAN кейса 45 s.
+Assertions, production timeouts, generation и performance budgets сохранены.
+Добавлена реальная delayed-Start browser регрессия с active budget 6 s.
+Локальная повторная проверка: 149 unit PASS; orchestrator + production browser
+coverage в Chromium desktop/320 и WebKit 390 — 41 PASS / 34 intentional skips.
+LIVE повтор после этих исправлений: тетрис 0/200 NOT_VERIFIED, 30.383 s;
+змейка 5/5, пять контактов, win/restart VERIFIED, 13.841 s, 224 action records.
+Полные samples: `.local/task-017/2026-10-16T07-11-38-022Z/`.
 
 Дальше: исправить генерацию временных единиц/сброса отдельной задачей; расширять
 проверяемые visual adapters и выборку настоящих игр. До этого — **ITERATE**,

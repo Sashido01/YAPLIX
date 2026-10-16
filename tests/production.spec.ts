@@ -23,6 +23,9 @@ test('production HTTP disconnect cancels cloud body and stores no game',async()=
 });
 
 test('real production LAN: authentication, QR independent decode, relative API, gameplay, restart and changed port', async({page,context},info)=>{
+  // Two server startups, QR decodes and full win/loss/restart flows share this
+  // test. Windows run 38862850604 reached the last export assertion at 20s.
+  test.setTimeout(process.platform==='win32'?45000:20000);
   const host=lanAddresses()[0]?.address;test.skip(!host,'No private IPv4 interface available on this runner.');
   const key=randomBytes(32).toString('base64url'),env={YAPLIX_MODE:'lan',YAPLIX_ACCESS_KEY:key};
   let server=await productionServer(host,env);const directory=server.directory;
