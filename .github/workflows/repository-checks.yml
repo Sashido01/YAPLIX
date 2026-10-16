@@ -2,17 +2,17 @@ name: Repository checks
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+  merge_group:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: repository-checks-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: repository-checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   repository-checks:
@@ -22,13 +22,14 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
-    # windows-latest is slower: full browser suite ~13.5m plus setup, unit tests
-    # and performance smoke exceed a 20-minute job budget (TASK-013 observed).
+    # Retain required check names. FAST runs real checks on both platforms;
+    # risky steps stay inside these jobs, so their failures fail the same checks.
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # exact PR-base diff, including deletions/renames
           persist-credentials: false
       - name: Check repository conventions and links
         run: python scripts/check_repo.py
@@ -38,16 +39,34 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.18.0'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Test CI risk policy
+        run: node --test scripts/ci-policy.test.mjs
+      - name: Determine required coverage (unknown means FULL)
+        id: scope
+        run: node scripts/ci-policy.mjs
       - name: Install locked platform dependencies
         run: npm ci
-      - name: Typecheck and platform integration tests
-        run: |
-          npm run typecheck
-          npm test
+      - name: FAST typecheck
+        run: npm run typecheck
+      - name: FAST build
+        run: npm run build
+      - name: FAST complete Ubuntu unit and backend contracts
+        if: runner.os == 'Linux'
+        run: node --test tests/*.test.ts
+      - name: FAST Windows contracts and SQLite smoke
+        if: runner.os == 'Windows' && steps.scope.outputs.windows-full == 'false'
+        run: node --test tests/platform.test.ts tests/engine.test.ts
+      - name: FULL Windows unit and backend contracts
+        if: runner.os == 'Windows' && steps.scope.outputs.windows-full != 'false'
+        run: node --test tests/*.test.ts
       - name: Install browser profiles
+        if: steps.scope.outputs.browsers != 'false'
+        timeout-minutes: 8
         run: node scripts/browser-tests.mjs install --with-deps chromium webkit firefox
       - name: Prepare existing packaged Chromium sandbox helper
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.scope.outputs.browsers != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -60,7 +79,9 @@ jobs:
           sudo chown root:root "$helper"
           sudo chmod 4755 "$helper"
       - name: Autonomous game and isolation browser tests
-        run: npm run test:browser
+        if: steps.scope.outputs.browsers != 'false'
+        timeout-minutes: 20
+        run: node scripts/browser-tests.mjs test
       - name: Preserve browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -70,7 +91,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - name: Mobile performance and compressed size budgets
-        run: npm run performance:smoke
+        if: steps.scope.outputs.browsers != 'false'
+        timeout-minutes: 3
+        run: node scripts/browser-tests.mjs performance
 
   secret-scan:
     name: secret-scan

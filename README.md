@@ -268,8 +268,11 @@ npm run performance:smoke
 [Известные ошибки и безопасное восстановление](docs/known-errors.md).
 [TASK-008: результаты runtime/tunnel и границы внешней проверки](docs/task-008-report.md).
 [TASK-010: облачные модели, recovery, игры и Telegram](docs/task-010-report.md).
-CI проверяет чистый checkout Windows/Ubuntu, synthetic transports, реальный Chromium
-preflight, 12 frontend profiles и секреты. Реальные LLM/физические клиенты отдельно.
+CI всегда выполняет FAST на чистом checkout Windows/Ubuntu и secret-scan;
+для runtime/config/неизвестных изменений FULL добавляет реальный Chromium
+preflight, 12 frontend profiles и performance. Manual FULL обязателен перед
+релизом. [Режимы и ограничения защиты](docs/ci-economy.md),
+[замеры MICRO-018](docs/micro-018-report.md). Реальные LLM/физические клиенты отдельно.
 Задача завершена после hosted CI, merge, ff-only main и post-merge smoke.
 Защиту/CI обходить нельзя: [AGENTS](AGENTS.md), [CONTRIBUTING](CONTRIBUTING.md).
 

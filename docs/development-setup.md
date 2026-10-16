@@ -37,10 +37,13 @@ Hook mode 100755 блокирует remote main; не заменяет server pr
 проверяет tracked files, UTF-8/LF/регистр ссылок. Gitleaks 8.24.3:
 `gitleaks git --redact --log-opts=--all .`, `gitleaks dir --redact .`.
 Сначала checksum инструмента; binary/reports/secrets не коммитить.
-Hosted Windows/Ubuntu: npm ci, Python tests, types/integration, реальный server-side
-Chromium checker, 12 frontend-профилей, performance. LLM transport синтетический,
-реальный inference отдельно. Actions SHA pinned, обязательны green exact PR head,
-merge и smoke main. [Workflow](../CONTRIBUTING.md).
+Hosted FAST: npm ci/cache, Python и policy tests, types/build, все Ubuntu units
+и Windows contracts/SQLite smoke. FULL по риску/вручную добавляет все Windows
+units, реальный server-side Chromium checker, 12 frontend-профилей, performance.
+LLM transport синтетический, реальный inference отдельно. Actions SHA pinned,
+обязательны green exact PR head, merge и smoke main. Перед релизом manual FULL;
+post-merge smoke локальный. [FAST/FULL](ci-economy.md),
+[workflow](../CONTRIBUTING.md).
 
 ## Конфигурация
 
