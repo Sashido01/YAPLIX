@@ -160,17 +160,19 @@ pending ≤20 глобально/≤3 на владельца, total ≤1000 job
 `Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
 Отдельный лимит фактических вызовов генерации к провайдерам — 6/min owner и 12/min
-global, включая repair и Continue. Recoverable ошибки получают bounded retry
+global, включая repair и Continue. Recoverable ошибки Ollama получают bounded retry
 на выбранном provider, rate limit — Retry-After. Cooldown и scheduled retry хранятся в job metadata;
 неизвестный потенциально оплаченный исход не повторяется слепо по тому же route.
 Действия — [known errors](known-errors.md).
 
 Restart восстанавливает generating/validating/repairing в пределах исходных
 deadline/бюджета, сохраняя `JOB_RESTART_UNCERTAIN`. Доступный разрешённый route
-может продолжить автоматически; неизвестный potentially billed route исключается.
+Ollama может продолжить автоматически; неизвестный potentially billed route исключается.
 Старые recoverable needs_attention jobs без automatic metadata принимаются один
 раз в новый ограниченный цикл с lifetime cap 12. Cancelled/quota/auth/configuration
 отказы автоматически не возобновляются; сохранённый draft остаётся доступен.
+OpenRouter требует явного Continue для нового inference; автоматические retry/repair
+и восстановление неполного draft после restart не разрешены.
 Полный checkpoint с подтверждённым origin сначала проходит validation без нового
 LLM POST. Неполный draft требует разрешённого LLM repair на исходном route;
 production cloud repair по умолчанию выключен и ограничен одним rewrite на job.

@@ -118,7 +118,7 @@ Telegram run28 PASS/21 intentional profile SKIP; production/checker/phone
 run28 PASS/8 intentional SKIP. All seven obsolete production scenarios pass
 under current canonical routing. Earlier failed test attempts and their repaired
 harness causes remain in the private logs, not counted as final PASS.
-Gitleaks8.24.3: full history75 commits and explicit27-file manifest, no findings.
+Gitleaks8.24.3: full history75 commits and explicit28-file final manifest, no findings.
 Gzip: initial ui.js11441 bytes, CSS2385 bytes; no timing/performance improvement
 is claimed. Protected .env/PDF hashes and complete original games/versions/jobs
 logical snapshots match baseline. Windows local proof does not establish Ubuntu.
