@@ -1,3 +1,46 @@
+# MICRO-023L — Fresh LIVE acceptance: PARTIAL
+
+16 октября 2026. LIVE проверен на main
+`d66151a27cbaa7db2a04e13b2e0ec1de3ebbe20e` (PR #29), после ff-only pull.
+Штатный YAPLIX.cmd, отдельные port3293 и `.local/micro023l/acceptance.sqlite`.
+**Реальных inference POST: 1 из разрешённых максимум 2**, только Ollama Cloud
+gemma4:31b. HTTP200, finish_reason=stop + DONE; HTML13710 bytes без усечения,
+точное совпадение raw SSE content / saved version / export по SHA-256.
+Input477/output4546 tokens; TTFB886ms, stream12327ms, request с catalog13149ms,
+validation1546ms, job14699ms. Сохранены 1 game / 1 version / 1 completed job.
+
+Реальные клавиши: движение, 20/20 сборов, score0→20, пустой список мусора и
+win terminal DOM; контакт с тараканами, потеря здоровья, loss при health0 и
+restart с score0/health3/20 items подтверждены. Runtime errors0. Данные считывались
+только для навигации/сверки, state/score/HTML и terminal handlers не изменялись.
+Полноэкранный screenshot финала не захватил полезную картинку iframe; win proof
+опирается на журнал реальных действий, собранные предметы и terminal DOM.
+
+**FAILED: touch в Chromium Pixel5 390×844 emulation.** maxTouchPoints1 и
+pointer:coarse=true, но `'ontouchstart' in window=false`. Модель показывает
+джойстик только по последней проверке: display:none, rect0×0; реальный touch
+swipe оставил персонажа (300,300)→(300,300). Физические устройства NOT_TESTED.
+Полная техническая проверка не обещала gameplay PASS: её аспекты были NOT_VERIFIED.
+
+По owner stop condition второй POST **не выполнен**; запрос аптечек, новая версия
+и свежий editing E2E не проверены. Нет edit permit/second dispatch ticket.
+Предел защищён durable atomic tickets перед fetch, кроме per-job maxCalls1;
+retry/fallback/OpenRouter/repair выключены. HTML сохранён без ручного исправления.
+Export/reopen проверены; exported file работает клавиатурой offline после
+штатного закрытия только изолированного backend. SQLite quick_check ok/FK0.
+User DB осталась 24 games / 42 versions / 21 jobs; все 321 baseline hashes
+не изменились (.env/PDF/existing SQLite включены). Приёмочные браузеры закрыты.
+Typecheck/build и 35 critical units PASS. Actions остаются disabled.
+
+VERDICT: Technical pipeline PASS; Generation PARTIAL; desktop gameplay VERIFIED,
+Chromium touch FAILED; Editing PARTIAL/NOT_RUN; Overall PARTIAL. Код продукта
+не менялся. Private evidence/receipt/screenshots/export — `.local/micro023l/`.
+NEXT: исправить причину ненадёжного выбора touch-controls в будущих результатах
+без regex-подмены этой игры; для нового LIVE-прогона нужно отдельное разрешение.
+Не расходовать оставшийся второй POST на repair или повтор создания.
+
+---
+
 # MICRO-023 — Full HTML core
 
 16 октября 2026. Baseline main/origin/main:

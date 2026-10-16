@@ -195,8 +195,10 @@ MICRO-022 проверяет ошибки выполнения, реальные
 contract в [generation.ts](src/generation.ts). Legacy `spec` меняет только envelope.
 Нет обязательного Visual Kit/GameDNA/достижений/телеметрии, движок выбирает модель.
 [Лимиты, причины изменений, локальные тесты и процедура LIVE](docs/micro-023-report.md).
-MICRO-023: **LIVE NOT_TESTED**, 0 новых inference POST; качество новой генерации
-не подтверждено без отдельной приёмки на двух разрешённых запросах.
+MICRO-023L: **LIVE PARTIAL**, 1 Ollama POST. Полный HTML/desktop сбор/win/loss/restart
+и offline export проверены; touch-джойстик созданной игры скрыт в Chromium emulation.
+По условию владельца второй POST/редактирование не запускались. Исходный HTML
+не исправлялся вручную; [результат и границы](docs/SESSION_HANDOFF.md).
 
 Существующий `.env` не переписывается. Legacy `CLOUD_MODEL`, `OLLAMA_CLOUD_MODEL`,
 `LLM_FALLBACK`, `SECONDARY_*`, `OLLAMA_*` для local и `LLM_LOCAL_FALLBACK`

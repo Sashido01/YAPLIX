@@ -9,7 +9,9 @@ Browser tests, реальные LLM, hosted CI и физические устр�
 https://ollama.com/v1 и openrouter/free на https://openrouter.ai/api/v1.
 Legacy Auto означает только Ollama, автоматического fallback нет. Базовый
 контракт — полный offline HTML/CSS/JS; gameplay и технический запуск различаются.
-Старые версии/jobs/checkpoints сохранены. Новых inference POST: 0, LIVE NOT_TESTED.
+Старые версии/jobs/checkpoints сохранены. MICRO-023L: 1 fresh Ollama POST,
+LIVE PARTIAL: desktop win/loss/restart/export подтверждены, mobile touch FAILED
+в Chromium emulation; editing не запускалось по owner stop condition.
 [Точная приёмка: минимум 2 запроса после разрешения](micro-023-report.md).
 Hosted Actions временно выключены владельцем до 29 октября 2026:
 [локальные проверки и восстановление](ci-economy.md).
