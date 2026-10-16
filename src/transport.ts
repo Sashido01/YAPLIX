@@ -84,7 +84,14 @@ export class CloudTransport implements CodeTransport {
   }
   private async request(path: string, signal: AbortSignal, body?: object) {
     const response=await this.response(path,signal,body);
-    try { return JSON.parse(await boundedText(response, 1_210_000)); } catch (error) { if (signal.aborted || error instanceof Fault) throw error; throw new ProviderFailure('LLM_INVALID_RESPONSE'); }
+    let text:string;
+    try { text=await boundedText(response,1_210_000); } catch(error) {
+      if(signal.aborted||error instanceof Fault)throw error;
+      // Fatal UTF-8 decoding happens after a clean EOF in boundedText.
+      if(error instanceof TypeError&&(error as NodeJS.ErrnoException).code==='ERR_ENCODING_INVALID_ENCODED_DATA')throw new ProviderFailure('LLM_INVALID_RESPONSE');
+      throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED');
+    }
+    try { return JSON.parse(text); } catch { throw new ProviderFailure('LLM_INVALID_RESPONSE'); }
   }
   private async response(path:string,signal:AbortSignal,body?:object) {
     if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Fault('INSECURE_TLS_CONFIGURATION', 503);
@@ -128,8 +135,10 @@ export class CloudTransport implements CodeTransport {
       const delta=choice?.delta?.content;if(typeof delta==='string'){code+=delta;if(Buffer.byteLength(code)>200000)throw new ProviderFailure('ARTIFACT_TOO_LARGE',model,code,tokens);checkpoint();}
     };
     try{
-      for(;;){const part=await reader.read();if(part.done)break;total+=part.value.length;if(total>1210000)throw new ProviderFailure('BODY_TOO_LARGE',model,code,tokens);buffer+=decoder.decode(part.value,{stream:true});let end;while((end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).replace(/\r$/,''));buffer=buffer.slice(end+1);}if(buffer.length>200000)throw new ProviderFailure('BODY_TOO_LARGE',model,code,tokens);}
-      buffer+=decoder.decode();if(buffer.trim())frame(buffer.replace(/\r$/,''));checkpoint(true);
+      // SSE's terminal marker ends the response even if a proxy keeps the body
+      // open. Still require a valid model and stop reason before accepting code.
+      for(;!done;){const part=await reader.read();if(part.done)break;total+=part.value.length;if(total>1210000)throw new ProviderFailure('BODY_TOO_LARGE',model,code,tokens);buffer+=decoder.decode(part.value,{stream:true});let end;while(!done&&(end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).replace(/\r$/,''));buffer=buffer.slice(end+1);}if(buffer.length>200000)throw new ProviderFailure('BODY_TOO_LARGE',model,code,tokens);}
+      if(!done){buffer+=decoder.decode();if(buffer.trim())frame(buffer.replace(/\r$/,''));}checkpoint(true);
       if(finish==='length'&&model)throw new CloudOutputFailure(model,code,tokens);
       if(!done||finish!=='stop'||!model)throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED',model,code,tokens);
       return{code,model,...tokens};

@@ -1,66 +1,106 @@
-# MICRO-019 — текущее состояние
+# MICRO-020 — LIVE connectivity, PARTIAL
 
-Работа от main `4ea156eca6881eb58269459205ecbd6fc1739f47`, ветка
-`codex/micro-019-reliable-generation`. Дата: 16 октября 2026.
-Git delivery и фактический merge SHA подтверждаются в PR receipt/итоговом ответе;
-этот файл фиксирует проверку продукта до публикации.
+16 октября 2026. Исходный main `7a170c7e1a09caf9bc94c71824cf21051d68c6e3`
+(PR #25), после `git pull --ff-only`, ветка `codex/micro-020-live-connectivity`.
+До работы tracked tree чистое, только пользовательский untracked
+`docs/Keys_Bilayn.pdf`. Merge SHA подтверждается в PR receipt/итоговом ответе.
 
-## Реализовано и проверено локально
+## Причина и исправление
 
-- Два production route: Ollama Cloud `gemma4:31b` и OpenRouter `openrouter/free`.
-  UI: Auto / Ollama Cloud / OpenRouter Free; backend проверяет выбор.
-- Auto переключается к резерву максимум один раз в задании; retired route
-  сохраняется через restart и ручной Continue. Без providerMode старые задания
-  нормализуются в Auto, без удаления исходных requests/черновиков.
-- Нет повторного обхода provider list. Default budget 4 calls/300 s, bounded
-  backoff, Retry-After, request default <=60 s, lifetime 12 calls/job.
-- HTTP/SSE auth/quota не повторяются на том же route; quota в models API
-  останавливает dispatch. Cancel, checkpoints, idempotency и SQLite сохраняются.
-- Удаление ключа недоступного route не блокирует startup/доступ к старым jobs.
-  Idempotent replay старого запроса не требует доступности текущего provider.
-- Typecheck/build и 94 целевых generation/platform/MVP/network tests PASS.
-  Python checker/tests (19), CI policy tests (8), diff secret scan PASS.
-- Selector/draft reload: Chromium 320/360/390/430, tablet/desktop, WebKit390:
-  7/7 PASS. Ещё 4/4 controlled worker/background smoke на Chromium320/WebKit390
-  проверили sandbox, touch, сохранение и reload (LLM transport synthetic). Это эмуляция, не физические Android/iOS/Telegram клиенты.
+Четыре исторических POST MICRO-019: Ollama interruption 11026 ms, OpenRouter
+timeouts 45006/45007/45006 ms. Старые логи содержат provider/model/error,
+длительность и пустой checkpoint, но не TCP/TLS/status/headers/first byte.
+Инициатор исторического обрыва и причина недоступности **не установлены**.
+Нельзя приписывать их VPN, proxy, квоте или найденному SSE дефекту.
 
-## LIVE — PARTIAL, не PASS
+Два локально воспроизведённых дефекта CloudTransport исправлены:
 
-Playwright отправил точный запрос «Собери игру три в ряд» через production
-createApp/GenerationJobs в отдельной `.local/micro019/live.sqlite`.
-Ровно **4 inference HTTP POST из 4 разрешённых**:
+- После SSE `[DONE]` клиент продолжал ждать remote EOF и получал ложный timeout
+  при открытом body. Теперь terminal marker завершает чтение и reader отменяется;
+  обязательные model/finish_reason=stop и static/browser gates сохранены.
+- Обрыв non-streaming body после headers ошибочно становился invalid JSON.
+  Теперь read failure — `LLM_CONNECTION_INTERRUPTED`, а полный malformed JSON
+  остаётся `LLM_INVALID_RESPONSE`.
 
-1. Ollama Cloud `gemma4:31b`: `LLM_CONNECTION_INTERRUPTED`, 11.0 s.
-2. OpenRouter `openrouter/free`: `LLM_TIMEOUT`, 45.0 s.
-3. Тот же разрешённый резерв: `LLM_TIMEOUT`, 45.0 s.
-4. Тот же резерв: `LLM_TIMEOUT`, 45.0 s.
+Оба regression tests падали до исправления и проходят после. Это локальное
+доказательство, а не установленная причина MICRO-019. Архитектура, prompts,
+allowlist, retry/cooldown/deadline, TLS и default timeouts не менялись.
 
-Job закончил `needs_attention`, сохранил идею, 4 attempts и исходную историю;
-получено 0 HTML bytes, сохранено 0 игровых версий. Повторных обращений к Ollama
-после switch не было. Причина сетевой недоступности не установлена; VPN/proxy
-или исчерпание квоты по этим таймаутам не доказаны. Шаблон не подставлялся.
-Gameplay (swap/match/score/goal/restart/touch и повторное открытие LIVE-игры)
-**NOT VERIFIED**, потому что provider не вернул игру. Ещё inference без нового
-разрешения владельца запрещён. Локальные synthetic PASS этого не заменяют.
-Evidence (private ignored): `.local/micro019/live-job.json`,
-`.local/micro019/inference-count.json`, `.local/micro019-units.log`,
-`.local/micro019-final-units.log`, `.local/micro019-browser.log`,
-`.local/micro019-jobs-browser.log`.
+## Network и LLM
 
-## CI и продолжение
+Node 24.18.0 / bundled Undici 7.28.0 / native fetch без provider SDK.
+DNS обоих hostname вернул IPv4; IPv6 отказ не наблюдался. TLS 1.3 authorized,
+GET `/models` — 200 через Node/curl/PowerShell; клиент проекта — ready.
+HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NODE_USE_ENV_PROXY не заданы; NO_PROXY задан.
+Системные proxy/VPN/routes/firewall не изменены. EACCES в песочнице исчез при
+разрешённом запуске вне неё: это ограничение инструмента, не provider evidence.
+GET 200 не подменяет inference.
 
-Actions выключены на уровне **только этого private repo**: REST
-`actions/permissions.enabled=false`. Исходно enabled=true, allowed_actions=all,
-sha_pinning_required=false. Repository checks ID379465037 disabled_manually;
-dynamic Dependabot ID379465492 не допускает отдельный disable (422), но
-repository-wide off блокирует и его. Running/pending runs: 0. Main protected=false,
-required checks/contexts пусты. Permissions/protection не обходились и не менялись.
-[FAST/FULL и восстановление](ci-economy.md) сохранены; включать только по команде
-владельца. Нельзя называть отсутствие hosted runs зелёным CI.
+**1 из 2 дополнительных разрешённых inference POST**: UI «Собери игру три в ряд»,
+explicit Ollama Cloud `gemma4:31b`, exact `https://ollama.com/v1/chat/completions`.
+Изолированная новая `.local/micro020/live-1.sqlite`, исходно 0 jobs.
+Дисковый global counter <=2, дополнительный предел 1 POST/run/job, repairs=0;
+нет автоматических retries и межпровайдерного fallback в live-тесте.
+OpenRouter inference не вызывался. Бесплатная квота Ollama разрешена владельцем;
+планы/credits не менялись.
 
-Windows запуск — `YAPLIX.cmd`; после обновления повторный запуск штатно заменяет
-свой backend. `.env`, пользовательская SQLite, существующие игры и
-`docs/Keys_Bilayn.pdf` не изменяются проверкой MICRO-019. Экспериментальный
-Game Orchestrator, Telegram и внешняя сеть не исправляются в этой задаче.
-Следующая продуктовая проверка — новый разрешённый live-бюджет при доступном API
-и реальные Playwright действия до цели; без этого MVP приёмка остаётся PARTIAL.
+HTTP 200 SSE headers через 619 ms, первый body byte через 623 ms от dispatch;
+конец HTTP body примерно через 11.9 s. Request с catalog preflight — 14908 ms.
+Получен **1 полный HTML: 12662 UTF-8 bytes / 4032 output tokens**, actual model
+gemma4:31b. Job завершился через 19007 ms. В trace есть некоррелированный connect
+timeout другого запроса: он не опровергает inference 200/полный HTML и не
+объясняет старые отказы. Cleanup AbortController после проверки не прервал ответ.
+
+## Gameplay и сохранение
+
+Browser gate отверг неизменённый HTML: `JAVASCRIPT_EXCEPTION`,
+`Cannot set properties of null (setting 'textContent')`. Ошибочный атрибут
+`<output data-yaplix-state" ...>` не соответствует `[data-yaplix-state]`;
+stateEl равен null, запись в draw вызывает исключение.
+
+Playwright mobile touch: поле 8x8 видно, Start открывает поле, выбор клетки
+подтверждён; настоящая соседняя перестановка даёт match и score/HUD 0→60.
+Затем 6 пустых клеток, isAnimating=true, moves остаётся 20: gravity/refill и
+дальнейшая игра сломаны. Видимая цель 1000 очков за 20 ходов; победа/restart
+до играбельного состояния NOT VERIFIED. HTML/очки/RNG не подменялись; состояние
+читалось только для диагностики, действия выполнялись touch. Это отдельный
+gameplay defect, не network timeout.
+
+**0 новых игровых версий**: gate не допустил failed HTML в библиотеку.
+Идея, полный checkpoint, origin и история сохранены в изолированной SQLite,
+job `08e8268c-63bd-4881-b1a1-67e71342af68`, needs_attention.
+Сценарий «проверенная игра → сохранение версии → повторное открытие» не пройден.
+Второй POST не использован: дополнительные LLM repairs gameplay требуют нового
+разрешения по MICRO-020. Полный checkpoint доступен без inference.
+
+## Проверки и сохранность
+
+Typecheck/build PASS. Целевые transport/engine/jobs/retry/restart/route и
+security/platform/MVP tests 101/101 PASS. Короткий browser smoke 4/4: Chromium320 и
+WebKit390, selector/draft reload и controlled LIVE background worker.
+Последний использует synthetic transport; physical Android/iOS/Telegram не проверены.
+Итоговые test counts и локальный secret scan фиксируются в PR receipt.
+Полный CI, долгие browser matrices и performance benchmarks не запускались.
+
+Пользовательская `.local/task-004/live.sqlite`: 21 games / 39 versions / 14 jobs,
+активных 0, stages: 6 completed / 5 needs_attention / 3 cancelled.
+Read-only hashes HTML/metadata/jobs и integrity/FK сравниваются до/после.
+Тестовые записи только в отдельных fixtures. `.env`, PDF, пользовательские
+SQLite/jobs и неизвестные ignored файлы сохраняются.
+
+Private ignored evidence: `.local/micro020/network.json`, `data-before.json`,
+`data-after.json`, `inference-count.json`, `trace-1.json`, `live-job-1.json`,
+`received-game.html`, `gameplay.json`, `touch.json`, PNG и test logs.
+Эта локальная диагностика и полученная игра не публикуются.
+
+## CI и следующий шаг
+
+Repository actions/permissions.enabled=false; hosted checks не запускались
+и не объявляются зелёными. FAST/FULL и release FULL policy сохранены;
+Actions включать только по команде владельца: [процедура](ci-economy.md).
+
+VERDICT **PARTIAL**: Ollama ответ подтверждён; историческая причина неизвестна,
+игра сломана и не сохранена как passed version. Следующий шаг — отдельно
+разрешённое исправление gameplay и приёмка через настоящие действия, сохранение
+и повторное открытие. Новый inference ради gameplay без разрешения запрещён.
+Экспериментальный Orchestrator, Telegram и внешние репозитории не затрагивались.
