@@ -136,6 +136,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   const [history,session]=await Promise.all([api('/api/games/'+version.gameId,undefined,undefined,signal),api(`/api/versions/${version.versionId}/sessions`,{},undefined,signal)]);
   if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
   current=version;remember(version);
+  el('phone').dataset.version = version.versionId;
   const title=history.versions[0]?.spec.prompt??version.spec.prompt;
   el('game-title').textContent=title.length>100?title.slice(0,100)+'…':title;
   const bytes=new TextEncoder().encode(version.html).length;
@@ -177,6 +178,7 @@ el('versions').addEventListener('change',()=>void attempt(async signal=>show(awa
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.addEventListener('click',()=>{const screen=button.dataset.view!;if(screen==='play'&&current&&!unmount)void attempt(async signal=>{view(screen);await play(current!,signal);});else view(screen);}));
 el('focus-game').addEventListener('click',()=>{const active=document.body.classList.toggle('game-focus');el('focus-game').textContent=active?'Обычный экран':'Игровой экран';});
 let diagnosing=false;
+el('phone').addEventListener('toggle',()=>{if(el<HTMLDetailsElement>('phone').open){const path='/runtime/phone-connect-ui.js';void import(path).then(module=>module.connectPhone()).catch(()=>{el('phone-status').textContent='Не удалось открыть подключение. Обновите страницу и проверьте сервер.';});}});
 async function diagnose(){if(diagnosing)return;diagnosing=true;try{const path='/runtime/connection-ui.js';await (await import(path) as typeof import('./connection-ui.ts')).diagnose(telegramToken);}finally{diagnosing=false;}}
 el('system').addEventListener('toggle',()=>{if(el<HTMLDetailsElement>('system').open)void diagnose().catch(()=>{el('system-info').textContent='Статус не подтверждён. Проверьте сборку и доступность API.';});});
 el('diagnostics').addEventListener('click',()=>{el<HTMLDetailsElement>('system').open=true;void attempt(async()=>{await diagnose();el('system').scrollIntoView({block:'start'});});});

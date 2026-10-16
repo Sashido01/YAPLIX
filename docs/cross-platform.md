@@ -201,3 +201,18 @@ Slow 4G/CPU×4, прогретый server. LLM и browser validation вне shel
 не равен историческому сценарию с 0 iframe и не доказывает отсутствие утечки.
 Physical Android/iOS/WebView, энергопотребление и произвольный generated game
 этим лабораторным профилем не проверены. [Реальные LLM и границы](task-010-report.md).
+
+## MICRO-024: ограниченное тестирование телефона
+
+«Подключить телефон» → выбрать сеть при необходимости → камера телефона → игра.
+Подробности общей сети, частного Firewall, VPN и отключения — [README](../README.md#телефон-lan-и-telegram).
+Phone shell даёт всё оставшееся место opaque iframe, учитывает safe-area/rotation,
+не накрывает управление нижней навигацией. Restart заново монтирует неизменённый
+HTML; повторное открытие использует временный cookie. Прогресс не сохраняется.
+
+Мобильный technical probe full HTML больше не нажимает клавиатуру: только
+настоящие taps. Это предотвращает маскировку отсутствующего touch клавиатурой,
+но не устанавливает управление всеми механиками произвольной игры. Prompt требует
+видимого touch fallback, Pointer Events/cancel и maxTouchPoints/coarse вместо
+единственного `ontouchstart`. HTML владельца не переписывается. Physical Android
+Chrome/WebView и iOS Safari/WKWebView — NOT_TESTED.

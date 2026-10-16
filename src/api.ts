@@ -19,10 +19,11 @@ import type { RuntimeControl } from './runtime-control.ts';
 import { RUNTIME_PROTOCOL } from './runtime-control.ts';
 import { GenerationJobs } from './jobs.ts';
 import {gallery,openGallery} from './gallery.ts';
+import type { PhoneConnection } from './phone.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs, phone?:PhoneConnection) {
   const app = new Hono();
   if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
   const staticFile = staticAssets();
@@ -101,6 +102,18 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   }
   app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 2 }));
   app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 2, ...(await diagnostics() as object) }));
+  const localPhone = () => {
+    if (!phone || policy && policy.mode !== 'local') throw new Fault('PHONE_LOCAL_ONLY', 403);
+    return phone;
+  };
+  app.get('/api/phone', async c => c.json({ ...(localPhone().status()), networks: await localPhone().networks() }));
+  app.post('/api/phone', async c => {
+    const manager = localPhone(), body = object(await json(c.req.raw, 512), ['versionId','address']);
+    if (body.address !== undefined && typeof body.address !== 'string') throw new Fault('HOST_NOT_AVAILABLE');
+    return c.json(await manager.enable(uuid(body.versionId), body.address as string | undefined));
+  });
+  app.delete('/api/phone', async c => { object(await json(c.req.raw, 32), []); return c.json(await localPhone().disable()); });
+  app.get('/api/phone/qr.svg', c => c.body(localPhone().qr(), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' }));
   const owner=(c:{req:{header(name:string):string|undefined}})=>principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session'));
   app.get('/api/jobs',c=>c.json({jobs:jobManager().list(owner(c))}));
   app.get('/api/jobs/:jobId',c=>c.json(jobManager().get(owner(c),c.req.param('jobId'))));
@@ -193,7 +206,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return c.html(html.replace('</head>','<script src="https://telegram.org/js/telegram-web-app.js"></script></head>').replace('<body','<body data-entry="telegram"'));
   });
   app.get('/ui/style.css', c => staticFile(c, 'assets/style.css', 'text/css; charset=utf-8'));
-  for (const file of ['ui', 'access-ui', 'connection-ui','telegram-ui']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['ui', 'access-ui', 'connection-ui','phone-connect-ui','telegram-ui']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });

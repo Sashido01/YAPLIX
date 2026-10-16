@@ -106,6 +106,12 @@ export class Store {
   list() {
     return this.db.prepare("SELECT metadata,(SELECT json_extract(first.metadata,'$.spec.prompt') FROM versions first WHERE first.game_id=versions.game_id ORDER BY first.rowid LIMIT 1) title FROM versions WHERE rowid IN (SELECT MAX(rowid) FROM versions GROUP BY game_id) ORDER BY rowid DESC LIMIT 50").all().map(row => ({...JSON.parse(row.metadata as string),title:String(row.title)}));
   }
+  lastSavedGeneration(provider?: string | null) {
+    const row = this.db.prepare("SELECT metadata FROM versions WHERE json_extract(metadata,'$.method')='llm_code' AND json_extract(metadata,'$.provider')=? ORDER BY rowid DESC LIMIT 1").get(provider ?? '');
+    if (!row) return null;
+    const v = JSON.parse(String(row.metadata));
+    return { provider: v.provider, model: v.model, createdAt: v.createdAt, source: 'saved-version' };
+  }
   async backup() {
     if (this.backingUp) throw new Fault('BACKUP_BUSY', 409);
     this.backingUp = true;
