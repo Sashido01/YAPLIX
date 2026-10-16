@@ -1,3 +1,22 @@
+# MICRO-027 — reliability, diagnostics and LIVE delivery
+
+2026-10-17. Baseline main `ff1a952`; [current report](micro-027-report.md).
+Metadata-only per-job UTC trace, safe report download, exact-version On phone
+entry points, critical-error precedence and SSE framing fixes. OpenRouter is
+experimental/manual only, including retries, repair and restart recovery.
+
+Four guarded inference POST: Ollama connect timeout; Blueprint HTTP200 but
+BLUEPRINT_INCOMPATIBLE; Ollama Full HTML2770 tokens/9894 bytes delivered after
+checkpoint revalidation without another POST; OpenRouter HTTP200 upstream
+cohere/north-mini-code:free failed at wire cap. Real keyboard/touch win/loss/
+restart, persistence/export and decoded exact-version LAN QR verified. Real edit,
+physical devices and landscape playability remain unverified; landscape screenshot
+shows clipped generated controls. Product PARTIAL, Router UNRELIABLE, Blueprint
+ITERATE. Evidence `.local/micro027/`; user DB/.env/PDF preserved. Actions disabled.
+Local gates: units246, Python19, policy8 PASS; final Playwright28+28 PASS
+with21+8 intentional profile skips; typecheck/build and secrets PASS.
+MICRO-025 completion still unconfirmed. See final delivery receipt for merge SHA.
+
 # MICRO-026 — isolated Game Constructor PoC
 
 2026-10-16, baseline main `37653b984e41f7486f218e055673857222b96ecb`;

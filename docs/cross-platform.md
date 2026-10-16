@@ -216,3 +216,12 @@ HTML; повторное открытие использует временны�
 видимого touch fallback, Pointer Events/cancel и maxTouchPoints/coarse вместо
 единственного `ontouchstart`. HTML владельца не переписывается. Physical Android
 Chrome/WebView и iOS Safari/WKWebView — NOT_TESTED.
+
+## MICRO-027 delivery entry point
+
+Use On phone on the completed job or opened game. It shares the explicit version,
+including an older open version, with the existing30-minute capability/QR listener.
+The report contains real QR decode and independent LAN-client proof for one saved
+LIVE game, plus synthetic320/360/390/430/tablet/desktop flows. Portrait touch
+win/loss/restart worked; that generated game's landscape screenshot is clipped.
+Do not infer physical Android/iOS/WebView/Telegram or landscape PASS from it.

@@ -1,3 +1,5 @@
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
 import {createAndOpen} from './ui-jobs-helper.ts';
 import { test, expect } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
@@ -14,7 +16,7 @@ test.beforeEach(({},info)=>{test.skip(!['chromium-desktop','chromium-320','webki
 test('production HTTP disconnect cancels cloud body and stores no game',async()=>{
  let started!:()=>void,disconnected!:()=>void;const began=new Promise<void>(done=>started=done),ended=new Promise<void>(done=>disconnected=done);
  const upstream=createServer((_req,res)=>{res.on('close',disconnected);res.writeHead(200);res.write('{');started();});await new Promise<void>(done=>upstream.listen(0,'127.0.0.1',done));
- const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'cloud',CLOUD_MODEL:'synthetic-model',CLOUD_API_KEY:'synthetic-not-a-secret',CLOUD_BASE_URL:'http://127.0.0.1:'+(upstream.address() as any).port});
+ const server=await productionServer('127.0.0.1',synthetic('http://127.0.0.1:'+(upstream.address() as any).port));
  try{
   const controller=new AbortController();const pending=fetch(server.url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'}),signal:controller.signal});const rejected=expect(pending).rejects.toThrow(/abort/i);
   await Promise.race([began,new Promise<void>((_,reject)=>setTimeout(()=>reject(Error('UPSTREAM_NOT_STARTED')),5000).unref())]);controller.abort();await rejected;
@@ -54,28 +56,30 @@ test('real production LAN: authentication, QR independent decode, relative API, 
 
 for(const scenario of ['success','repair','unsafe','http-error','timeout','unavailable'] as const)test('production LIVE '+scenario+' (synthetic transport, no model-quality claim)',async({page})=>{
   test.setTimeout(35000);
-  let calls=0;const model='test-model';
+  let calls=0;const model='gemma4:31b';
   const mock=createServer((req,res)=>{
-    if(req.url==='/api/tags'){res.end(JSON.stringify({models:[{name:model}]}));return;}
+    if(req.url==='/v1/models'){res.end(JSON.stringify({data:[{id:model}]}));return;}
     calls++;if(scenario==='timeout')return;
     if(scenario==='http-error'){res.statusCode=500;res.end('{}');return;}
     const unsafe= scenario==='unsafe'||scenario==='repair'&&calls===1;
-    res.end(JSON.stringify({done:true,done_reason:'stop',model,message:{content:unsafe?html.replace('</html>','<script>alert("win")</script></html>'):html}}));
+    const content=unsafe?html.replace('</html>','<script>alert("win")</script></html>'):html;res.end('data: '+JSON.stringify({model,choices:[{delta:{content},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n');
   });
   await new Promise<void>(done=>mock.listen(0,'127.0.0.1',done));const port=(mock.address() as {port:number}).port;
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
-  const server=await productionServer('127.0.0.1',{LIVE_PROVIDER:'ollama',OLLAMA_BASE_URL:`http://127.0.0.1:${port}`,OLLAMA_MODEL:model,LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'15000'});
+  const server=await productionServer('127.0.0.1',{...synthetic(`http://127.0.0.1:${port}`),LLM_MAX_ATTEMPTS:scenario==='repair'||scenario==='unsafe'?'2':'1',LLM_AUTO_REPAIR:'1',LLM_REPAIRS:'1',LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'180000',LLM_REQUEST_TIMEOUT_MS:scenario==='timeout'?'1000':'60000'});
   try {
     await page.goto(server.url);await page.getByRole('button',{name:'Создать',exact:true}).click();if(scenario==='success'||scenario==='repair')await createAndOpen(page,'Создать игру',false);else {await page.locator('#generate').click();await page.locator('#jobs-toggle').click();}
     if(scenario==='success'||scenario==='repair'){
       // The real server-side checker is included in the 15-second generation
       // deadline above. Wait for that contract, rather than a five-second poll.
-      await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('llm_code');
+      await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('Ollama Cloud');
       const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
-      await expect(page.locator('#jobs-list')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Соединение с моделью'}[scenario]);
+      await expect(page.locator('#jobs-list')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Не удалось подключиться к модели'}[scenario]);
       await expect(page.locator('#generate')).toBeEnabled();expect((await(await page.request.get(server.url+'/api/games')).json()).games).toHaveLength(0);expect(calls).toBe(scenario==='unsafe'?2:scenario==='unavailable'?0:1);
     }
   } finally {await server.stop();server.cleanup();mock.closeAllConnections();await new Promise<void>(done=>mock.close(()=>done()));}
 });
+
+function synthetic(upstream:string):NodeJS.ProcessEnv{return{LIVE_PROVIDER:'ollama-cloud',OLLAMA_CLOUD_API_KEY:'synthetic-not-a-secret',CLOUD_API_KEY:'',CLOUD_BASE_URL:'',LLM_NETWORK_MODE:'direct',TELEGRAM_UPDATES:'off',TELEGRAM_BOT_TOKEN:'',NODE_OPTIONS:'--import='+pathToFileURL(resolve('tests/synthetic-cloud.mjs')).href,YAPLIX_TEST_UPSTREAM:upstream};}

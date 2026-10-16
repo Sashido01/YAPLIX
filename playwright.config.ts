@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= '.local/playwright';
 export default defineConfig({
-  testDir: './tests', testMatch: ['runtime.spec.ts', 'mvp.spec.ts', 'mobile.spec.ts', 'phone.spec.ts', 'production.spec.ts', 'generation.spec.ts', 'telegram.spec.ts','jobs.spec.ts','arcades.spec.ts','orchestrator.spec.ts'], outputDir: '.local/playwright-results',
+  testDir: './tests', testMatch: ['runtime.spec.ts', 'mvp.spec.ts', 'mobile.spec.ts', 'phone.spec.ts', 'production.spec.ts', 'generation.spec.ts', 'telegram.spec.ts','jobs.spec.ts','arcades.spec.ts','orchestrator.spec.ts','micro027.spec.ts'], outputDir: '.local/playwright-results',
   fullyParallel: false, workers: 1, reporter: 'list', timeout: 20_000,
   use: { baseURL: 'http://127.0.0.1:3210', trace: 'retain-on-failure' },
   webServer: { command: 'node tests/browser-server.ts', url: 'http://127.0.0.1:3210/api/health', reuseExistingServer: false },

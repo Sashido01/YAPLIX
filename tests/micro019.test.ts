@@ -25,12 +25,12 @@ for(const mode of ['auto','ollama-cloud','openrouter'] as ProviderMode[])test(mo
  try{const job=await settle(jobs,jobs.create('owner','mode-'+mode,{...request,providerMode:mode}).jobId);assert.deepEqual(calls,mode==='openrouter'?['openrouter']:['ollama']);assert.equal(job.stage,mode==='openrouter'?'completed':'needs_attention');assert.equal(job.providerMode,mode);}finally{await jobs.close();store.close();}
 });
 
-test('an explicitly selected router never calls Ollama after worker/engine restart; Retry-After and budget survive',async t=>{
+test('an explicitly selected router never calls Ollama after worker/engine restart; only manual Continue repeats, Retry-After and budget survive',async t=>{
  let time=Date.now(),primary=0,secondary=0;t.mock.method(Date,'now',()=>time);
  const make=()=>new GenerationEngine([route('ollama.com',async()=>{primary++;throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED');}),route('openrouter',async()=>{secondary++;throw new ProviderFailure('LLM_RATE_LIMIT',null,'',{},time+60000,429);})],{check:evidence});
  const store=new Store(':memory:');let jobs=new GenerationJobs(store,make());const id=jobs.create('owner','durable-switch',{...request,providerMode:'openrouter'}).jobId;
  try{for(let i=0;i<100&&jobs.get('owner',id).attempts<1;i++)await new Promise(r=>setTimeout(r,5));await jobs.close();const before=jobs.get('owner',id);assert.ok(before.provider==='openrouter');assert.equal(before.attempts,1);
-  time+=60001;jobs=new GenerationJobs(store,make());for(let i=0;i<100&&jobs.get('owner',id).attempts<2;i++)await new Promise(r=>setTimeout(r,5));await jobs.close();assert.equal(primary,0);assert.equal(secondary,2);const after=jobs.get('owner',id);assert.equal(after.deadlineAt,before.deadlineAt);assert.equal(after.automaticLimit,before.automaticLimit);assert.ok(after.retryAt!>time);assert.equal(after.spec.prompt,spec.prompt);
+  time+=60001;jobs=new GenerationJobs(store,make());await new Promise(r=>setTimeout(r,50));const after=jobs.get('owner',id);assert.equal(primary,0);assert.equal(secondary,1);assert.equal(after.stage,'needs_attention');assert.equal(after.deadlineAt,before.deadlineAt);assert.equal(after.automaticLimit,before.automaticLimit);assert.equal(after.spec.prompt,spec.prompt);jobs.continue('owner',id);await settle(jobs,id);assert.equal(secondary,2);assert.equal(primary,0);assert.ok(jobs.get('owner',id).retryAt!>time);
  }finally{await jobs.close();store.close();}
 });
 

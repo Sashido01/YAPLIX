@@ -1,3 +1,4 @@
+import type { TraceData } from './generation-trace.ts';
 import { networkRequest, NetworkFailure } from './llm-network.ts';
 import type { NetworkDiagnostic } from './llm-network.ts';
 import { Fault } from './contracts.ts';
@@ -12,7 +13,9 @@ export function providerMode(value:unknown):ProviderMode {
   return value;
 }
 export interface GenerationContext {
+  trace?(event:string,data?:TraceData):void;
   providerMode?:ProviderMode;
+  manualContinuation?:boolean;
   checkpoint?:string; maxCalls?:number;
   blockedRoutes?:string[];
   checkpointOrigin?:{provider:string;requestedModel:string;model:string};
@@ -54,7 +57,7 @@ export async function boundedText(response: Response, limit: number) {
 export type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 export function boundedCode(code:string){return Buffer.from(code).subarray(0,200000).toString('utf8').replace(/\uFFFD$/,'');}
 export class ProviderFailure extends Fault {
-  diagnostic?:NetworkDiagnostic;
+  diagnostic?:NetworkDiagnostic;wireBytes?:number;inputTokens?:number;finishReason?:string|null;
   readonly actualModel:string|null; readonly partial:string; readonly usage:TokenUsage;readonly retryAt:number|null;
   constructor(code:string,model:string|null=null,partial='',usage:TokenUsage={},retryAt:number|null=null,status=502){super(code,status);this.actualModel=model;this.partial=boundedCode(partial);this.usage=usage;this.retryAt=retryAt;}
 }
@@ -104,10 +107,10 @@ export class CloudTransport implements CodeTransport {
       try { return JSON.parse(text); } catch { throw new ProviderFailure('LLM_INVALID_RESPONSE'); }
     },observe);
   }
-  private async response<T>(path:string,signal:AbortSignal,body:object|undefined,consume:(response:Response)=>Promise<T>,observe?:(value:NetworkDiagnostic)=>void) {
+  private async response<T>(path:string,signal:AbortSignal,body:object|undefined,consume:(response:Response)=>Promise<T>,observe?:(value:NetworkDiagnostic)=>void,context?:GenerationContext) {
     const began=performance.now();let snapshot:NetworkDiagnostic|undefined;
     try{return await networkRequest(new URL(path,this.base),{method:body?'POST':'GET',redirect:'error',signal,headers:{Authorization:'Bearer '+this.key,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})},this.provider,async(response,diagnostic)=>{
-      snapshot=diagnostic;try{
+      snapshot=diagnostic;context?.trace?.('response.headers',{httpStatus:response.status,durationMs:Math.round(performance.now()-began)});try{
         if(!response.ok){
           let detail='';try{detail=await boundedText(response,16000);}catch{}
           const retry=response.headers.get('retry-after');const delay=retry&&/^\d+(\.\d+)?$/.test(retry)?Number(retry)*1000:retry?Date.parse(retry)-Date.now():0;
@@ -137,7 +140,7 @@ export class CloudTransport implements CodeTransport {
     const inputBytes=Buffer.byteLength(JSON.stringify(messages));
     if(inputBytes>300000)throw new Fault('LLM_INPUT_TOO_LARGE',413);
     if(context){
-      try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);const contextLength=selected?.context_length;if(Number.isSafeInteger(contextLength)&&contextLength>0&&inputBytes+budget>contextLength)throw new Fault('LLM_CONTEXT_LIMIT',413);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
+      try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]),undefined,d=>context.trace?.('provider.catalog_completed',{httpStatus:d.httpStatus,durationMs:d.durationMs,networkRoute:d.route,networkStage:d.stage,errorCode:d.category==='ok'?null:d.category}));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);const contextLength=selected?.context_length;if(Number.isSafeInteger(contextLength)&&contextLength>0&&inputBytes+budget>contextLength)throw new Fault('LLM_CONTEXT_LIMIT',413);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
       catch(error){if(signal.aborted||error instanceof Fault&&['LLM_CONTEXT_LIMIT','LLM_AUTH','LLM_QUOTA','LLM_RATE_LIMIT','LLM_MODEL_NOT_FOUND','LLM_NETWORK_CONFIGURATION','LLM_PROXY_UNSUPPORTED','LLM_PROXY_AUTH','LLM_TLS','INSECURE_TLS_CONFIGURATION'].includes(error.code))throw error;}
       if(budget<2048)throw new Fault('LLM_OUTPUT_BUDGET_TOO_SMALL',502);
       // Conservative byte-based token allowance; no hidden source truncation.
@@ -146,10 +149,10 @@ export class CloudTransport implements CodeTransport {
 
     }
     const body={model:this.model,messages,stream:Boolean(context),[this.tokenField]:budget,...(context?{stream_options:{include_usage:true}}:{}),...(this.provider==='openrouter'?{reasoning:{effort:'low',exclude:true},provider:{require_parameters:true}}:{}),...(this.temperature===undefined?{}:{temperature:this.temperature})};
-    if(context){signal.throwIfAborted();context.dispatch(this);return this.response('chat/completions',signal,body,response=>this.stream(response,signal,context));}
+    if(context){signal.throwIfAborted();context.dispatch(this);context.trace?.('request.started',{inputBytes:Buffer.byteLength(JSON.stringify(body)),maxOutputTokens:budget});const requestBegan=performance.now();try{return await this.response('chat/completions',signal,body,response=>this.stream(response,signal,context),undefined,context);}catch(error){context.trace?.('response.failed',{durationMs:Math.round(performance.now()-requestBegan),httpStatus:error instanceof ProviderFailure?error.diagnostic?.httpStatus:undefined,wireBytes:error instanceof ProviderFailure?error.wireBytes:undefined,outputBytes:error instanceof ProviderFailure&&error.wireBytes!==undefined?Buffer.byteLength(error.partial):undefined,inputTokens:error instanceof ProviderFailure?error.inputTokens:undefined,actualModel:error instanceof ProviderFailure?error.actualModel:undefined,finishReason:error instanceof ProviderFailure?error.finishReason:undefined,...(error instanceof ProviderFailure?error.usage:{}),networkRoute:error instanceof ProviderFailure?error.diagnostic?.route:undefined,networkStage:error instanceof ProviderFailure?error.diagnostic?.stage:undefined,errorCode:error instanceof Fault?error.code:signal.aborted?'LLM_TIMEOUT':'LLM_CONNECTION_INTERRUPTED'});throw error;}}
     const result = await this.request('chat/completions', signal, body);
     const choice = result.choices?.[0];
-    if(!result.error&&choice?.finish_reason==='length'&&typeof result.model==='string'&&result.model.trim()&&result.model.length<=128)throw new CloudOutputFailure(result.model,typeof choice.message?.content==='string'?choice.message.content:'');
+    if(!result.error&&choice?.finish_reason==='length'&&typeof result.model==='string'&&result.model.trim()&&result.model.length<=128)throw new CloudOutputFailure(result.model,typeof choice.message?.content==='string'?choice.message.content:'',usage(result.usage));
     if (result.error || choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string' || typeof result.model !== 'string' || !result.model.trim() || result.model.length > 128) throw new Fault('LLM_INVALID_RESPONSE', 502);
     if(this.provider==='ollama.com'&&result.model!==this.model)throw new Fault('LLM_INVALID_RESPONSE',502);
     // Free router intentionally reports the actual selected free model, not its router alias.
@@ -157,25 +160,27 @@ export class CloudTransport implements CodeTransport {
   }
   private async stream(response:Response,signal:AbortSignal,context:GenerationContext){
     const reader=response.body?.getReader();if(!reader)throw new ProviderFailure('LLM_INVALID_RESPONSE');
-    const decoder=new TextDecoder('utf8',{fatal:true});let buffer='',code='',model:string|null=null,finish:string|null=null,done=false,total=0,lastBytes=0,lastTime=Date.now(),tokens:TokenUsage={};
+    const decoder=new TextDecoder('utf8',{fatal:true});let buffer='',code='',model:string|null=null,finish:string|null=null,done=false,total=0,lastBytes=0,lastTime=Date.now(),tokens:TokenUsage={};const began=performance.now();let first=true,inputTokens:number|undefined;
     const checkpoint=(force=false)=>{if(force||Buffer.byteLength(code)-lastBytes>=4096||Date.now()-lastTime>=750){context.partial(code,model,tokens);lastBytes=Buffer.byteLength(code);lastTime=Date.now();}};
-    const frame=(line:string)=>{
-      if(!line.startsWith('data:'))return;const raw=line.slice(5).trim();if(!raw)return;if(raw==='[DONE]'){done=true;return;}
+    const payload=(raw:string)=>{
+      if(!raw)return;if(raw==='[DONE]'){done=true;return;}
       let data;try{data=JSON.parse(raw);}catch{throw new ProviderFailure('LLM_INVALID_RESPONSE',model,code,tokens);}
       if(typeof data.model==='string'&&data.model.trim()&&data.model.length<=128){if(this.provider==='ollama.com'&&data.model!==this.model)throw new ProviderFailure('LLM_INVALID_RESPONSE',null,code,tokens);model=data.model;}
       if(data.error){const failure=providerError(Number(data.error.code),typeof data.error.message==='string'?data.error.message.slice(0,16000):'');throw new ProviderFailure(failure==='LLM_HTTP'?'LLM_STREAM_ERROR':failure,model,code,tokens);}
-      tokens={...tokens,...usage(data.usage)};const choice=data.choices?.[0];if(choice?.finish_reason)finish=choice.finish_reason;
+      tokens={...tokens,...usage(data.usage)};if(Number.isSafeInteger(data.usage?.prompt_tokens)&&data.usage.prompt_tokens>=0&&data.usage.prompt_tokens<=1000000)inputTokens=data.usage.prompt_tokens;const choice=data.choices?.[0];if(choice?.finish_reason)finish=choice.finish_reason;
       const delta=choice?.delta?.content;if(typeof delta==='string'){code+=delta;if(Buffer.byteLength(code)>200000)throw new ProviderFailure('ARTIFACT_TOO_LARGE',model,code,tokens);checkpoint();}
     };
+    let dataLines:string[]=[];const frame=(line:string)=>{if(line===''){if(dataLines.length)payload(dataLines.join('\n'));dataLines=[];}else if(line.startsWith('data:'))dataLines.push(line.slice(5).replace(/^ /,''));};
     try{
       // SSE's terminal marker ends the response even if a proxy keeps the body
       // open. Still require a valid model and stop reason before accepting code.
-      for(;!done;){const part=await reader.read();if(part.done)break;total+=part.value.length;if(total>1210000)throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE',model,code,tokens);buffer+=decoder.decode(part.value,{stream:true});let end;while(!done&&(end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).replace(/\r$/,''));buffer=buffer.slice(end+1);}if(Buffer.byteLength(buffer)>1210000)throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE',model,code,tokens);}
-      if(!done){buffer+=decoder.decode();if(buffer.trim())frame(buffer.replace(/\r$/,''));}checkpoint(true);
+      for(;!done;){const part=await reader.read();if(part.done)break;if(first){first=false;context.trace?.('response.first_byte',{durationMs:Math.round(performance.now()-began)});}total+=part.value.length;if(total>1210000)throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE',model,code,tokens);buffer+=decoder.decode(part.value,{stream:true});let end;while(!done&&(end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).replace(/\r$/,''));buffer=buffer.slice(end+1);}if(Buffer.byteLength(buffer)>1210000)throw new ProviderFailure('LLM_RESPONSE_BODY_TOO_LARGE',model,code,tokens);}
+      if(!done){buffer+=decoder.decode();if(buffer.trim())frame(buffer.replace(/\r$/,''));if(dataLines.length)payload(dataLines.join('\n'));}checkpoint(true);
+      context.trace?.('response.stream_completed',{wireBytes:total,inputTokens,actualModel:model,finishReason:finish,outputBytes:Buffer.byteLength(code),durationMs:Math.round(performance.now()-began),...tokens});
       if(finish==='length'&&model)throw new CloudOutputFailure(model,code,tokens);
       if(!done||finish!=='stop'||!model)throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED',model,code,tokens);
       return{code,model,...tokens};
-    }catch(error){checkpoint(true);if(error instanceof ProviderFailure||signal.aborted)throw error;throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED',model,code,tokens);}
+    }catch(error){checkpoint(true);if(error instanceof ProviderFailure){error.wireBytes=total;error.inputTokens=inputTokens;error.finishReason=finish;throw error;}if(signal.aborted)throw error;const failure=new ProviderFailure('LLM_CONNECTION_INTERRUPTED',model,code,tokens);failure.wireBytes=total;failure.inputTokens=inputTokens;failure.finishReason=finish;throw failure;}
     finally{await reader.cancel().catch(()=>{});}
   }
   async readiness(signal: AbortSignal) { return (await this.diagnose(signal)).state; }

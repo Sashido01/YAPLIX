@@ -322,3 +322,16 @@ single-scene model and generic adapters. Next gates: fix legacy test harness in
 a separate scoped change; equal-prompt real model A/B/C, preserved-source edits,
 novel modules beyond this library, and physical mobile/WebView acceptance.
 Git commit/PR/merge receipt is reported with the completed delivery.
+
+## MICRO-027 LIVE follow-up — 2026-10-17
+
+One paired idea was sent to gemma4:31b. Full HTML2770 output tokens/9894 bytes
+was delivered through production UI after checkpoint revalidation and independently
+played on desktop/touch via decoded QR. Initial separate Full HTML attempt had
+connect timeout. Blueprint884 tokens/2814ms returned HTTP200, passed JSON shape
+but failed semantic compatibility: move/collect topdown included a board with125
+cells for a5x5 world. No compiler, constructor runtime or production adoption was
+changed. Compile/check/gameplay times for that rejected Blueprint are unavailable,
+not zero. Full-source real edit was not exercised; the four-POST task budget is
+exhausted. Decision remains ITERATE; no statistical advantage is established.
+See [MICRO-027 report](micro-027-report.md) for proof and remaining mobile limits.

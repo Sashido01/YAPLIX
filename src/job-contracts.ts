@@ -20,5 +20,7 @@ export interface GenerationJob {
   validation?:ValidationDiagnostic;
   deterministicRepair?:FormatRepair;
   repairUsed?:boolean;
+  diagnosticsUnavailable?:boolean;
+  manualContinuation?:boolean;
 }
 export type JobSummary = Omit<GenerationJob,'checkpoint'|'originalCheckpoint'|'ownerId'|'idempotencyKey'> & {checkpointBytes:number};

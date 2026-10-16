@@ -116,6 +116,8 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.get('/api/phone/qr.svg', c => c.body(localPhone().qr(), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' }));
   const owner=(c:{req:{header(name:string):string|undefined}})=>principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session'));
   app.get('/api/jobs',c=>c.json({jobs:jobManager().list(owner(c))}));
+  app.get('/api/jobs/:jobId/diagnostics',c=>{c.header('Content-Disposition','attachment; filename="yaplix-diagnostics.json"');return c.json(jobManager().report(owner(c),c.req.param('jobId')));});
+  app.get('/api/jobs/:jobId/preview',c=>{const html=jobManager().preview(owner(c),c.req.param('jobId'));c.header('Content-Security-Policy',"sandbox allow-scripts; "+GAME_CSP);return c.html(html);});
   app.get('/api/jobs/:jobId',c=>c.json(jobManager().get(owner(c),c.req.param('jobId'))));
   app.post('/api/jobs',async c=>{
     const body=object(await json(c.req.raw,12000),['spec','mode','providerMode','previousVersionId','idempotencyKey','telegramConsent']);

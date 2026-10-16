@@ -80,7 +80,8 @@ MICRO-019 ограничивает production LIVE двумя фиксирова
 `gemma4:31b` на `https://ollama.com/v1` и `openrouter/free` на
 `https://openrouter.ai/api/v1`. Никаких concrete `:free` IDs, generic providers,
 локальной модели или платного OpenRouter fallback. [Ollama Cloud](https://docs.ollama.com/cloud).
-MICRO-023: UI предлагает Ollama Cloud по умолчанию и OpenRouter Free вручную.
+MICRO-023: UI предлагает Ollama Cloud по умолчанию и OpenRouter Free вручную, как экспериментальный необязательный маршрут.
+Он не повторяет inference автоматически, включая repair и восстановление после restart.
 Legacy Auto означает только Ollama Cloud; автоматического перехода между
 provider нет при creation/edit/retry/Continue/restart. `.env` и существующие jobs не удаляются.
 Legacy `LIVE_PROVIDER=cloud` сопоставляется с openrouter, `ollama` с auto.
@@ -324,3 +325,22 @@ HTML ≤200000 bytes; JSON/SSE response ≤1210000 bytes. HTTP/API input limits
 не увеличены. LLM_RESPONSE_BODY_TOO_LARGE — локальный response cap,
 LLM_HTTP_BODY_TOO_LARGE — внешний HTTP 413, не доказанная ошибка модели/proxy.
 Legacy Auto больше не authorize provider switch. Старые DB и версии без миграции.
+
+## Диагностика задания и телефон (MICRO-027)
+
+В карточке задания: «Диагностика» → «Скачать отчёт». Owner-authorized endpoint:
+`GET /api/jobs/:jobId/diagnostics`. JSON содержит безопасный status snapshot и
+UTC events; промпт, HTML и секреты исключены. Отсутствующие метрики — null.
+Локальные trace: `.local/diagnostics/generation/`, ротация128KiB+128KiB/job,
+prune7days/16MiB при запуске и периодических записях. Игры/версии не удаляются.
+Если trace IO недоступен, job продолжает работу с diagnosticsUnavailable;
+отчёт явно сообщает об отсутствии подробного trace и сохраняет этап/код ошибки.
+
+После создания видны «Играть · Изменить · На телефон · Скачать HTML».
+«На телефон» в карточке или открытом player выбирает именно эту версию,
+раскрывает подключение и запускает прежний временный LAN listener. При нескольких
+сетях выберите доверенную сеть телефона; затем QR/копирование адреса/отключение.
+TTL30min, private IP, capability в fragment, owner API недоступен с listener.
+Firewall/VPN/маршруты автоматически не изменяются. Это не physical-device PASS.
+Сохранённый полный checkpoint можно продолжить с локальной revalidation без POST;
+неполный или ошибочный результат не становится Ready. [Факты](micro-027-report.md).
