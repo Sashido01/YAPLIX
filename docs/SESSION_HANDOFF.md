@@ -1,106 +1,136 @@
-# MICRO-020 — LIVE connectivity, PARTIAL
+# MICRO-021 — Network Portability & Game Recovery
 
-16 октября 2026. Исходный main `7a170c7e1a09caf9bc94c71824cf21051d68c6e3`
-(PR #25), после `git pull --ff-only`, ветка `codex/micro-020-live-connectivity`.
-До работы tracked tree чистое, только пользовательский untracked
-`docs/Keys_Bilayn.pdf`. Merge SHA подтверждается в PR receipt/итоговом ответе.
+16 октября 2026. FACT: исходный main `0b53a336eeadce0d258dfa839712f11867b274fc`
+(PR #26 / MICRO-020), `git pull --ff-only` выполнен; рабочая ветка
+`codex/micro-021-network-portability`. Tracked baseline чистый, только локальный
+untracked `docs/Keys_Bilayn.pdf`. Commit/PR/merge SHA фиксируются в Git receipt;
+сам документ не предсказывает будущий merge SHA.
 
-## Причина и исправление
+## NETWORK
 
-Четыре исторических POST MICRO-019: Ollama interruption 11026 ms, OpenRouter
-timeouts 45006/45007/45006 ms. Старые логи содержат provider/model/error,
-длительность и пустой checkpoint, но не TCP/TLS/status/headers/first byte.
-Инициатор исторического обрыва и причина недоступности **не установлены**.
-Нельзя приписывать их VPN, proxy, квоте или найденному SSE дефекту.
+LLM выполняется в Node backend через CloudTransport/native fetch, без provider SDK.
+Добавлен единый per-request Agent/ProxyAgent (Undici 7.30.1) для Ollama Cloud,
+OpenRouter, GET models/readiness и inference. Первоначально проверенная 7.28.0
+имела npm advisories; установлена исправленная 7.30.1, npm audit — 0 vulnerabilities.
+Модели/allowlist FREE ONLY, prompts, API keys, provider mode не менялись.
 
-Два локально воспроизведённых дефекта CloudTransport исправлены:
+Auto: manual YAPLIX_LLM_PROXY → HTTPS_PROXY → HTTP_PROXY, lowercase приоритет,
+NO_PROXY exceptions → иначе Direct/маршрутизация ОС. Обязательный proxy mode
+требует manual URL, игнорирует NO_PROXY и не переключается в Direct при отказе.
+Direct — явный выбор администратора. HTTP/HTTPS CONNECT и Basic authentication
+(включая пустой password) поддержаны, credentials не передаются origin.
+Socks5/Socks5h, системный PAC/WPAD/WinINET/WinHTTP auto import не реализованы;
+есть документированный явный способ настройки. Произвольных proxy/fallback нет.
+[Настройка, системные ограничения и TLS](llm-network.md).
 
-- После SSE `[DONE]` клиент продолжал ждать remote EOF и получал ложный timeout
-  при открытом body. Теперь terminal marker завершает чтение и reader отменяется;
-  обязательные model/finish_reason=stop и static/browser gates сохранены.
-- Обрыв non-streaming body после headers ошибочно становился invalid JSON.
-  Теперь read failure — `LLM_CONNECTION_INTERRUPTED`, а полный malformed JSON
-  остаётся `LLM_INVALID_RESPONSE`.
+Connect timeout default 10 s, bounded 100..30000 ms. Request/inference timeout,
+общие deadlines, AbortController, SSE `[DONE]`, partial checkpoints и bounded
+retry/cooldown сохранены. Новые DNS/TCP/proxy/timeout коды участвуют в прежнем
+ограниченном job recovery. Dispatcher уничтожается после body/отмены; proxy cache
+и global dispatcher mutation отсутствуют. Диагностика локальна каждому запросу.
 
-Оба regression tests падали до исправления и проходят после. Это локальное
-доказательство, а не установленная причина MICRO-019. Архитектура, prompts,
-allowlist, retry/cooldown/deadline, TLS и default timeouts не менялись.
+`npm run network:check` / `-- --all` выполняет только GET `/models`, не открывает
+SQLite и не запускает jobs. Безопасный вывод: provider, model, route, stage,
+status, duration, category, `inferenceVerified:false`. UI объясняет ошибки кратко
+и сохраняет идею/черновик. Raw exceptions, proxy URL/password, keys не выводятся.
 
-## Network и LLM
+## TEST MATRIX
 
-Node 24.18.0 / bundled Undici 7.28.0 / native fetch без provider SDK.
-DNS обоих hostname вернул IPv4; IPv6 отказ не наблюдался. TLS 1.3 authorized,
-GET `/models` — 200 через Node/curl/PowerShell; клиент проекта — ready.
-HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NODE_USE_ENV_PROXY не заданы; NO_PROXY задан.
-Системные proxy/VPN/routes/firewall не изменены. EACCES в песочнице исчез при
-разрешённом запуске вне неё: это ограничение инструмента, не provider evidence.
-GET 200 не подменяет inference.
+| Сценарий | Результат / граница доказательства |
+| --- | --- |
+| Реальная текущая сеть, Direct Ollama Cloud | GET models 200, 538 ms; не inference |
+| Реальная текущая сеть, Direct OpenRouter | GET models 200, 1150 ms; не inference |
+| Прямой HTTPS и прозрачный системный маршрут | PASS local TLS server; VPN simulated, конкретные VPN-продукты NOT_TESTED |
+| HTTP proxy → TLS origin, оба provider | PASS loopback CONNECT, catalog и synthetic SSE через один proxy |
+| HTTPS proxy → TLS origin, оба provider | PASS loopback CONNECT, доверенные ephemeral CA, проверка TLS обоих участков |
+| Basic auth / пустой password / 407 | PASS; proxy header не появляется origin, ошибки не раскрывают credentials |
+| Неверный обязательный proxy | PASS finite failure, target не получает Direct запрос |
+| Недоступный DNS / TCP / нет интернета | PASS controlled DNS failure/refused connection; сохранение SQLite job/checkpoint и конечный budget |
+| TLS origin / HTTPS proxy rejection | PASS независимые untrusted certificates; verification не отключена |
+| Timeout / cancel / interrupted SSE | PASS local server и existing MICRO-020/engine/jobs regressions |
+| Смена сети/конфигурации между запросами | PASS fresh request config, proxy failure → explicit Direct только после смены администратором |
+| Восстановление связи | PASS synthetic DNS loss → прежний bounded retry → одна checked version, 2 calls |
+| System proxy/PAC / SOCKS | NOT_SUPPORTED; явный HTTP/HTTPS endpoint документирован |
+| Реальный VPN/корпоративный proxy/Ubuntu/physical devices | NOT_TESTED |
 
-**1 из 2 дополнительных разрешённых inference POST**: UI «Собери игру три в ряд»,
-explicit Ollama Cloud `gemma4:31b`, exact `https://ollama.com/v1/chat/completions`.
-Изолированная новая `.local/micro020/live-1.sqlite`, исходно 0 jobs.
-Дисковый global counter <=2, дополнительный предел 1 POST/run/job, repairs=0;
-нет автоматических retries и межпровайдерного fallback в live-тесте.
-OpenRouter inference не вызывался. Бесплатная квота Ollama разрешена владельцем;
-планы/credits не менялись.
+GET 200 не означает successful generation и не доказывает отсутствие VPN у ОС.
+Системные VPN/DNS/firewall/proxy не изменялись.
 
-HTTP 200 SSE headers через 619 ms, первый body byte через 623 ms от dispatch;
-конец HTTP body примерно через 11.9 s. Request с catalog preflight — 14908 ms.
-Получен **1 полный HTML: 12662 UTF-8 bytes / 4032 output tokens**, actual model
-gemma4:31b. Job завершился через 19007 ms. В trace есть некоррелированный connect
-timeout другого запроса: он не опровергает inference 200/полный HTML и не
-объясняет старые отказы. Cleanup AbortController после проверки не прервал ответ.
+## ROOT CAUSE и GAMEPLAY
 
-## Gameplay и сохранение
+На неизменённом private checkpoint MICRO-020 воспроизведено:
+`<output data-yaplix-state" ...>` создаёт неправильное имя boolean attribute;
+`querySelector('[data-yaplix-state]')` возвращает null. Запись textContent из draw
+выбрасывает исключение; после настоящего touch match score 0→30, 3 пустые клетки,
+moves=20 и isAnimating=true. Это опечатка LLM HTML, не escape/parser/sandbox/network.
+Общий backend не получает исправление, специфичное для этой игры.
 
-Browser gate отверг неизменённый HTML: `JAVASCRIPT_EXCEPTION`,
-`Cannot set properties of null (setting 'textContent')`. Ошибочный атрибут
-`<output data-yaplix-state" ...>` не соответствует `[data-yaplix-state]`;
-stateEl равен null, запись в draw вызывает исключение.
+Private derived copy исправляет атрибут и обнаруженные при приёмке lifecycle
+дефекты той же игры: первый game_started при host init, terminal session_ended,
+Resume сохраняет мир вместо вызова нового start/reset. Действия/правила игры,
+board, RNG, score и target не подменялись, готовый шаблон не использовался.
+В БД версия явно `method:authored`, `provider:manual-recovery`, `model:null`:
+это ручное восстановление Ollama checkpoint, не новый независимый LLM output.
+Полные source/recovered hashes и origin — в private receipt рядом с HTML.
 
-Playwright mobile touch: поле 8x8 видно, Start открывает поле, выбор клетки
-подтверждён; настоящая соседняя перестановка даёт match и score/HUD 0→60.
-Затем 6 пустых клеток, isAnimating=true, moves остаётся 20: gravity/refill и
-дальнейшая игра сломаны. Видимая цель 1000 очков за 20 ходов; победа/restart
-до играбельного состояния NOT VERIFIED. HTML/очки/RNG не подменялись; состояние
-читалось только для диагностики, действия выполнялись touch. Это отдельный
-gameplay defect, не network timeout.
+VERIFIED на сохранённом HTML через Playwright:
 
-**0 новых игровых версий**: gate не допустил failed HTML в библиотеку.
-Идея, полный checkpoint, origin и история сохранены в изолированной SQLite,
-job `08e8268c-63bd-4881-b1a1-67e71342af68`, needs_attention.
-Сценарий «проверенная игра → сохранение версии → повторное открытие» не пройден.
-Второй POST не использован: дополнительные LLM repairs gameplay требуют нового
-разрешения по MICRO-020. Полный checkpoint доступен без inference.
+- Поле 8x8; touch selection, соседние swaps; invalid swap rollback.
+- Настоящие horizontal/vertical matches, score и decrement moves; gravity/refill,
+  отсутствие пустых клеток после settle, последующие ходы.
+- Полный выигрыш: 1060 очков, 4 хода осталось, видимое Victory.
+- Полное поражение: 690 очков, 0 ходов, видимое Game Over.
+- Restart сбрасывает score/moves; idle pause/resume сохраняет board/score/moves.
+- Chromium mobile touch 390, видимое поле 320/360/390/430, tablet/desktop и landscape.
+- Штатный offline browser gate 320/390 PASS, 0 JS errors, opaque sandbox/CSP.
+- Отдельная recovery SQLite: save, close/reopen, UI reload, WebKit390 touch Start,
+  offline HTML export и integrity PASS. Оригинальная БД/версии/jobs не менялись.
 
-## Проверки и сохранность
+NOT_VERIFIED: physical Android/iOS/Telegram, keyboard viewport/safe-area на
+физическом устройстве, exhaustive механики/все случайные доски. Browser emulation
+не physical PASS. Проверка видимости в landscape не обещает идеальную компоновку.
 
-Typecheck/build PASS. Целевые transport/engine/jobs/retry/restart/route и
-security/platform/MVP tests 101/101 PASS. Короткий browser smoke 4/4: Chromium320 и
-WebKit390, selector/draft reload и controlled LIVE background worker.
-Последний использует synthetic transport; physical Android/iOS/Telegram не проверены.
-Итоговые test counts и локальный secret scan фиксируются в PR receipt.
-Полный CI, долгие browser matrices и performance benchmarks не запускались.
+RUN: `.local/micro021/recovered-game.html` можно открыть как offline HTML.
+Recovery library сохранена отдельно в `.local/micro021/recovered.sqlite`,
+version `d2d0a762-d30b-4d2e-8187-70ec637b47d3`.
+Source `.local/micro020/received-game.html` и needs_attention job сохранены.
+Private evidence: `.local/micro021/gameplay.json`, original-defect.json/PNG,
+won.png/lost.png, gate.json, recovery HTML/SQLite, test logs и safe diagnostics.
+Не коммитить эти artifacts, исходный пользовательский HTML или secrets.
 
-Пользовательская `.local/task-004/live.sqlite`: 21 games / 39 versions / 14 jobs,
-активных 0, stages: 6 completed / 5 needs_attention / 3 cancelled.
-Read-only hashes HTML/metadata/jobs и integrity/FK сравниваются до/после.
-Тестовые записи только в отдельных fixtures. `.env`, PDF, пользовательские
-SQLite/jobs и неизвестные ignored файлы сохраняются.
+## VERIFIED / SECURITY / CI
 
-Private ignored evidence: `.local/micro020/network.json`, `data-before.json`,
-`data-after.json`, `inference-count.json`, `trace-1.json`, `live-job-1.json`,
-`received-game.html`, `gameplay.json`, `touch.json`, PNG и test logs.
-Эта локальная диагностика и полученная игра не публикуются.
+Typecheck/build PASS; полный локальный Node suite 200/200 (network MICRO-021
+16/16), Python tests 19/19, CI policy 8/8 PASS; Gitleaks history и dependency
+audit без находок. Explicit staged manifest сканируется отдельно до commit. Smoke: 8/8 Chromium320/WebKit390
+(provider mode/draft reload, controlled background LIVE, offline export,
+opaque runtime/session events). Synthetic transport не является реальным inference.
+Python repo/checker tests, CI policy и local Gitleaks выполняются до публикации.
+Полная тяжёлая browser/performance матрица не нужна для этой задачи и не запускалась;
+это не оптимизация и не релиз. Hosted FULL/Ubuntu PASS не заявлены.
 
-## CI и следующий шаг
+LLM: **0 новых реальных inference POST**, включая repair/fallback. Service GETs
+и synthetic local inference различаются. MICRO-020 quota counter не расходуется.
+TLS origin/proxy и sandbox сохранены, `.env`, PDF, пользовательские SQLite/jobs,
+checkpoint и unknown ignored files защищены baseline hashes/read-only snapshots.
+Проверяется равенство data-before/data-after и protected file hashes.
 
-Repository actions/permissions.enabled=false; hosted checks не запускались
-и не объявляются зелёными. FAST/FULL и release FULL policy сохранены;
-Actions включать только по команде владельца: [процедура](ci-economy.md).
+Authoritative GitHub state перед публикацией: actions enabled=false; 79 runs,
+latest 38877566527. После merge сравниваются те же поля. Actions не включать;
+отсутствие runs не CI PASS. [MICRO-019 exception/FAST/FULL/release](ci-economy.md).
+Документы: README, .env.example, architecture, setup, known-errors, этот handoff
+и network instructions. Экспериментальный Orchestrator/Telegram/Visual Kit не менялись.
 
-VERDICT **PARTIAL**: Ollama ответ подтверждён; историческая причина неизвестна,
-игра сломана и не сохранена как passed version. Следующий шаг — отдельно
-разрешённое исправление gameplay и приёмка через настоящие действия, сохранение
-и повторное открытие. Новый inference ради gameplay без разрешения запрещён.
-Экспериментальный Orchestrator, Telegram и внешние репозитории не затрагивались.
+## MVP / NEXT / VERDICT
+
+Network **PASS в проверенном scope**: Direct service GET плюс local proxy/TLS/fault
+matrix; физические VPN/корпоративные сети и live inference здесь NOT_TESTED.
+Gameplay **PASS в проверенном scope**: восстановление исходной игры без LLM,
+основные механики/win/loss/restart/save/reopen подтверждены; версия изолирована
+и помечена ручной. Это не утверждение готовности произвольного LLM HTML.
+
+Публикация разрешена через feature PR/merge при локальных проверках по MICRO-019;
+после merge — ff-only main и critical smoke actual merge SHA. Следующий независимый
+этап: physical network/device acceptance; перед release exact-commit manual FULL
+после явного разрешения владельца восстановить Actions. Новый inference требует
+отдельного разрешения и не нужен для открытия восстановленной игры.

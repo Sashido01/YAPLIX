@@ -63,6 +63,10 @@ cloud и Chromium. Ручная альтернатива: `npm run build`, за�
 (Windows `Copy-Item .env.example .env`, Ubuntu `cp .env.example .env`), только если
 своего `.env` ещё нет. В существующем клоне не заменяйте его примером.
 
+LIVE работает через Direct/маршрутизацию VPN или явно настроенный HTTP/HTTPS proxy
+на backend. Проверка без генерации: `npm run network:check` (оба настроенных
+provider: `npm run network:check -- --all`). [Правила Auto, TLS, proxy и ограничения](docs/llm-network.md).
+
 ## Полный сценарий
 
 1. DEMO → «Создать игру» → задание → явное «Открыть» → «Старт». Клавиатура и touch-кнопки двигают героя.
