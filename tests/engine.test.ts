@@ -75,12 +75,12 @@ test('Ollama transport rejects model substitution and truncation without fallbac
  const transport=new OllamaTransport({base:'http://127.0.0.1:'+(server.address() as any).port,model:'test-model'});assert.equal((await transport.complete([],AbortSignal.timeout(2000))).code,html);for(scenario of ['wrong','truncated'])await assert.rejects(transport.complete([],AbortSignal.timeout(2000)),/LLM_INVALID_RESPONSE/);
 });
 
-test('free router preserves actual truncated model, uses low reasoning and bounded compact repair',async t=>{
+test('free router preserves actual truncated model and low reasoning without any automatic repair',async t=>{
  let calls=0;const bodies:any[]=[];
  t.mock.method(globalThis,'fetch',async(_url:unknown,options:any)=>{bodies.push(JSON.parse(options.body));return Response.json({model:'actual-free',choices:[{finish_reason:++calls===1?'length':'stop',message:{content:calls===1?'<!DOCTYPE html><html>':html}}]});});
  const cloud=new CloudTransport({base:'https://openrouter.ai/api/v1',model:'openrouter/free',key:'synthetic-test-key'});
- const output=await new GenerationEngine([cloud],{defaultMode:'openrouter',allowLlmRepair:true,check:evidence}).generate(spec);
- assert.equal(calls,2);assert.deepEqual(bodies[0].reasoning,{effort:'low',exclude:true});assert.equal(output.generation!.attempts[0].model,'actual-free');assert.equal(output.generation!.attempts[0].errorCode,'LLM_OUTPUT_TRUNCATED');assert.ok(bodies[1].messages.at(-1).content.includes('budget was exhausted'));assert.equal(output.model,'actual-free');
+ await assert.rejects(new GenerationEngine([cloud],{defaultMode:'openrouter',allowLlmRepair:true,check:evidence}).generate(spec),error=>{const failure=error as import('../src/live.ts').GenerationFailure;assert.equal(failure.attempts[0].model,'actual-free');assert.equal(failure.attempts[0].errorCode,'LLM_OUTPUT_TRUNCATED');return failure.code==='LLM_OUTPUT_TRUNCATED';});
+ assert.equal(calls,1);assert.deepEqual(bodies[0].reasoning,{effort:'low',exclude:true});assert.equal(bodies[0].model,'openrouter/free');
 });
 
 test('direct prompt and local structured specification preserve requirements without an interpretation request',()=>{

@@ -57,17 +57,22 @@ export class GenerationEngine implements Generator {
       const checkDocument=async(raw:string)=>{
         context?.stage('validating');
         context?.preserveOriginal?.(raw);
+        let browserBegan:number|undefined;const formatBegan=performance.now();
         try{
           const prepared=prepareDocument(raw);
           if(prepared.repair){context?.preserveOriginal?.(raw);context?.validation?.({level:'NOT_VERIFIED',code:prepared.repair,phase:'format',feedback:'Format repair requires full revalidation.'},prepared.repair);}
+          context?.trace?.('html.extracted',{outputBytes:Buffer.byteLength(prepared.html),durationMs:Math.round(performance.now()-formatBegan),next:'html-validation'});
           const issues=validateDocument(prepared.html);if(issues.length)throw new BrowserFailure('LLM_UNSAFE_ARTIFACT',issues.join(', '));
+          context?.trace?.('html.validated',{durationMs:Math.round(performance.now()-formatBegan),next:'browser'});browserBegan=performance.now();context?.trace?.('browser.started');
           const evidence=await this.check(prepared.html,controller.signal);
           if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
+          context?.trace?.('browser.validation_completed',{durationMs:Math.round(performance.now()-browserBegan),next:'save'});
           context?.validation?.({level:'VERIFIED',code:'BROWSER_CHECK_PASSED',phase:'short-browser-check',feedback:'Startup/runtime checked; per-aspect gameplay evidence is separate.'});
           return{code:prepared.html,evidence};
         }catch(error){
           context?.preserveOriginal?.(raw);
           const code=error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';
+          context?.trace?.(/JAVASCRIPT_EXCEPTION|CONSOLE_ERROR/.test(code)?'browser.runtime_error':code.startsWith('BROWSER_')?'browser.validation_completed':'html.validated',{errorCode:code,durationMs:Math.round(performance.now()-(browserBegan??formatBegan)),validationPhase:(error as {validationPhase?:string})?.validationPhase,profileWidth:(error as {profileWidth?:number})?.profileWidth,next:'needs_attention'});
           context?.validation?.({level:/TIMEOUT|CANCELLED|SANDBOX|INSTALL_REQUIRED|STARTUP_FAILED|INCONCLUSIVE/.test(code)?'NOT_VERIFIED':'FAILED',code,phase:'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
           throw error;
         }
@@ -79,11 +84,11 @@ export class GenerationEngine implements Generator {
             context.stage('validating');
             try{const checked=await checkDocument(partial),evidence=checked.evidence;complete=checked.code;if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);const attempt:GenerationAttempt={route:route.route,provider:origin.provider,requestedModel:origin.requestedModel,model:origin.model,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-started),requestMs:0,validationMs:Math.round(performance.now()-started)};context.attempt(attempt);
               return parseArtifact({html:complete,method:'llm_code',provider:origin.provider,model:origin.model,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[attempt],fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
-            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE/.test(error.code)))throw error;
-              context?.claimRepair?.();repairUsed=true;recoveryRoute=route;}
+            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE/.test(error.code)))throw error;
+              context?.trace?.('repair.started');context?.claimRepair?.();repairUsed=true;recoveryRoute=route;}
           }else{
             context.preserveOriginal?.(partial);
-            if(!this.allowLlmRepair||repairUsed)throw new Fault(context.validationFailure??'LLM_INVALID_HTML',502);
+            if(route.provider==='openrouter'&&!context.manualContinuation||!this.allowLlmRepair||repairUsed)throw new Fault(context.validationFailure??'LLM_INVALID_HTML',502);
             if(this.repairs===0)partial=''; // An explicitly continued fresh generation, without draft repair.
             else{context.claimRepair?.();repairUsed=true;}
             recoveryRoute=route;
@@ -102,7 +107,7 @@ export class GenerationEngine implements Generator {
         if(context?.blockedRoutes?.includes(key))continue;
         if(cooldown&&cooldown.until>Date.now()){lastCode=cooldown.code;if(Number.isFinite(cooldown.until))context?.retryAt?.(cooldown.until);continue;}
         const partialResumable=Boolean(partial)&&!freshIssues.includes(lastCode);
-        const messages=generationMessages(spec,previous,this.promptStyle);
+        const messages=generationMessages(spec,previous,this.promptStyle);context?.trace?.('provider.selected',{provider:route.provider,requestedModel:route.model});context?.trace?.('prompt.prepared',{inputBytes:Buffer.byteLength(JSON.stringify(messages)),next:'request'});
         if(partial&&partialResumable)messages.push({role:'assistant',content:partial},{role:'user',content:'Recover this draft using the original requirements. Return one complete concise HTML document, not a continuation fragment. Preserve working mechanics. Never concatenate unverified fragments. '+recoveryIssue});
         for(let repair=0;repair<=Math.min(1,this.repairs);repair++){
           if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure(attempts.at(-1)?.errorCode??'JOB_ATTEMPT_LIMIT',attempts,409);
@@ -113,7 +118,7 @@ export class GenerationEngine implements Generator {
             context?.stage(repair||repairUsed?'repairing':'generating');if(!route.observesDispatch)context?.dispatch(route);
             const transportContext=context?{...context,partial:(value:string,model:string|null,usage?:TokenUsage)=>{if(value)partial=value;if(model)actual=model;if(usage)tokens={...tokens,...usage};context.partial(value,model,usage);}}:undefined;
             const response=await route.complete(messages,requestSignal,transportContext);clearTimeout(requestTimer);requestMs=Math.round(performance.now()-begin);actual=response.model;tokens={...(response.outputTokens===undefined?{}:{outputTokens:response.outputTokens}),...(response.reasoningTokens===undefined?{}:{reasoningTokens:response.reasoningTokens})};partial=response.code;context?.partial(partial,actual,tokens);
-            const checkBegan=performance.now();let checked;try{checked=await checkDocument(response.code);}finally{validationMs=Math.round(performance.now()-checkBegan);}code=checked.code;const evidence=checked.evidence;
+            const checkBegan=performance.now();let checked;try{checked=await checkDocument(response.code);}finally{validationMs=Math.round(performance.now()-checkBegan);}code=checked.code;const evidence=checked.evidence;if(repairUsed)context?.trace?.('repair.completed',{next:'save'});
             if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
             attempts.push({route:route.route,provider:route.provider,requestedModel:route.model,model:actual,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-begin),requestMs,validationMs,...tokens});context?.attempt(attempts.at(-1)!);
             return parseArtifact({html:code,method:'llm_code',provider:route.provider,model:actual,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts,fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
@@ -139,8 +144,8 @@ export class GenerationEngine implements Generator {
             if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
             const repairable=error instanceof BrowserFailure||/^(?:BROWSER_|JAVASCRIPT_EXCEPTION|LLM_INVALID_HTML|LLM_UNSAFE_ARTIFACT|LLM_OUTPUT_TRUNCATED)/.test(lastCode);
             if(!actual||!repairable)break;
-            if(!this.allowLlmRepair||repairUsed||repair>=Math.min(1,this.repairs)||/BROWSER_TIMEOUT|INCONCLUSIVE/.test(lastCode))throw new GenerationFailure(lastCode,attempts);
-            context?.preserveOriginal?.(partial);context?.claimRepair?.();repairUsed=true;
+            if(route.provider==='openrouter'||!this.allowLlmRepair||repairUsed||repair>=Math.min(1,this.repairs)||/BROWSER_TIMEOUT|INCONCLUSIVE/.test(lastCode))throw new GenerationFailure(lastCode,attempts);
+            context?.preserveOriginal?.(partial);context?.trace?.('repair.started');context?.claimRepair?.();repairUsed=true;
             messages.push({role:'assistant',content:code||'No complete HTML was returned.'},{role:'user',content:'Browser/static verification rejected the result: '+lastCode+'. '+(error instanceof BrowserFailure?error.feedback:error instanceof CloudOutputFailure?'The output token budget was exhausted. Return complete HTML within the available token budget, without explanations; preserve all requested mechanics.':'')+' '+validateDocument(code).join(', ')+'. Fix this defect in the complete HTML, preserve the original request and all working mechanics. Do not start automatically, restart the state on resume, or duplicate lifecycle events. Original requirements: '+JSON.stringify(spec)});
           }finally{clearTimeout(requestTimer);}
         }

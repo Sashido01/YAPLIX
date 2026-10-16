@@ -116,3 +116,18 @@ Extract принимает весь документ или один целый 
 HTML из окружающего текста. Неполный HTML/finish_reason=length не сохраняется
 как готовая версия. Никаких regex исправлений JavaScript. Новые real repairs в
 MICRO-023 не разрешены; все соответствующие тесты используют mocks.
+
+## MICRO-027 failure evidence and preview
+
+An observed critical runtime/security error takes precedence over a later
+Playwright actionability failure. A full-HTML inconclusive failure records the
+bounded probe phase and viewport width, without raw exception/source text.
+No uncertain mechanic automatically authorizes another inference request.
+
+For a complete statically safe checkpoint with BROWSER_CHECK_INCONCLUSIVE,
+`GET /api/jobs/:id/preview` offers an explicitly NOT_VERIFIED, opaque sandbox/CSP
+preview. Critical errors, unsafe/incomplete HTML and browser timeouts are refused.
+This creates no accepted game/version, Ready label or gameplay PASS. Continue can
+revalidate a complete checkpoint locally. OpenRouter cannot auto-repair a failed
+checkpoint after restart. Trace failures degrade diagnostics, not durable jobs.
+[Current LIVE and regression boundaries](micro-027-report.md).

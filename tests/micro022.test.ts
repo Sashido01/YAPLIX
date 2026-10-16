@@ -66,13 +66,13 @@ test('a deterministic candidate failing browser checks never becomes Ready',asyn
   try{const id=jobs.create('owner','format-still-broken',{spec,mode:'live',telegramConsent:false}).jobId,job=await settled(jobs,id);assert.equal(job.stage,'needs_attention');assert.equal(job.originalCheckpoint,raw);assert.equal(store.list().length,0);}finally{await jobs.close();store.close();}
 });
 
-test('checkpoint repair stays on its original free provider even when a new primary is configured',async()=>{
+test('router checkpoint defect never repairs or falls back even when a new primary is configured',async()=>{
   let primary=0,secondary=0,checks=0,claims=0;
   const secondaryRoute={...route(async()=>{secondary++;return{code:html,model:'actual-free'};}),provider:'openrouter',model:'openrouter/free',route:'secondary' as const};
   const engine=new GenerationEngine([route(async()=>{primary++;return{code:html,model:'gemma4:31b'};}),secondaryRoute],{check:async()=>{if(++checks===1)throw new BrowserFailure('JAVASCRIPT_EXCEPTION','checkpoint defect');return evidence();}});
   const context:GenerationContext={providerMode:'openrouter',checkpoint:html,checkpointOrigin:{provider:'openrouter',requestedModel:'openrouter/free',model:'actual-free'},stage:()=>{},dispatch:()=>{},partial:()=>{},attempt:()=>{},claimRepair:()=>{claims++;}};
-  const result=await engine.generate(spec,undefined,'llm_code',undefined,context);
-  assert.equal(primary,0);assert.equal(secondary,1);assert.equal(claims,1);assert.equal(result.provider,'openrouter');assert.equal(checks,2);
+  await assert.rejects(engine.generate(spec,undefined,'llm_code',undefined,context),/JAVASCRIPT_EXCEPTION/);
+  assert.equal(primary,0);assert.equal(secondary,0);assert.equal(claims,0);assert.equal(checks,1);
 });
 
 test('a failed repair transport cannot turn provider fallback into another repair request',async()=>{

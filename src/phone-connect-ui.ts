@@ -33,7 +33,7 @@ async function run(work: () => Promise<void>) {
   try { await work(); } catch(error) { release(); el('phone-status').textContent=(error as Error).message; }
   finally { pending=false; for(const id of ['phone-refresh','phone-networks','phone-off','phone-version','phone-network'])el<HTMLButtonElement | HTMLSelectElement>(id).disabled=false; }
 }
-async function load() {
+async function load(preferred?:string) {
   const [state, library] = await Promise.all([(await api('/api/phone')).json(), (await api('/api/games')).json()]);
   const networks = el<HTMLSelectElement>('phone-network'), chosen = networks.value || (state.url ? new URL(state.url).hostname : '');
   networks.replaceChildren();
@@ -42,7 +42,7 @@ async function load() {
   if (chosen && state.networks.some((n: {address:string})=>n.address===chosen)) networks.value=chosen;
   el('phone-network-label').hidden = state.networks.length < 2;
   const versions = el<HTMLSelectElement>('phone-version'), desktop = el('phone').dataset.version;
-  const selected = desktop && desktop!==lastDesktopVersion ? desktop : versions.value || desktop || state.versionId;
+  const selected = preferred ?? (desktop && desktop!==lastDesktopVersion ? desktop : versions.value || desktop || state.versionId);
   lastDesktopVersion = desktop;
   versions.replaceChildren();
   for (const v of library.games) versions.add(new Option(v.spec.prompt, v.versionId));
@@ -59,7 +59,7 @@ async function enable() {
   if(el<HTMLSelectElement>('phone-network').options.length>1&&!address)throw new Error(errors.PHONE_CHOOSE_NETWORK);
   const state=await(await api('/api/phone','POST',{versionId,...(address?{address}:{})})).json(); await render(state);
 }
-export async function connectPhone() {
+export async function connectPhone(versionId?:string) {
   if (!initialized) {
   initialized=true;
   el('phone-refresh').addEventListener('click',()=>void run(async()=>{await load();await enable();}));
@@ -69,5 +69,5 @@ export async function connectPhone() {
   el('phone-copy').addEventListener('click',async()=>{const input=el<HTMLInputElement>('phone-url');try{await navigator.clipboard.writeText(input.value);el('phone-status').textContent='Ссылка скопирована. Она даёт временный доступ к выбранной версии.';}catch{input.focus();input.select();el('phone-status').textContent='Скопируйте выделенную ссылку.';}});
   window.addEventListener('pagehide',release);
   }
-  await run(async()=>{const state=await load();if(state.enabled&&state.versionId===el<HTMLSelectElement>('phone-version').value)await render(state);else await enable();});
+  await run(async()=>{const state=await load(versionId);if(state.enabled&&state.versionId===el<HTMLSelectElement>('phone-version').value)await render(state);else await enable();});
 }

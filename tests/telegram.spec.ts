@@ -24,6 +24,7 @@ for(const identity of ['allowed','tampered','forbidden'] as const)test('Telegram
   await page.getByRole('button',{name:'Создать',exact:true}).click();await createAndOpen(page);await expect(page.locator('#message')).toContainText('Игра сохранена');expect(store.list()).toHaveLength(1);
   const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Старт',exact:true}).click();await game.getByRole('button',{name:'Вправо',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
   await page.locator('#share').click();await expect(page.locator('#share-url')).toBeVisible();const url=await page.locator('#share-url').inputValue();expect(new URL(url).pathname).toMatch(/^\/play\//);
+  await page.locator('#jobs-toggle').click();const jobRow=page.locator('[data-job]').first();await jobRow.getByText('Диагностика',{exact:true}).click();const downloaded=page.waitForEvent('download');await jobRow.getByRole('button',{name:'Скачать отчёт',exact:true}).click();expect((await downloaded).suggestedFilename()).toContain('yaplix-diagnostics');
   expect(await page.evaluate(()=>Object.keys(localStorage))).toEqual([]);expect(await page.evaluate(()=>document.documentElement.outerHTML)).not.toContain(raw);expect(errors).toEqual([]);expect(liveCalls).toBe(0);
   await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));expect(await page.evaluate(()=>Object.keys((window as any).tgEvents))).toEqual([]);
  }finally{store.close();}

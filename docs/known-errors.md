@@ -67,6 +67,23 @@ initData или необработанные журналы. [Запуск и о
 | Windows LAN acceptance превышает общий test timeout 20 s при повторном входе после restart сервера | Run 38862850604 дошёл до последнего export assertion после двух startup, QR decode и win/loss/restart. Для этого единственного многошагового теста Windows budget 45 s; все assertions, app timeouts и отдельные performance/gzip gates сохранены. Это не доказательство сетевой причины или изменения production поведения. |
 | `Check repository conventions and links` красная на новом PR | Проверяйте локально до push: `python scripts/check_repo.py` требует финальный newline у каждого tracked-файла; в TASK-016 на этом упали `docs/task-016-report.md`, `scripts/orchestrator-gameplay-audit.ts` и `src/orchestrator/gameplay-check.ts` (первый commit PR был красным, коммит с newline перезапустил проверку). Windows-запись через `Set-Content`/`WriteAllText` не добавляет завершающий newline; MICRO-021 также наблюдала CRLF от Python `write_text` по умолчанию, исправление — явный `newline="\n"` или byte normalization в проверенном manifest. После записи запускайте тот же checker. |
 
+## MICRO-027 observed remedies
+
+- Critical JS plus a later blocked tap previously became BROWSER_CHECK_INCONCLUSIVE.
+  Preserve the observed runtime/security code first; wait for srcdoc navigation.
+  Regression uses real Chromium, not an inference-quality claim.
+- A router network/rate-limit/truncation failure must not trigger an automatic
+  retry/repair after restart either. Historical queued router retries need manual
+  Continue; a complete checkpoint can only revalidate locally without dispatch.
+- OpenRouter current LIVE returned HTTP200 then LLM_RESPONSE_BODY_TOO_LARGE before
+  output completion. This establishes the wire-cap failure, not a quality verdict.
+  It remains experimental; no upstream model selection or enlarged cap is implied.
+- On phone now appears on completed jobs and the opened player. It explicitly
+  selects that version even after the connection dropdown was changed. LAN probe
+  failure means no ready QR; test guards must allow the exact GET /phone probe.
+- Trace IO errors must set diagnosticsUnavailable, not strand generating/cancel.
+  Download reports via the normal Telegram session header when cookies are absent.
+
 Обычный browser и synthetic fixtures не подтверждают physical Android/iOS,
 реальный Telegram API/menu/доставку сообщений или успешный Ollama Cloud inference.
 При недоступности всех настроенных вычислений задание может остаться черновиком;
