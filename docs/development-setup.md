@@ -150,8 +150,8 @@ Frontend использует jobs API; синхронные games/versions POST
 Job idempotencyKey — 8..100 букв/цифр/`_`/`-`, уникален внутри principal; повтор
 идентичного request возвращает job, другой request с тем же key даёт conflict.
 Telegram consent принимается только с signed Telegram session. Один worker,
-pending ≤20 глобально/≤3 на владельца, total ≤1000 jobs, checkpoints ≤100 MB
-суммарно/≤200000 bytes на job. Default автоматический цикл — до 4 provider calls,
+pending ≤20 глобально/≤3 на владельца, total ≤1000 jobs, checkpoints/originals
+≤100 MB суммарно и ≤200000 bytes на каждый draft/original. Default автоматический цикл — до 4 provider calls,
 до 4 запусков worker и 300 s суммарно с ожиданием; lifetime limit 12 calls/job.
 `Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
@@ -169,8 +169,11 @@ deadline/бюджета, сохраняя `JOB_RESTART_UNCERTAIN`. Доступ�
 раз в новый ограниченный цикл с lifetime cap 12. Cancelled/quota/auth/configuration
 отказы автоматически не возобновляются; сохранённый draft остаётся доступен.
 Полный checkpoint с подтверждённым origin сначала проходит validation без нового
-LLM POST. Остальные drafts переписываются в полный документ по original spec;
-буквальное resume с токена не обещается. Дополнительные recoveryState:
+LLM POST. Неполный draft требует разрешённого LLM repair на исходном route;
+production cloud repair по умолчанию выключен и ограничен одним rewrite на job.
+Draft без известного/настроенного origin сохраняется с
+`CHECKPOINT_ORIGIN_UNAVAILABLE` без нового dispatch. Буквальное resume с токена
+не обещается. Дополнительные recoveryState:
 retry_scheduled / waiting_for_provider / failed_permanent при прежней schema v2.
 Static/browser gate обязателен;
 playable version и completed job записываются одной SQLite transaction. Черновик

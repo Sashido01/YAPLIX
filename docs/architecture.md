@@ -45,8 +45,10 @@ bounded retries/cooldowns и checkpoint recovery сохраняются. DNS/TCP
 получают отдельные коды; UI сохраняет идею/черновик, TLS не отключается.
 Результаты сети и gameplay — [MICRO-021](SESSION_HANDOFF.md).
 
-[live.ts](../src/live.ts): один active request, общий deadline до 300 s, 0..2 repairs
-(default 1), два production routes. Один transport request по умолчанию
+[live.ts](../src/live.ts): один active request, общий deadline до 300 s, максимум
+один LLM repair на job; production cloud repair по умолчанию выключен.
+`LLM_REPAIRS` принимает legacy 0..2, но 2 ограничивается одним rewrite, 0 отключает
+repair. Два production routes. Один transport request по умолчанию
 ограничен 60 s; jobs управляют bounded автоматическими retry и durable cooldown.
 MICRO-019 фиксирует Ollama Cloud gemma4:31b на https://ollama.com/v1 и
 OpenRouter openrouter/free на exact https://openrouter.ai/api/v1.
@@ -79,7 +81,8 @@ LIVE creation при настроенном
 generator ограничено 6/min owner и 12/min global; отдельный такой же лимит
 provider dispatch включает repair и ручное продолжение.
 
-Обрезанный output допускает bounded repair полного документа, не склейку частей.
+Обрезанный output допускает один bounded repair полного документа только при
+разрешённом LLM repair, без склейки частей и смены provider внутри repair.
 Retry-After задаёт durable ожидание `waiting_for_provider`; retry_scheduled использует
 exponential backoff от 2 s с cap 60 s. Quota/auth/model/context/output-budget закрывают
 route на 15 min и позволяют альтернативный provider только в Auto. Неизвестный
@@ -88,8 +91,10 @@ Restart сохраняет исходные deadline/calls/cooldown и восс�
 действия. Старые recoverable needs_attention без automatic metadata получают один
 bounded cycle с lifetime cap 12; cancelled/quota/auth/configuration отказы не принимаются.
 Полный checkpoint с подтверждённым origin сначала проверяется без POST;
-если нужен repair, он получает конкретные browser errors. Продолжение использует original
-spec и draft; provider не обещает resume с последнего токена. При исчерпании
+если нужен и разрешён repair, он получает конкретные browser errors. Неполный
+draft требует разрешённого rewrite; отсутствующий/ненастроенный origin блокирует
+dispatch. Продолжение использует original spec и допустимый draft; provider не
+обещает resume с последнего токена. При исчерпании
 бюджета/ресурсов остаётся needs_attention + failed_permanent metadata. Проверенная
 version и completed job сохраняются одной transaction. Сбой оставляет job/draft,
 не игровую passed version. Legacy synchronous games/versions API сохранён.
