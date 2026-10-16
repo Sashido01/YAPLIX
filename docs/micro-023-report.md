@@ -113,6 +113,7 @@ POST требует нового разрешения. Существующий 
 ```powershell
 $env:YAPLIX_DB='.local/micro023-live/acceptance.sqlite'
 $env:LIVE_PROVIDER='ollama-cloud'
+$env:CLOUD_API_KEY=''
 $env:LLM_MAX_ATTEMPTS='1'
 $env:LLM_AUTO_REPAIR='0'
 $env:LLM_REPAIRS='0'
@@ -121,7 +122,10 @@ npm start
 ```
 
 Если порт занят, выбрать другой свободный loopback порт; чужой процесс не трогать.
-Открыть локальный UI. Первый запрос: «Полноценная игра: персонаж ходит по дому,
+Открыть локальный UI и явно выбрать Ollama Cloud в обоих списках создания и
+изменения (старый sessionStorage может помнить ручной OpenRouter).
+Пустой CLOUD_API_KEY действует только в этом процессе; .env не изменяется.
+Первый запрос: «Полноценная игра: персонаж ходит по дому,
 убирает мусор, тараканы мешают и отнимают здоровье. Комнаты, препятствия, понятные
 цель/победа/поражение, клавиатура и touch, restart, законченное оформление».
 Проверить ровно один Ollama dispatch/model, stop reason, полный HTML, runtime,
