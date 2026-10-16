@@ -1,3 +1,5 @@
+import { networkRequest, NetworkFailure } from './llm-network.ts';
+import type { NetworkDiagnostic } from './llm-network.ts';
 import { Fault } from './contracts.ts';
 import type { Artifact, GameSpec, GameVersion } from './contracts.ts';
 import type { GenerationAttempt } from './contracts.ts';
@@ -46,6 +48,7 @@ export async function boundedText(response: Response, limit: number) {
 export type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 export function boundedCode(code:string){return Buffer.from(code).subarray(0,200000).toString('utf8').replace(/\uFFFD$/,'');}
 export class ProviderFailure extends Fault {
+  diagnostic?:NetworkDiagnostic;
   readonly actualModel:string|null; readonly partial:string; readonly usage:TokenUsage;readonly retryAt:number|null;
   constructor(code:string,model:string|null=null,partial='',usage:TokenUsage={},retryAt:number|null=null,status=502){super(code,status);this.actualModel=model;this.partial=boundedCode(partial);this.usage=usage;this.retryAt=retryAt;}
 }
@@ -71,9 +74,10 @@ function endpoint(base: string, local: boolean) {
 export class CloudTransport implements CodeTransport {
   readonly observesDispatch=true;
   readonly route: 'primary' | 'secondary'; readonly provider: string; readonly model: string;
+  private networkEnv:()=>NodeJS.ProcessEnv;
   private base: URL; private key: string; private maxTokens: number; private temperature?: number; private tokenField: 'max_tokens' | 'max_completion_tokens';
-  constructor(options: { base: string; key: string; model: string; route?: 'primary' | 'secondary'; maxTokens?: number; temperature?: number; tokenField?: 'max_tokens' | 'max_completion_tokens' }) {
-    this.base = endpoint(options.base, false); this.key = options.key; this.model = options.model; this.route = options.route ?? 'primary';
+  constructor(options: { networkEnv?:()=>NodeJS.ProcessEnv; base: string; key: string; model: string; route?: 'primary' | 'secondary'; maxTokens?: number; temperature?: number; tokenField?: 'max_tokens' | 'max_completion_tokens' }) {
+    this.networkEnv=options.networkEnv??(()=>process.env);this.base = endpoint(options.base, false); this.key = options.key; this.model = options.model; this.route = options.route ?? 'primary';
     const hostname=this.base.hostname.replace(/\.+$/,'');
     this.provider = hostname === 'openrouter.ai' ? 'openrouter' : hostname;
     this.maxTokens = options.maxTokens ?? 12000; this.temperature = options.temperature; this.tokenField = options.tokenField ?? 'max_tokens';
@@ -82,38 +86,53 @@ export class CloudTransport implements CodeTransport {
     if (this.provider === 'openrouter' && (this.base.href !== 'https://openrouter.ai/api/v1/' || this.model!=='openrouter/free')) throw new Fault('FREE_MODEL_REQUIRED');
     if (this.provider === 'ollama.com' && (this.base.href !== 'https://ollama.com/v1/' || this.model!=='gemma4:31b')) throw new Fault('FREE_MODEL_REQUIRED');
   }
-  private async request(path: string, signal: AbortSignal, body?: object) {
-    const response=await this.response(path,signal,body);
-    let text:string;
-    try { text=await boundedText(response,1_210_000); } catch(error) {
-      if(signal.aborted||error instanceof Fault)throw error;
-      // Fatal UTF-8 decoding happens after a clean EOF in boundedText.
-      if(error instanceof TypeError&&(error as NodeJS.ErrnoException).code==='ERR_ENCODING_INVALID_ENCODED_DATA')throw new ProviderFailure('LLM_INVALID_RESPONSE');
-      throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED');
-    }
-    try { return JSON.parse(text); } catch { throw new ProviderFailure('LLM_INVALID_RESPONSE'); }
+  private async request(path: string, signal: AbortSignal, body?: object, observe?:(value:NetworkDiagnostic)=>void) {
+    return this.response(path,signal,body,async response=>{
+      let text:string;
+      try { text=await boundedText(response,1_210_000); } catch(error) {
+        if(signal.aborted||error instanceof Fault)throw error;
+        if(error instanceof TypeError&&(error as NodeJS.ErrnoException).code==='ERR_ENCODING_INVALID_ENCODED_DATA')throw new ProviderFailure('LLM_INVALID_RESPONSE');
+        throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED');
+      }
+      try { return JSON.parse(text); } catch { throw new ProviderFailure('LLM_INVALID_RESPONSE'); }
+    },observe);
   }
-  private async response(path:string,signal:AbortSignal,body?:object) {
-    if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Fault('INSECURE_TLS_CONFIGURATION', 503);
-    let response:Response;try{response = await fetch(new URL(path, this.base), { method: body ? 'POST' : 'GET', redirect: 'error', signal, headers: { Authorization: 'Bearer ' + this.key, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });}catch(error){if(signal.aborted)throw error;throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED');}
-    if (!response.ok) {
-      let detail='';try{detail=await boundedText(response,16000);}catch{}
-      const retry=response.headers.get('retry-after');const delay=retry&&/^\d+(\.\d+)?$/.test(retry)?Number(retry)*1000:retry?Date.parse(retry)-Date.now():0;
-      const retryAt=Number.isFinite(delay)&&delay>0?Date.now()+Math.min(delay,86400000):null;
-      const code=providerError(response.status,detail);
-      throw new ProviderFailure(code,null,'',{},retryAt,response.status===429?429:502);
-    }
-    return response;
+  private async response<T>(path:string,signal:AbortSignal,body:object|undefined,consume:(response:Response)=>Promise<T>,observe?:(value:NetworkDiagnostic)=>void) {
+    const began=performance.now();let snapshot:NetworkDiagnostic|undefined;
+    try{return await networkRequest(new URL(path,this.base),{method:body?'POST':'GET',redirect:'error',signal,headers:{Authorization:'Bearer '+this.key,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})},this.provider,async(response,diagnostic)=>{
+      snapshot=diagnostic;try{
+        if(!response.ok){
+          let detail='';try{detail=await boundedText(response,16000);}catch{}
+          const retry=response.headers.get('retry-after');const delay=retry&&/^\d+(\.\d+)?$/.test(retry)?Number(retry)*1000:retry?Date.parse(retry)-Date.now():0;
+          const retryAt=Number.isFinite(delay)&&delay>0?Date.now()+Math.min(delay,86400000):null;
+          throw new ProviderFailure(response.status===407?'LLM_PROXY_AUTH':providerError(response.status,detail),null,'',{},retryAt,response.status===429?429:502);
+        }
+        if(body)diagnostic.stage='stream';
+        return await consume(response);
+      }catch(error){if(error instanceof ProviderFailure){diagnostic.category=error.code;error.diagnostic={...diagnostic,durationMs:Math.round(performance.now()-began)};}throw error;}
+    },this.networkEnv());}catch(error){
+      if(error instanceof NetworkFailure){const failure=new ProviderFailure(error.code);failure.diagnostic=error.diagnostic;snapshot=error.diagnostic;throw failure;}
+      if(error instanceof Fault){snapshot??={provider:this.provider,route:'configuration',stage:'configuration',durationMs:0,category:error.code};snapshot.category=error.code;}
+      throw error;
+    }finally{if(snapshot)observe?.({...snapshot,durationMs:Math.round(performance.now()-began)});}
   }
-  async complete(messages: Message[], signal: AbortSignal, context?:GenerationContext) {
+  async diagnose(signal:AbortSignal){
+    const began=performance.now();let snapshot:NetworkDiagnostic|undefined;
+    let state='unreachable',category='ok';
+    try{const result=await this.request('models',signal,undefined,value=>snapshot=value);state=Array.isArray(result.data)&&result.data.some((m:{id?:string})=>m.id===this.model)?'ready':'model_missing';}
+    catch(error){category=error instanceof Fault?error.code:'LLM_NETWORK_UNAVAILABLE';state=category==='LLM_AUTH'?'authentication_failed':'unreachable';}
+    const network:NetworkDiagnostic={provider:this.provider,route:'configuration',stage:'configuration',...(snapshot as NetworkDiagnostic|undefined),durationMs:Math.round(performance.now()-began),category};
+    return{state,network,inferenceVerified:false as const};
+  }
+  async complete(messages: Message[], signal: AbortSignal, context?:GenerationContext):Promise<{code:string;model:string}&TokenUsage> {
     let budget=this.maxTokens;
     if(context){
       try{const catalog=await this.request('models',AbortSignal.any([signal,AbortSignal.timeout(3000)]));const selected=catalog.data?.find((m:{id:string})=>m.id===this.model);const limit=selected?.top_provider?.max_completion_tokens??selected?.max_completion_tokens;if(Number.isSafeInteger(limit)&&limit>0)budget=Math.min(budget,limit);if(this.provider==='ollama.com'&&!selected)throw new Fault('LLM_MODEL_NOT_FOUND',502);}
-      catch(error){if(signal.aborted||error instanceof Fault&&['LLM_AUTH','LLM_QUOTA','LLM_RATE_LIMIT','LLM_MODEL_NOT_FOUND'].includes(error.code))throw error;}
+      catch(error){if(signal.aborted||error instanceof Fault&&['LLM_AUTH','LLM_QUOTA','LLM_RATE_LIMIT','LLM_MODEL_NOT_FOUND','LLM_NETWORK_CONFIGURATION','LLM_PROXY_UNSUPPORTED','LLM_PROXY_AUTH','LLM_TLS','INSECURE_TLS_CONFIGURATION'].includes(error.code))throw error;}
       if(budget<2048)throw new Fault('LLM_OUTPUT_BUDGET_TOO_SMALL',502);
     }
     const body={model:this.model,messages,stream:Boolean(context),[this.tokenField]:budget,...(context?{stream_options:{include_usage:true}}:{}),...(this.provider==='openrouter'?{reasoning:{effort:'low',exclude:true},provider:{require_parameters:true}}:{}),...(this.temperature===undefined?{}:{temperature:this.temperature})};
-    if(context){signal.throwIfAborted();context.dispatch(this);return this.stream(await this.response('chat/completions',signal,body),signal,context);}
+    if(context){signal.throwIfAborted();context.dispatch(this);return this.response('chat/completions',signal,body,response=>this.stream(response,signal,context));}
     const result = await this.request('chat/completions', signal, body);
     const choice = result.choices?.[0];
     if(!result.error&&choice?.finish_reason==='length'&&typeof result.model==='string'&&result.model.trim()&&result.model.length<=128)throw new CloudOutputFailure(result.model,typeof choice.message?.content==='string'?choice.message.content:'');
@@ -145,10 +164,7 @@ export class CloudTransport implements CodeTransport {
     }catch(error){checkpoint(true);if(error instanceof ProviderFailure||signal.aborted)throw error;throw new ProviderFailure('LLM_CONNECTION_INTERRUPTED',model,code,tokens);}
     finally{await reader.cancel().catch(()=>{});}
   }
-  async readiness(signal: AbortSignal) {
-    try { const result = await this.request('models', signal); return Array.isArray(result.data) && result.data.some((m: {id?:string}) => m.id === this.model) ? 'ready' : 'model_missing'; }
-    catch (error) { return error instanceof Fault && error.code === 'LLM_AUTH' ? 'authentication_failed' : 'unreachable'; }
-  }
+  async readiness(signal: AbortSignal) { return (await this.diagnose(signal)).state; }
 }
 function usage(value:unknown):TokenUsage{
   const data=value as {completion_tokens?:unknown;completion_tokens_details?:{reasoning_tokens?:unknown}}|undefined;

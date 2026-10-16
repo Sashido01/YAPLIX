@@ -30,7 +30,8 @@ export class GenerationEngine implements Generator {
   close(){this.active?.abort();}
   async readiness(){
     let routes:CodeTransport[];try{routes=this.routesFor();}catch{return{liveConfigured:true,liveReady:false,llmState:'not_configured',provider:null,model:null,browserReady:checkerReady(),fallbackConfigured:false};}
-    const state=await routes[0].readiness(AbortSignal.timeout(3000));return{liveConfigured:true,liveReady:state==='ready'&&checkerReady(),llmState:state==='ready'&&!checkerReady()?'browser_missing':state,provider:routes[0].provider,model:routes[0].model,browserReady:checkerReady(),fallbackConfigured:routes.length>1};
+    const diagnostic=routes[0] instanceof CloudTransport?await routes[0].diagnose(AbortSignal.timeout(3000)):undefined;
+    const state=diagnostic?.state??await routes[0].readiness(AbortSignal.timeout(3000));return{...(diagnostic?{network:diagnostic.network,inferenceVerified:false}:{}),liveConfigured:true,liveReady:state==='ready'&&checkerReady(),llmState:state==='ready'&&!checkerReady()?'browser_missing':state,provider:routes[0].provider,model:routes[0].model,browserReady:checkerReady(),fallbackConfigured:routes.length>1};
   }
   async generate(spec:GameSpec,previous?:GameVersion,method?:'llm_code',signal?:AbortSignal,context?:GenerationContext):Promise<Artifact>{
     parseSpec(spec);if(method!==undefined&&method!=='llm_code')throw new Fault('INVALID_REQUIRED_METHOD');
@@ -91,7 +92,7 @@ export class GenerationEngine implements Generator {
             }
             if(lastCode==='LLM_RATE_LIMIT'){const until=error instanceof ProviderFailure&&error.retryAt?error.retryAt:Date.now()+60000;this.cooldowns.set(key,{until,code:lastCode});context?.cooldownRoute?.(route,until,lastCode);context?.retryAt?.(until);break;}
             if(context&&['RATE_LIMIT','JOB_ATTEMPT_LIMIT'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,429);
-            if(context&&['LLM_TIMEOUT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR'].includes(lastCode)){
+            if(context&&['LLM_DNS','LLM_TCP_CONNECTION','LLM_PROXY_CONNECTION','LLM_NETWORK_UNAVAILABLE','LLM_RESPONSE_TIMEOUT','LLM_TIMEOUT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR'].includes(lastCode)){
               // Unknown remote billing must not cause unconditional duplicate
               // requests. A separate explicitly configured route can recover.
               if(!['openrouter','ollama','ollama.com'].includes(route.provider))context.blockRoute?.(route,lastCode);
@@ -116,8 +117,8 @@ export function configuredGenerator(env:NodeJS.ProcessEnv=process.env):Generatio
   if(!['auto','ollama-cloud','openrouter'].includes(selected))throw new Fault('INVALID_LIVE_PROVIDER');
   if(env.CLOUD_BASE_URL&&env.CLOUD_BASE_URL!=='https://openrouter.ai/api/v1')throw new Fault('FREE_MODEL_REQUIRED');
   const routes:CodeTransport[]=[];
-  if(env.OLLAMA_CLOUD_API_KEY)routes.push(new CloudTransport({base:'https://ollama.com/v1',key:env.OLLAMA_CLOUD_API_KEY,model:'gemma4:31b',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
-  if(env.CLOUD_API_KEY)routes.push(new CloudTransport({base:'https://openrouter.ai/api/v1',key:env.CLOUD_API_KEY,model:'openrouter/free',route:routes.length?'secondary':'primary',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
+  if(env.OLLAMA_CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://ollama.com/v1',key:env.OLLAMA_CLOUD_API_KEY,model:'gemma4:31b',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
+  if(env.CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://openrouter.ai/api/v1',key:env.CLOUD_API_KEY,model:'openrouter/free',route:routes.length?'secondary':'primary',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
   if(!routes.length)return;
   return new GenerationEngine(routes,{defaultMode:selected as ProviderMode,timeoutMs:Number(env.LLM_TIMEOUT_MS??180000),requestTimeoutMs:Number(env.LLM_REQUEST_TIMEOUT_MS??Math.min(Number(env.LLM_TIMEOUT_MS??180000),60000)),repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'spec') as 'spec'|'direct'});
 }

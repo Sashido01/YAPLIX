@@ -36,7 +36,7 @@ export class GenerationJobs {
     // Adopt pre-TASK-010 recoverable drafts once under an explicit bounded
     // policy. Cancelled jobs and configuration/quota refusals remain untouched.
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='needs_attention' AND json_extract(metadata,'$.automaticLimit') IS NULL").all()){
-      const job=this.get(String(row.owner_id),String(row.job_id));if(!['LLM_TIMEOUT','LLM_OUTPUT_TRUNCATED','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_RATE_LIMIT','JOB_RESTART_UNCERTAIN'].includes(job.errorCode??'')||job.attempts>=12)continue;
+      const job=this.get(String(row.owner_id),String(row.job_id));if(!['LLM_DNS','LLM_TCP_CONNECTION','LLM_PROXY_CONNECTION','LLM_NETWORK_UNAVAILABLE','LLM_RESPONSE_TIMEOUT','LLM_TIMEOUT','LLM_OUTPUT_TRUNCATED','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_RATE_LIMIT','JOB_RESTART_UNCERTAIN'].includes(job.errorCode??'')||job.attempts>=12)continue;
       job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;
       if(job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
       job.stage='queued';job.recoveryState='retry_scheduled';job.retryAt=Math.max(job.retryAt??0,Date.now()+this.retryMs);this.write(job);
@@ -129,7 +129,7 @@ export class GenerationJobs {
       job.elapsedMs=initialElapsed+Date.now()-began;job.stage='validating';job.retryAt=null;job.errorCode=null;job.recoveryState=undefined;job.provider=artifact.provider;job.actualModel=artifact.model;job.requestedModel=artifact.generation?.attempts.at(-1)?.requestedModel??job.requestedModel;this.write(job);
       this.store.saveAndCompleteJob(id,owner,job.spec,artifact,job.previousVersionId,this.instance);
     }catch(error){job=this.get(owner,id);if(job.stage==='completed')return;job.stage=job.stage==='cancelled'?'cancelled':'needs_attention';job.errorCode=Date.now()>=(job.deadlineAt??Infinity)?'JOB_DURATION_LIMIT':this.stopping?'JOB_RESTART_UNCERTAIN':signal.aborted?'REQUEST_CANCELLED':error instanceof Fault?error.code:'JOB_PERSISTENCE_ERROR';job.elapsedMs=initialElapsed+Date.now()-began;
-      if(!this.stopping&&!signal.aborted&&['LLM_TIMEOUT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_OUTPUT_TRUNCATED','LLM_HTTP','LLM_RATE_LIMIT','RATE_LIMIT','LLM_NETWORK_OR_RESPONSE'].includes(job.errorCode)&&this.canRetry(job)){
+      if(!this.stopping&&!signal.aborted&&['LLM_DNS','LLM_TCP_CONNECTION','LLM_PROXY_CONNECTION','LLM_NETWORK_UNAVAILABLE','LLM_RESPONSE_TIMEOUT','LLM_TIMEOUT','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_OUTPUT_TRUNCATED','LLM_HTTP','LLM_RATE_LIMIT','RATE_LIMIT','LLM_NETWORK_OR_RESPONSE'].includes(job.errorCode)&&this.canRetry(job)){
         if(job.errorCode==='LLM_TIMEOUT'&&job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
         const routes=this.routes(job);
         if(!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))){job.stage='queued';job.retryAt=Math.max(job.retryAt??0,Date.now()+Math.min(60000,this.retryMs*2**((job.automaticRuns??1)-1)));job.recoveryState=job.errorCode==='LLM_RATE_LIMIT'?'waiting_for_provider':'retry_scheduled';}
