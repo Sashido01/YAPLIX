@@ -145,3 +145,14 @@ score_changed/финальные 50 — отдельное подтвержде�
 Дальше: исправить генерацию временных единиц/сброса отдельной задачей; расширять
 проверяемые visual adapters и выборку настоящих игр. До этого — **ITERATE**,
 без production-интеграции и без обещания прохождения произвольной LLM-игры.
+
+## GitHub handoff
+
+[PR #23](https://github.com/Sashido01/YAPLIX/pull/23) → `main`, feature commit
+`5a825bf9f2011c979471bcb9249939daa49b51f5`. Последующий documentation commit
+уточняет только этот handoff и различие initial/changing target в known-errors.
+[Проверки текущего head](https://github.com/Sashido01/YAPLIX/pull/23/checks)
+являются authoritative источником Windows/Ubuntu/secret-scan; actual merge SHA
+и завершение доступны в PR. Merge разрешён только после успеха всех трёх
+checks актуального head, затем ff-only main и post-merge smoke. Итог этих
+операций сообщается владельцу отдельно; до их выполнения merge PASS не заявлен.
