@@ -10,124 +10,78 @@ flowchart LR
   API --> Spec[GameSpec]
   Spec --> LLM[Ollama Cloud / OpenRouter Free]
   LLM --> Check[Extract / static / Chromium]
-  Check --> Repair[Bounded repair]
+  Check -. owner opt-in .-> Repair[Bounded repair]
   Repair --> LLM
   Check --> DB[(SQLite / checked version)]
-  API --> Demo[Авторский DEMO]
-  Demo --> DB
   DB --> Game[Opaque iframe / offline HTML]
-  Game --> Events[Проверенный bridge / статистика]
+  Game -. optional .-> Events[Проверенный bridge / статистика]
   Events --> API
 ```
 
-## Собственная генерация
+## Собственная генерация — Full HTML core (MICRO-023)
 
-[generation.ts](../src/generation.ts) независимо формирует specification/messages
-по собственным GameSpec/event contracts. Нет substring жанровой классификации,
-готового каталога, сторонних промптов/шаблонов/assets. Iteration передаёт полный
-previous HTML, исходное описание и изменение. [transport.ts](../src/transport.ts)
-напрямую вызывает два разрешённых OpenAI-compatible HTTPS endpoint.
-TLS проверяется, redirects запрещены, HTTP только loopback. Секреты только серверу.
+`User idea → generationMessages → LLM → prepareDocument → static/browser validator
+→ atomic GameVersion`. Один запрос на обычную успешную генерацию; нет отдельных
+LLM stages для компонентов. [GAME_GENERATION_CONTRACT](../src/generation.ts)
+требует полный самостоятельный HTML5 со встроенными CSS/JS, механиками идеи,
+рабочим desktop/touch управлением, целью, уместными win/loss, restart и оформлением.
+Canvas/DOM выбирает модель. Нет genre classifier, line cap, обязательного движка,
+фиксированных mechanic IDs, Visual Kit/GameDNA/achievements/telemetry.
 
-Node fetch с явным per-request Agent/ProxyAgent (Undici 7.30.1), без provider SDK.
-Оба cloud provider используют [llm-network.ts](../src/llm-network.ts): Auto,
-Direct или обязательный HTTP/HTTPS proxy, свежая конфигурация на каждый запрос,
-без global dispatcher mutation и Direct fallback при отказе proxy. GET models,
-readiness и inference используют один путь; agent освобождается после body.
-Секреты/URL не попадают в диагностику, только provider/route/stage/status/duration/category.
-Отдельный [network:check](../scripts/llm-network-check.ts) делает только service GET,
-не открывает SQLite/worker и не подтверждает inference. [Настройка и границы](llm-network.md).
-Streaming используется для durable jobs, non-streaming — legacy synchronous API.
-SSE reader завершается на `[DONE]`, сохраняя model/stop и static/browser gates.
-Обрыв body отличается от malformed JSON. Connect timeout default 10 s;
-engine request timer охватывает catalog, соединение и весь body, общий job deadline,
-bounded retries/cooldowns и checkpoint recovery сохраняются. DNS/TCP/proxy/timeout
-получают отдельные коды; UI сохраняет идею/черновик, TLS не отключается.
-Результаты сети и gameplay — [MICRO-021](SESSION_HANDOFF.md).
+Редактирование отправляет current version HTML целиком, исходную идею и новое
+требование, с сохранением существующих механик. История повторных запросов не
+отправляется. Нельзя обрезать HTML для контекста: входной envelope ≤300000 bytes;
+при известном context_length используется консервативная оценка UTF-8 bytes плюс
+output budget. Это оценка, не tokenizer и не гарантия неизвестного upstream.
+При отказе исходная версия сохраняется. SQLite transaction связывает next version,
+previousVersionId и completed job; idempotency предотвращает дубликаты.
 
-[live.ts](../src/live.ts): один active request, общий deadline до 300 s, максимум
-один LLM repair на job; production cloud repair по умолчанию выключен.
-`LLM_REPAIRS` принимает legacy 0..2, но 2 ограничивается одним rewrite, 0 отключает
-repair. Два production routes. Один transport request по умолчанию
-ограничен 60 s; jobs управляют bounded автоматическими retry и durable cooldown.
-MICRO-019 фиксирует Ollama Cloud gemma4:31b на https://ollama.com/v1 и
-OpenRouter openrouter/free на exact https://openrouter.ai/api/v1.
-Auto предпочитает настроенный Ollama Cloud, затем OpenRouter Free; explicit
-ollama-cloud/openrouter ограничивают dispatch одним provider. Legacy MODEL,
-secondary/fallback/local knobs не добавляют маршрутов. Concrete :free IDs,
-generic providers, local route и платный OpenRouter исключены из production.
-Без key отключается только LIVE. Ответ сообщает фактическую выбранную модель. OpenRouter получает low reasoning,
-чтобы оставить бюджет для HTML. Truncated output сохраняет actual model в attempts
-и после отдельного owner разрешения (`LLM_AUTO_REPAIR=1`) может получить один
-bounded repair, с требованием компактного HTML. По умолчанию cloud repair выключен.
+Production routes: gemma4:31b на exact https://ollama.com/v1 (server key) — default;
+openrouter/free на exact https://openrouter.ai/api/v1 — только явный выбор.
+Legacy auto также только Ollama, даже при единственном OpenRouter key. Ошибки
+Ollama не дают право dispatch OpenRouter. В editor оба тех же provider select.
+Фактический upstream OpenRouter сохраняется в diagnostics и не фильтруется как
+concrete requested model. Paid/local/generic routes и obsolete model/fallback knobs
+не разрешены. [Общий network transport MICRO-021](llm-network.md) сохраняет
+Direct/Auto/mandatory HTTP(S) proxy, TLS, no redirects и освобождение Agent.
+`network:check --all` диагностирует оба provider GET, не authorize inference.
 
-UI отправляет request в [jobs.ts](../src/jobs.ts), а не держит HTTP генерацию до
-конца. SQLite хранит original spec, owner, idempotency key, stage, attempts,
-provider/requested/actual model, error, checkpoint и связь с version. Один worker,
-очередь 20/3, total 1000, ≤100 MB checkpoints/originals суммарно и ≤200000 bytes на каждый draft/original;
-Worker lease берётся после successful bind, heartbeat сохраняет exclusive ownership
-одной DB. Второй writer с этой DB блокируется. После crash подтверждённо отсутствующий
-PID позволяет immediate restart; живой/непроверяемый PID сохраняет lease до 60 s.
-Default automatic cycle: до 4 provider calls суммарно, до 4 worker runs и 300 s
-включая ожидание. Manual Continue добавляет ограниченный бюджет, lifetime ≤12 calls.
-Cloud SSE checkpoint
-записываются bounded порциями, usage/output/reasoning сохраняются, если возвращены.
-Legacy synchronous API получает полный ответ без streaming checkpoint.
-Provider mode и initial provider/requested model фиксируются уже в queued.
-Смена provider блокирует предыдущий durable route в metadata; retry/Continue/restart
-не возвращают job к нему. Новый свежий запрос не обходит routes повторно внутри
-одного engine run; retries ограничивает durable worker budget.
-LIVE creation при настроенном
-generator ограничено 6/min owner и 12/min global; отдельный такой же лимит
-provider dispatch включает repair и ручное продолжение.
+[transport.ts](../src/transport.ts) сохраняет SSE terminal/stop/model checks,
+usage и partial checkpoints. `finish_reason=length` не может стать готовой игрой.
+Output default 12000 tokens, config 256..32000, известный completion cap снижает
+budget; для durable jobs budget <2048 блокирует POST. Это не гарантия качества.
+HTML/original/checkpoint cap 200000 UTF-8 bytes, response cap 1210000 bytes.
+Слишком большой response — LLM_RESPONSE_BODY_TOO_LARGE; внешний HTTP 413 —
+LLM_HTTP_BODY_TOO_LARGE (сам по себе не различает provider и proxy).
+SSE frame может занимать весь прежний wire budget: JSON escaping не равен размеру
+HTML. Извлечение снимает только целый Markdown fence; не ищет HTML-подстроку,
+не режет документ по первому closing tag и не переписывает JavaScript regex.
 
-Обрезанный output допускает один bounded repair полного документа только при
-разрешённом LLM repair, без склейки частей и смены provider внутри repair.
-Retry-After задаёт durable ожидание `waiting_for_provider`; retry_scheduled использует
-exponential backoff от 2 s с cap 60 s. Quota/auth/model/context/output-budget закрывают
-route на 15 min и позволяют альтернативный provider только в Auto. Неизвестный
-potentially billed timeout/stream interruption не повторяется слепо на том же route.
-Restart сохраняет исходные deadline/calls/cooldown и восстанавливает допустимые
-действия. Старые recoverable needs_attention без automatic metadata получают один
-bounded cycle с lifetime cap 12; cancelled/quota/auth/configuration отказы не принимаются.
-Полный checkpoint с подтверждённым origin сначала проверяется без POST;
-если нужен и разрешён repair, он получает конкретные browser errors. Неполный
-draft требует разрешённого rewrite; отсутствующий/ненастроенный origin блокирует
-dispatch. Продолжение использует original spec и допустимый draft; provider не
-обещает resume с последнего токена. При исчерпании
-бюджета/ресурсов остаётся needs_attention + failed_permanent metadata. Проверенная
-version и completed job сохраняются одной transaction. Сбой оставляет job/draft,
-не игровую passed version. Legacy synchronous games/versions API сохранён.
+[Jobs](../src/jobs.ts): существующие durable state, checkpoints, cancellation,
+cooldowns и exclusive worker lease. Default 4 calls / 4 runs / 300 s; request
+≤60 s; manual Continue сохраняет lifetime ≤12. Повтор не меняет provider;
+legacy Auto checkpoint от OpenRouter при несовместимом route остаётся доступным,
+но блокирует recovery без POST. Queue 20/3, jobs 1000, originals/checkpoints ≤100 MB.
+Первый raw ответ сохраняется в originalCheckpoint, последний — checkpoint;
+bounded diagnostics не попадают в summary/Git. Старые игры/версии/задания не мигрируются
+и не удаляются. Legacy DEMO API/fixtures доступны тестам, основной UI создаёт live.
 
-HTML <=200000 UTF-8 bytes, ровно один документ. Static отклоняет external resources,
-опасные API, отсутствие mobile viewport/game contract. Затем [browser-check.ts](../src/browser-check.ts)
-запускает Chromium с OS sandbox, environment без server secrets, offline, без
-popups/dialogs/downloads, deadline 18 s. Реальные Start/input/pause, размеры Canvas,
-overflow, порядок/уникальность events, JS/console errors; далее standalone offline.
-320/390 px, DPR 2. Проверяется короткий startup-input-pause сценарий, а не полный
-путь любой игры до победы/поражения, производительность или безопасность движка.
+[Validator](game-validation.md) сохраняет OS sandbox, opaque iframe/CSP,
+offline, runtime/Promise errors, startup/restart probes и bounded recovery.
+`full-html` probe не требует platform markers/bridge. Legacy `data-yaplix-start`
+выбирает существующий строгий lifecycle gate `startup-input-pause`, включая pause,
+resume, events и marked restart reset. Доступные generic controls проверяются
+реальными действиями, но без известного read-only state их mechanics/restart
+остаются NOT_VERIFIED. UI сообщает технический результат отдельно от gameplay.
+Оба gate ограничены 18 s и профилями 320/390, не доказывают physical devices.
+LLM repair production default off, максимум один после отдельного разрешения.
+`repairUsed` durable; Continue/restart не снимают cap. Только два deterministic
+format fixes: whole JSON string и missing doctype, с повторным gate.
 
-Только успешный результат llm_code/succeeded/passed записывается. `generation`
-хранит requested/actual model, route, rejected/failed/accepted, errorCode/time,
-explicit fallback и scope browser evidence. Error API возвращает безопасные codes
-и attempts, не raw upstream error. Repair получает original request/failed HTML
-и ограниченную техническую обратную связь. DEMO/import маркируются mock/unverified.
-Quality prompt требует реальные transitions механик, конечную цель, поражение,
-restart, touch и read-only diagnostic state; наличие diagnostic JSON само по себе
-не доказывает gameplay. Две собственные gallery HTML в assets/games добавляются
-в library только по явному POST и сохраняются authored/unverified, отдельно от LIVE.
-`LLM_PROMPT_STYLE=direct` передаёт исходный естественный запрос, `spec` (code default)
-формирует specification. Общие contract/validation/security сохраняются. Generic
-browser evidence публикует только HTML_VALID, JS_EXECUTABLE, UI_VISIBLE,
-MOBILE_VERIFIED; MICRO-022 дополнительно сохраняет per-aspect checks с
-VERIFIED/FAILED/NOT_VERIFIED и elapsedMs, используя существующий gameplay summarizer.
-Win/loss коротким probe не подтверждаются; отсутствие наблюдаемой механики
-не равно подтверждённому дефекту. Marked restart проверяется реальным input и
-reset read-only state. Durable originalCheckpoint и repairUsed сохраняют исходник
-и лимит одного rewrite даже после incomplete output, Continue и restart.
-[Границы, format recovery и budgets](game-validation.md).
-Pause проверяет замороженное изображение, resume — фактическое продолжение через
-видимую Resume/Continue или data-yaplix-resume, затем pause-toggle fallback.
+Analytics доступна только играм с добровольным event bridge; базовая генерация
+его не требует. Авторские gallery HTML сохраняются authored/unverified и не
+подменяют LLM output. Экспериментальный orchestrator не интегрируется в этот core.
+[Результаты и ограничения MICRO-023](micro-023-report.md).
 
 ## Экспериментальный orchestrator (TASK-013, architecture B)
 

@@ -55,7 +55,7 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | Параметр | Значение / ограничение |
 | --- | --- |
 | PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
-| LIVE_PROVIDER | auto default; ollama-cloud/openrouter/none; без обоих ключей отключается только LIVE |
+| LIVE_PROVIDER | ollama-cloud default; auto aliases Ollama only; openrouter manual; none disables LIVE |
 | CLOUD_BASE_URL / CLOUD_API_KEY | только https://openrouter.ai/api/v1 / secret; model фиксирован openrouter/free |
 | LLM_TIMEOUT_MS | 1000..300000, default 180000, один запуск engine |
 | LLM_REQUEST_TIMEOUT_MS | 1000..LLM_TIMEOUT_MS, default min(60000, LLM_TIMEOUT_MS), один transport request |
@@ -67,7 +67,7 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
 | LLM_REPAIRS | 0..2 accepted, cap 1 per job; 0 disables repair |
 | LLM_AUTO_REPAIR | default 0 for production CloudTransport; 1 only after owner authorization for extra inference; see [validation](game-validation.md) |
-| LLM_PROMPT_STYLE | spec code default; direct явно передаёт естественный запрос; .env.example выбирает direct |
+| LLM_PROMPT_STYLE | direct code default; spec is a legacy structured envelope |
 | OLLAMA_CLOUD_API_KEY | server secret; только gemma4:31b на https://ollama.com/v1 |
 | Legacy model/fallback/local knobs | CLOUD_MODEL, OLLAMA_CLOUD_MODEL, LLM_FALLBACK, SECONDARY_*, OLLAMA_BASE_URL/MODEL, LLM_LOCAL_FALLBACK игнорируются при production routing |
 | YAPLIX_MODE / HOST / PUBLIC_URL | local loopback; explicit LAN/HTTPS |
@@ -289,3 +289,12 @@ URL-файл отражает только подтверждённую теку
 через тот же Direct/HTTP(S) proxy transport, что inference, без запуска worker и
 SQLite. Настройки, Auto/NO_PROXY, VPN/PAC ограничения и TLS CA —
 [сетевая инструкция](llm-network.md). Изменение серверного `.env` требует restart.
+
+## Full HTML contract и размер ответа (MICRO-023)
+
+[Контракт/процедура LIVE](micro-023-report.md). Envelope ≤300000 bytes без усечения
+current HTML; известный context cap проверяется консервативно по UTF-8 bytes.
+HTML ≤200000 bytes; JSON/SSE response ≤1210000 bytes. HTTP/API input limits
+не увеличены. LLM_RESPONSE_BODY_TOO_LARGE — локальный response cap,
+LLM_HTTP_BODY_TOO_LARGE — внешний HTTP 413, не доказанная ошибка модели/proxy.
+Legacy Auto больше не authorize provider switch. Старые DB и версии без миграции.

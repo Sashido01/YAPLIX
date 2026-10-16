@@ -1,4 +1,4 @@
-# Production game validation — MICRO-022
+# Production game validation — MICRO-023 / MICRO-022
 
 `LLM → prepareDocument → static validation → browserCheck → bounded repair →
 revalidation → transaction Save/Ready`. Один production checker, без нового
@@ -12,7 +12,7 @@ offline в opaque iframe `sandbox="allow-scripts"` с прежней CSP. Genera
 не исполняется в Node. Запрещены сеть, popups, dialogs, downloads и service workers.
 После iframe отдельно проверяется standalone HTML с той же CSP.
 
-На 320/390 px проверяются загрузка/Start, JS syntax/runtime errors и unhandled
+Для legacy HTML с data-yaplix-start на 320/390 px проверяются загрузка/Start, JS syntax/runtime errors и unhandled
 Promise rejection, размеры поля/Canvas, overflow, session event contract,
 реальный input, pause/resume и повторный запуск при доступном marked Restart.
 Подтверждённое исключение, отключённый input после Start, удалённое поле,
@@ -51,7 +51,7 @@ JS, selectors, attributes и игровые правила не переписы
 снова проходит static/browser gate. Опечатка `data-yaplix-state"` не исправляется
 универсальным regex: сохранённый MICRO-020 остаётся FAILED с null exception.
 
-Перед изменением/repair первый rejected raw response сохраняется в
+Первый raw response, включая успешный, сохраняется в
 `originalCheckpoint` job metadata; текущий `checkpoint` хранит последний draft.
 Оба bounded до 200000 bytes и учитываются в общей квоте 100 MB. Raw HTML отсутствует
 в list/summary, доступен владельцу через существующий защищённый GET job.
@@ -98,3 +98,21 @@ Ready блокируется до завершённого gate. Cancellation з
 gallery arcade tests — в `tests/arcades.spec.ts`. Это synthetic evidence.
 Результаты сохранённого реального checkpoint, timings и границы LIVE:
 [отчёт MICRO-022](micro-022-report.md).
+
+## Базовый Full HTML без platform markup (MICRO-023)
+
+Обычная новая генерация не требует event bridge, state output, fixed IDs, Canvas
+или универсальных score/health. `browser-check.ts` сохраняет общий browser launch,
+OS sandbox/secret-free env и 18 s deadline; для HTML без data-yaplix-start вызывает
+[full-html-check.ts](../src/full-html-check.ts). Тот проверяет видимый документ,
+320/390 px overflow, runtime errors/Promise rejection, запрещённые операции,
+тапы/клавиши и доступные Start/Restart по accessible name; отдельно offline load.
+Подтверждённая ошибка блокирует Save/Ready. Неизвестная последовательность controls
+не считается FAILED; input/gameplay/win/loss/restart остаются NOT_VERIFIED,
+html-runs VERIFIED подтверждает только наблюдавшийся технический запуск.
+Старый instrumented gate с pause/resume/event/restart-reset сохраняется полностью.
+
+Extract принимает весь документ или один целый Markdown fence, не вырезает
+HTML из окружающего текста. Неполный HTML/finish_reason=length не сохраняется
+как готовая версия. Никаких regex исправлений JavaScript. Новые real repairs в
+MICRO-023 не разрешены; все соответствующие тесты используют mocks.

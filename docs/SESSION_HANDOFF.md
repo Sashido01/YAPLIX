@@ -1,3 +1,44 @@
+# MICRO-023 — Full HTML core
+
+16 октября 2026. Baseline main/origin/main:
+`fd8d5e1b1b93bd04080d80b0ebd178c15e249001`, ff-only pull. Branch:
+`codex/micro-023-full-html-core`. Новый поток: идея → один полный HTML →
+техническая проверка → версия. Редактирование передаёт полный current HTML и
+новое требование, сохраняет историю. Compact arcade/Canvas/line cap/mandatory
+telemetry убраны из базового prompt. Legacy instrumented validator сохранён;
+новый full-html probe не требует fixed IDs и не выдаёт gameplay VERIFIED.
+
+Ollama Cloud gemma4:31b default в создании/редакторе; OpenRouter Free вручную.
+Legacy Auto — только Ollama без provider fallback. UI начинает с создания,
+DEMO mode убран из основной формы; fixtures/API и старые games/jobs сохранены.
+Local response cap и внешний HTTP 413 теперь имеют разные ошибки. SSE frame
+учитывает JSON escaping в прежнем wire budget, общий лимит не увеличен.
+
+VERIFIED локально: typecheck/build; 223 Node units; Python19 и CI-policy8;
+16 browser PASS/10 intentional profile skips (generic + legacy checker, jobs),
+24/24 create/edit/provider/version/reopen/export на всех 12 профилях;
+26/26 touch/rotation/keyboard viewport/runtime/CSP/MVP/authored maze и falling
+blocks на Chromium320/WebKit390. Existing private recovered match-3 прошла
+тот же bounded checker: html/input VERIFIED, gameplay/win/loss/restart NOT_VERIFIED;
+исходная SQLite прочитана immutable/read-only и не изменена. Это не новая LLM игра.
+Initial UI JS gzip 10718 bytes, CSS2328; cold 7-run performance не измерялся,
+performance improvement/physical device PASS не заявляются.
+
+Security: history + explicit changed-file Gitleaks scans без находок; sandbox,
+CSP и session authorization сохранены. Зафиксированы 513 локальных файлов:
+512 hashes unchanged; единственное изменение — служебная consumer SQLite,
+доказанно связанная с synthetic token tests/tunnel.test.ts:18 (не production bot).
+`.env`, PDF, существующие пользовательские DB/игры/версии сохранены.
+
+LLM: **0 новых реальных inference POST; LIVE NOT_TESTED**. Actions disabled,
+hosted/FULL/Ubuntu PASS не заявляются. PR/merge SHA и post-merge smoke — в Git
+receipt. [Полный отчёт и точная LIVE-процедура](micro-023-report.md).
+NEXT: получить разрешение ровно на 2 Ollama POST (создание + изменение),
+без retries/repair/router; при ошибке остановиться. Затем physical acceptance.
+До 29 октября MVP технически подготовлен, качество fresh LLM пока не подтверждено.
+
+---
+
 # MICRO-022 — Production validation and bounded recovery
 
 16 октября 2026. Baseline main/origin/main `8465feac701932cf074e7215fa0d49fe6f9f921a`,
