@@ -1,3 +1,34 @@
+# MICRO-026 — isolated Game Constructor PoC
+
+2026-10-16, baseline main `37653b984e41f7486f218e055673857222b96ecb`;
+MICRO-025 absent. [Architecture audit and results](micro-026-architecture-audit.md)
+is the main report. Source: src/research/constructor; explicit offline runner:
+`node scripts/constructor-proof.ts` (`--quick` omits 21 timing runs).
+Exports/schema/action receipts/screenshots stay in ignored `.local/micro026/`.
+
+Audit PASS; bounded offline PoC PASS; adoption decision ITERATE. Existing
+grid/physics/score reused; no Phaser dependency or production generator changes.
+Three distinct games: real desktop and touch win/loss/restart, plus executable
+key/spawn/chase/goal module variant and two House themes. All authored fixtures,
+not LLM output. Typical HTML15.8–16.3KB, gzip6.2–6.4KB; warmed compilation p75
+3.67–3.83ms and mobile local interactive p75 385.89–395.58ms, 7 cold contexts/game.
+These omit LLM inference and do not establish an E2E speed/quality advantage.
+
+Typecheck/build PASS, units235/235, Python19/19, policy8/8, existing runtime
+Playwright8/8; constructor gameplay/layout/export/CSP probes and existing checker
+PASS. Expanded legacy production suite has 7 failures from old cloud/local-route
+fixtures; first reproduced on exact baseline main. See known-errors and report;
+no route relaxation. Physical devices/WebViews/real keyboard NOT_TESTED.
+345 protected hashes:344 same; only synthetic Telegram test-consumer ledger
+changed by existing tests, no user DB/.env/PDF/Visual Kit changes.
+
+Production/MVP UNCHANGED; LIVE NOT_TESTED, real inference POST0. Actions disabled
+(baseline79 runs/latest38877566527), no workflow change or dispatch. Git delivery
+receipt supplied in PR/final report. NEXT: separate legacy harness repair,
+owner-budgeted equal-prompt LIVE A/B/C + edits/originality, physical mobile tests.
+
+---
+
 # MICRO-024 — One-click LAN QR / mobile testing
 
 16 октября 2026. Baseline main/origin/main `6728272a14a1be217118d3551e1866e66ea93153`
