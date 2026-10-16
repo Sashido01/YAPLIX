@@ -11,7 +11,9 @@ short-lived `codex/` feature branch. Never start from an obsolete feature branch
 Deliver a complete user scenario, tests, build, security checks and current docs.
 Stage explicit reviewed files, commit, push the feature branch and create a PR
 targeting main. Wait for successful Windows, Ubuntu and secret-scan checks for
-the current head; fix failures and repeat. Review the diff and conflicts.
+the current head, with the risk-selected FAST/FULL coverage in
+[CI economy](docs/ci-economy.md); fix failures and repeat. Before releases run
+manual FULL on the exact release commit. Review the diff and conflicts.
 
 The owner authorizes autonomous standard PR merge for ordinary internal work
 after those checks. Do not wait for a teammate's review unless GitHub protection

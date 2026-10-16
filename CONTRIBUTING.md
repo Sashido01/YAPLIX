@@ -33,7 +33,13 @@ git push -u origin HEAD
 по [шаблону](.github/pull_request_template.md). Просмотрите diff, target branch,
 конфликты и checks именно последнего head. Обязательны зелёные
 `repository-checks (ubuntu-24.04)`, `repository-checks (windows-latest)` и
-`secret-scan`. Исправляйте ошибки новыми коммитами, снова ждите CI.
+`secret-scan`. [FAST/FULL policy](docs/ci-economy.md) определяет объём реально
+выполняемых проверок: docs-only не запускает browsers, unit-only запускает все
+unit обеих ОС, runtime/config/неизвестный diff требует FULL. Имена checks
+не меняются. Исправляйте ошибки новыми коммитами, снова ждите CI.
+Перед release вручную выполните FULL на точном release commit. Повторного
+полного Actions run на push main нет; post-merge smoke выполняется локально.
+Текущие ограничения server protection описаны в [аудите](docs/micro-018-report.md).
 
 Владелец разрешает самостоятельно выполнить стандартный merge обычной задачи
 после успешных проверок. Не ждите участников ради внутренних инженерных решений.
