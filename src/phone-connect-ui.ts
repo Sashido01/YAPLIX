@@ -1,16 +1,20 @@
-type State = { enabled: boolean; url?: string; versionId?: string; expiresAt?: number; lastOpenedAt?: number; networks?: { name: string; address: string }[] };
+type Network = { name: string; address: string; kind?: 'hotspot' };
+type State = { enabled: boolean; url?: string; versionId?: string; expiresAt?: number; lastOpenedAt?: number; port?: number; networks?: Network[] };
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let image: string | undefined, pending = false, initialized = false, expiry: ReturnType<typeof setTimeout> | undefined;
 let lastDesktopVersion: string | undefined;
+let networkChosenByOwner = false;
 const errors: Record<string,string> = {
-  PHONE_NO_NETWORK:'Активная сеть Wi-Fi/Ethernet не найдена. Подключите компьютер к маршрутизатору и повторите.',
+  PHONE_NO_NETWORK:'Активная сеть не найдена. Для демонстрации включите Windows: Параметры → Сеть и Интернет → Мобильный хот-спот. Затем обновите список сетей.',
   PHONE_NETWORK_CHECK_FAILED:'Не удалось определить активную сеть. Проверьте подключение Wi-Fi/Ethernet и повторите.',
   PHONE_CHOOSE_NETWORK:'Выберите сеть, к которой подключён телефон.',
   PHONE_LOCAL_ONLY:'Подключение телефона включается из локального окна YAPLIX на компьютере.',
   HOST_NOT_AVAILABLE:'Адрес сети изменился. Обновите список сетей.',
   PHONE_SERVER_UNREACHABLE:'Не удалось открыть страницу в выбранной сети. Проверьте сеть и VPN.',
   PHONE_ACCESS_EXPIRED:'Доступ истёк. Обновите подключение.',
-  PHONE_BUSY:'Подключение ещё обновляется. Повторите через несколько секунд.'
+  PHONE_BUSY:'Подключение ещё обновляется. Повторите через несколько секунд.',
+  PHONE_PORT_IN_USE:'Постоянный порт телефона занят. Закройте прежний YAPLIX или проверьте локальную настройку порта. Другой порт автоматически не выбирается.',
+  PHONE_PORT_INVALID:'Некорректная локальная настройка порта телефона. Нужен TCP-порт от 1 до 65535.'
 };
 function release() { clearTimeout(expiry); if (image) URL.revokeObjectURL(image); image = undefined; el<HTMLImageElement>('phone-qr').removeAttribute('src'); el('phone-ready').hidden = true; }
 async function api(path: string, method = 'GET', body?: object) {
@@ -35,11 +39,20 @@ async function run(work: () => Promise<void>) {
 }
 async function load(preferred?:string) {
   const [state, library] = await Promise.all([(await api('/api/phone')).json(), (await api('/api/games')).json()]);
-  const networks = el<HTMLSelectElement>('phone-network'), chosen = networks.value || (state.url ? new URL(state.url).hostname : '');
+  const networks = el<HTMLSelectElement>('phone-network'), chosen = networkChosenByOwner ? networks.value : '';
   networks.replaceChildren();
   if (state.networks.length > 1) networks.add(new Option('Выберите вашу сеть', ''));
-  for (const n of state.networks) networks.add(new Option(n.name+' · '+n.address, n.address));
+  for (const n of state.networks) networks.add(new Option((n.kind==='hotspot'?'Wi-Fi ноутбука · ':n.name+' · ')+n.address, n.address));
   if (chosen && state.networks.some((n: {address:string})=>n.address===chosen)) networks.value=chosen;
+  else {
+    networkChosenByOwner=false;
+    const hotspot=state.networks.find((n:Network)=>n.kind==='hotspot'), active=state.url ? new URL(state.url).hostname : '';
+    if(hotspot)networks.value=hotspot.address;
+    else if(state.networks.some((n:Network)=>n.address===active))networks.value=active;
+  }
+  el('phone-wifi-help').textContent=state.networks.some((n:Network)=>n.kind==='hotspot')
+    ? 'Точка доступа Windows определена. Подключите телефон к Wi-Fi ноутбука (имя и пароль — в настройках Windows), затем сканируйте QR игры. Этот QR не подключает к Wi-Fi.'
+    : 'Активная точка доступа Windows не подтверждена. Для Wi-Fi ноутбука включите: Параметры Windows → Сеть и Интернет → Мобильный хот-спот. Если переключатель недоступен, проверьте поддержку в Windows. Затем обновите список сетей. Можно также использовать доверенную общую Wi-Fi/Ethernet сеть.';
   el('phone-network-label').hidden = state.networks.length < 2;
   const versions = el<HTMLSelectElement>('phone-version'), desktop = el('phone').dataset.version;
   const selected = preferred ?? (desktop && desktop!==lastDesktopVersion ? desktop : versions.value || desktop || state.versionId);
@@ -63,11 +76,12 @@ export async function connectPhone(versionId?:string) {
   if (!initialized) {
   initialized=true;
   el('phone-refresh').addEventListener('click',()=>void run(async()=>{await load();await enable();}));
-  el('phone-networks').addEventListener('click',()=>void run(async()=>{const state=await load();if(state.enabled&&state.versionId!==el<HTMLSelectElement>('phone-version').value)await enable();else await render(state);}));
+  el('phone-networks').addEventListener('click',()=>void run(async()=>{const state=await load();if(state.enabled&&(state.versionId!==el<HTMLSelectElement>('phone-version').value||new URL(state.url!).hostname!==el<HTMLSelectElement>('phone-network').value))await enable();else await render(state);}));
   el('phone-off').addEventListener('click',()=>void run(async()=>{await render(await(await api('/api/phone','DELETE',{})).json());}));
-  for(const id of ['phone-network','phone-version'])el(id).addEventListener('change',()=>void run(enable));
+  el('phone-network').addEventListener('change',()=>{networkChosenByOwner=true;void run(enable);});
+  el('phone-version').addEventListener('change',()=>void run(enable));
   el('phone-copy').addEventListener('click',async()=>{const input=el<HTMLInputElement>('phone-url');try{await navigator.clipboard.writeText(input.value);el('phone-status').textContent='Ссылка скопирована. Она даёт временный доступ к выбранной версии.';}catch{input.focus();input.select();el('phone-status').textContent='Скопируйте выделенную ссылку.';}});
   window.addEventListener('pagehide',release);
   }
-  await run(async()=>{const state=await load(versionId);if(state.enabled&&state.versionId===el<HTMLSelectElement>('phone-version').value)await render(state);else await enable();});
+  await run(async()=>{const state=await load(versionId);if(state.enabled&&state.versionId===el<HTMLSelectElement>('phone-version').value&&new URL(state.url!).hostname===el<HTMLSelectElement>('phone-network').value)await render(state);else await enable();});
 }

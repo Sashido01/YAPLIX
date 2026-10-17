@@ -15,7 +15,7 @@ test('one click QR decodes to actual selected game; isolated phone touch, rotati
   const store=new Store(':memory:'),version=store.save(spec,artifact);
   const other=store.save({...spec,prompt:'Another private game'},artifact);
   // Synthetic adapter inventory; a real bound server, HTTP, QR and browser.
-  const phone=new PhoneConnection(store,async()=>[{name:'WiFi test',address:host}]);
+  const phone=new PhoneConnection(store,async()=>[{name:'upstream fixture',address:'192.168.255.254'},{name:'hotspot fixture',address:host,kind:'hotspot'}],undefined,undefined,0);
   const jobs=new GenerationJobs(store,undefined,undefined,false);
   const app=createApp(store,undefined,undefined,undefined,undefined,undefined,jobs,phone);
   const server=serve({fetch:app.fetch,hostname:'127.0.0.1',port:0});await new Promise<void>(r=>server.once('listening',r));
@@ -28,6 +28,8 @@ test('one click QR decodes to actual selected game; isolated phone touch, rotati
     await expect(page.locator('#game iframe')).toHaveCount(1);
     await page.locator('#phone summary').first().click();
     await expect(page.locator('#phone-qr')).toBeVisible();
+    await expect(page.locator('#phone-network')).toHaveValue(host!);
+    await expect(page.locator('#phone-wifi-help')).toContainText('Точка доступа Windows определена');
     const png=PNG.sync.read(await page.locator('#phone-qr').screenshot());
     const decoded=(jsQR as unknown as (data:Uint8ClampedArray,w:number,h:number)=>{data:string}|null)(new Uint8ClampedArray(png.data),png.width,png.height);
     expect(decoded).not.toBeNull();const target=decoded!.data;
@@ -76,4 +78,41 @@ test('phone errors and multiple networks show a choice without a ready QR; LIVE 
   await page.locator('#system summary').click();
   await expect(page.locator('#system-info')).toContainText('доступность генерации не определена');await expect(page.locator('#system-info')).toContainText('models-api-get');await expect(page.locator('#system-info')).toContainText('история версий');await expect(page.locator('#system-info')).toContainText('Сервер на этом компьютере');
   await page.route('**/api/phone',route=>route.abort());await page.getByRole('button',{name:'Обновить подключение',exact:true}).click();await expect(page.locator('#phone-ready')).toBeHidden();
+});
+
+test('phone UI explains fixed-port conflict without offering a random-port fallback',async({page})=>{
+  await page.route('**/api/games',route=>route.fulfill({json:{games:[{versionId:'00000000-0000-4000-8000-000000000000',spec}]}}));
+  await page.route('**/api/phone',route=>route.request().method()==='POST'
+    ?route.fulfill({status:503,json:{error:'PHONE_PORT_IN_USE'}})
+    :route.fulfill({json:{enabled:false,port:52604,networks:[{name:'fixture hotspot',address:'10.42.7.1',kind:'hotspot'},{name:'upstream',address:'192.168.0.3'}]}}));
+  await page.goto('/');await page.locator('#phone summary').first().click();
+  await expect(page.locator('#phone-status')).toContainText('Постоянный порт телефона занят');
+  await expect(page.locator('#phone-status')).toContainText('Другой порт автоматически не выбирается');
+  await expect(page.locator('#phone-ready')).toBeHidden();await expect(page.locator('#phone-network')).toHaveValue('10.42.7.1');
+});
+
+test('network refresh prefers a newly enabled hotspot and preserves only an explicit owner choice',async({page})=>{
+  let hotspot=false;const posted:string[]=[];
+  await page.route('**/api/games',route=>route.fulfill({json:{games:[{versionId:'00000000-0000-4000-8000-000000000000',spec}]}}));
+  await page.route('**/api/phone',route=>{
+    if(route.request().method()==='POST'){
+      posted.push(route.request().postDataJSON().address);
+      return route.fulfill({status:503,json:{error:'PHONE_SERVER_UNREACHABLE'}});
+    }
+    return route.fulfill({json:{enabled:false,networks:[{name:'upstream',address:'192.168.0.3'},...(hotspot?[{name:'hotspot',address:'10.42.7.1',kind:'hotspot'}]:[])]}});
+  });
+  await page.goto('/');await page.locator('#phone summary').first().click();
+  await expect(page.locator('#phone-status')).toContainText('Не удалось открыть страницу');
+  expect(posted).toEqual(['192.168.0.3']);hotspot=true;
+  await page.locator('#phone details summary').click();
+  await page.getByRole('button',{name:'Обновить список сетей и статус',exact:true}).click();
+  await expect(page.locator('#phone-network')).toHaveValue('10.42.7.1');
+  await page.getByRole('button',{name:'Обновить подключение',exact:true}).click();
+  await expect.poll(()=>posted.at(-1)).toBe('10.42.7.1');
+  await expect(page.locator('#phone-network')).toBeEnabled();
+  await page.locator('#phone-network').selectOption('192.168.0.3');
+  await expect.poll(()=>posted.at(-1)).toBe('192.168.0.3');
+  await expect(page.locator('#phone-network')).toBeEnabled();
+  await page.getByRole('button',{name:'Обновить список сетей и статус',exact:true}).click();
+  await expect(page.locator('#phone-network')).toHaveValue('192.168.0.3');
 });

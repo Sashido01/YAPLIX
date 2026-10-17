@@ -26,7 +26,7 @@ test('MICRO-027 actual UI job, diagnostic download, version edit, export and exa
  const original=globalThis.fetch;globalThis.fetch=((input:any,init?:RequestInit)=>{const url=new URL(input instanceof Request?input.url:input);if(url.origin==='https://ollama.com')return original('http://127.0.0.1:'+(upstream.address() as {port:number}).port+url.pathname,{...init,dispatcher:undefined} as RequestInit);if(!['127.0.0.1',host].includes(url.hostname))throw Error('TEST_EXTERNAL_FORBIDDEN');return original(input,init);}) as typeof fetch;
  const directory=mkdtempSync('.local/micro027-ui-'),store=new Store(directory+'/data.sqlite');
  const engine=new GenerationEngine([new CloudTransport({base:'https://ollama.com/v1',model:'gemma4:31b',key:'synthetic'})],{repairs:0});
- const jobs=new GenerationJobs(store,engine,undefined,true,{maxCalls:1}),phone=new PhoneConnection(store,async()=>[{name:'controlled inventory',address:host}]);
+ const jobs=new GenerationJobs(store,engine,undefined,true,{maxCalls:1}),phone=new PhoneConnection(store,async()=>[{name:'controlled inventory',address:host}],undefined,undefined,0);
  const app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs,phone),server=serve({fetch:app.fetch,hostname:'127.0.0.1',port:0});await new Promise<void>(r=>server.once('listening',r));
  const base='http://127.0.0.1:'+(server.address() as {port:number}).port,guest=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),mobile=await guest.newPage();
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));mobile.on('pageerror',e=>errors.push(e.message));

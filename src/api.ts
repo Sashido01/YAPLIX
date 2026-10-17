@@ -106,7 +106,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     if (!phone || policy && policy.mode !== 'local') throw new Fault('PHONE_LOCAL_ONLY', 403);
     return phone;
   };
-  app.get('/api/phone', async c => c.json({ ...(localPhone().status()), networks: await localPhone().networks() }));
+  app.get('/api/phone', async c => c.json({ ...(localPhone().status()), port: localPhone().port, networks: await localPhone().networks() }));
   app.post('/api/phone', async c => {
     const manager = localPhone(), body = object(await json(c.req.raw, 512), ['versionId','address']);
     if (body.address !== undefined && typeof body.address !== 'string') throw new Fault('HOST_NOT_AVAILABLE');

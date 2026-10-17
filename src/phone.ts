@@ -10,6 +10,11 @@ import { connectionQr } from './qr.ts';
 
 const hash = (value: string) => createHash('sha256').update(value).digest();
 export const PHONE_TTL = 30 * 60_000;
+export function configuredPhonePort(env: NodeJS.ProcessEnv = process.env) {
+  const value = env.YAPLIX_PHONE_PORT ?? '52604';
+  if (!/^[1-9]\d{0,4}$/.test(value) || Number(value) > 65535) throw new Fault('PHONE_PORT_INVALID');
+  return Number(value);
+}
 const CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 async function probePage(origin: string) {
   const response = await fetch(origin + '/phone', { redirect: 'error', signal: AbortSignal.timeout(3000) });
@@ -27,7 +32,12 @@ export class PhoneConnection {
   private addresses: typeof activePhoneAddresses;
   private now: () => number;
   private probe: typeof probePage;
-  constructor(store: Store, addresses = activePhoneAddresses, now = Date.now, probe = probePage) { this.store = store; this.addresses = addresses; this.now = now; this.probe = probe; }
+  // Port injection (including OS-assigned 0) is for isolated fixtures only.
+  // Production always uses a validated, nonzero local configuration value.
+  readonly port: number;
+  constructor(store: Store, addresses = activePhoneAddresses, now = Date.now, probe = probePage, port = configuredPhonePort()) {
+    this.store = store; this.addresses = addresses; this.now = now; this.probe = probe; this.port = port;
+  }
   networks() { return this.addresses(); }
   status() {
     const a = this.active;
@@ -47,14 +57,15 @@ export class PhoneConnection {
       const networks = await this.networks();
       if (this.stopped) throw new Fault('PHONE_SERVER_STOPPED', 503);
       if (!networks.length) throw new Fault('PHONE_NO_NETWORK', 409);
-      if (!address && networks.length > 1) throw new Fault('PHONE_CHOOSE_NETWORK', 409);
-      const host = address ?? networks[0].address;
+      const preferred = networks.filter(n => n.kind === 'hotspot');
+      if (!address && networks.length > 1 && preferred.length !== 1) throw new Fault('PHONE_CHOOSE_NETWORK', 409);
+      const host = address ?? (preferred[0] ?? networks[0]).address;
       if (!networks.some(n => n.address === host)) throw new Fault('HOST_NOT_AVAILABLE', 409);
       await this.close();
       const token = randomBytes(32).toString('base64url');
       const app = this.mobileApp();
       this.server = await new Promise<Server>((done, fail) => {
-        const server = serve({ fetch: app.fetch, hostname: host, port: 0 }, () => done(server as Server));
+        const server = serve({ fetch: app.fetch, hostname: host, port: this.port }, () => done(server as Server));
         server.once('error', fail);
       });
       if (this.stopped) throw new Fault('PHONE_SERVER_STOPPED', 503);
@@ -71,7 +82,8 @@ export class PhoneConnection {
     } catch (error) {
       await this.close();
       if (error instanceof Fault) throw error;
-      throw new Fault((error as NodeJS.ErrnoException).code ? portError(error as NodeJS.ErrnoException) : 'PHONE_SERVER_UNREACHABLE', 503);
+      const code = (error as NodeJS.ErrnoException).code;
+      throw new Fault(code === 'EADDRINUSE' ? 'PHONE_PORT_IN_USE' : code ? portError(error as NodeJS.ErrnoException) : 'PHONE_SERVER_UNREACHABLE', 503);
     } finally { this.busy = false; }
   }
   async disable() {

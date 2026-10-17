@@ -1,5 +1,9 @@
 # MICRO-028N — Physical Phone LAN/QR Connectivity Recovery
 
+Исторический отчёт. Последующая поддержка постоянного порта и Windows Hotspot —
+[MICRO-028N.2](micro-028n2-demo-wifi.md). Описанное ниже поведение случайного порта
+относится к этой прежней проверке; её physical evidence не подменяет Hotspot A–D.
+
 17 октября 2026. **PASS для проверенной LAN-сессии**.
 Physical Android / Brave: **PASS по подтверждению владельца** после согласованного
 восстановления. До восстановления страница не открылась на Android
