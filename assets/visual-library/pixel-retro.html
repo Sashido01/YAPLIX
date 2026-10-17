@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pixel Retro Visual Library</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { background: #2b2b2b; font-family: 'Courier New', monospace; image-rendering: pixelated; }
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+    #ui { position: absolute; top: 10px; left: 10px; color: #fff; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; pointer-events: none; z-index: 10; text-shadow: 2px 2px 0 #000; }
+    #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; display: flex; z-index: 5; }
+    .control-zone { flex: 1; border-top: 4px solid #555; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; font-weight: bold; transition: background 0.1s; }
+    .control-zone:active { background: #444; color: #fff; }
+    #start-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 30px; background: #fff; border: 4px solid #000; color: #000; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 4px 4px 0 #000; z-index: 20; }
+    #start-btn:active { transform: translate(-46%, -46%); box-shadow: 2px 2px 0 #000; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <div id="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span></div>
+  <button id="start-btn" data-yaplix-start>START GAME</button>
+  <div id="controls" data-yaplix-input style="display: none;">
+    <div class="control-zone">◀ LEFT</div>
+    <div class="control-zone">RIGHT ▶</div>
+  </div>
+
+  <script src="effects.js"></script>
+  <script>
+    const Fx = window.YaplixFx;
+    const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
+    ctx.imageSmoothingEnabled = false;
+    const { input } = Fx.setupUnifiedInput('controls');
+
+    let player = { x: 0, y: 0, size: 16, speed: 6, color: '#fff' };
+    let particles = [], targets = [];
+    let score = 0, lives = 3;
+    let spawnTimer = 0;
+    const MAX_TARGETS = 10;
+
+    const loop = Fx.setupLoop((dt) => {
+      const { width, height } = getSize();
+      
+      if (input.left) player.x -= player.speed;
+      if (input.right) player.x += player.speed;
+      player.x = Fx.clamp(player.x, player.size, width - player.size);
+
+      spawnTimer += dt;
+      if (spawnTimer > 1000 && targets.length < MAX_TARGETS) {
+        targets.push({ x: Math.floor(Math.random() * (width - 40) + 20), y: -20, size: 12, speed: 4, color: '#ffcc00' });
+        spawnTimer = 0;
+      }
+
+      for (let i = targets.length - 1; i >= 0; i--) {
+        const t = targets[i];
+        t.y += t.speed;
+        if (Fx.collides(t, player)) {
+          particles.push(...Fx.spawnExplosion(t.x, t.y, t.color, Fx.PixelParticle, 15));
+          targets.splice(i, 1);
+          score += 50;
+          document.getElementById('score').textContent = score;
+        } else if (t.y > height + 20) {
+          targets.splice(i, 1);
+        }
+      }
+
+      particles.forEach(p => p.update());
+      particles = particles.filter(p => !p.dead);
+
+      ctx.fillStyle = '#2b2b2b';
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.fillStyle = player.color;
+      const s = player.size / 3;
+      ctx.fillRect(player.x - s, player.y - s, s, s);
+      ctx.fillRect(player.x + s, player.y - s, s, s);
+      ctx.fillRect(player.x - s, player.y, s * 3, s * 2);
+
+      targets.forEach(t => {
+        ctx.fillStyle = t.color;
+        ctx.fillRect(t.x - t.size, t.y - t.size, t.size * 2, t.size * 2);
+      });
+
+      Fx.PixelParticle.drawAll(ctx, particles);
+    });
+
+    document.getElementById('start-btn').addEventListener('click', () => {
+      const { width, height } = getSize();
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('controls').style.display = 'flex';
+      player.x = width / 2;
+      player.y = height - 80;
+      loop.start();
+    });
+  </script>
+</body>
+</html>

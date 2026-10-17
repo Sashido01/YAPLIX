@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Neon Arcade Visual Library</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { background: #050510; font-family: 'Courier New', monospace; }
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; top: 10px; left: 10px; color: #0ff; font-size: 16px; font-weight: bold; text-shadow: 0 0 5px #0ff; pointer-events: none; z-index: 10; }
+    #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; display: flex; z-index: 5; }
+    .control-zone { flex: 1; border-top: 1px solid rgba(0, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; color: rgba(0, 255, 255, 0.4); font-size: 14px; transition: background 0.1s; }
+    .control-zone:active { background: rgba(0, 255, 255, 0.1); }
+    #start-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 30px; background: transparent; border: 2px solid #0ff; color: #0ff; font-size: 18px; cursor: pointer; box-shadow: 0 0 10px #0ff; z-index: 20; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <div id="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span></div>
+  <button id="start-btn" data-yaplix-start>START NEON</button>
+  <div id="controls" data-yaplix-input style="display: none;">
+    <div class="control-zone">◀ MOVE LEFT</div>
+    <div class="control-zone">MOVE RIGHT ▶</div>
+  </div>
+
+  <script src="effects.js"></script>
+  <script>
+    const Fx = window.YaplixFx;
+    const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
+    const { input } = Fx.setupUnifiedInput('controls');
+
+    let player = { x: 0, y: 0, size: 20, speed: 6, color: '#0ff' };
+    let particles = [], targets = [];
+    let score = 0, lives = 3;
+    let spawnTimer = 0;
+    const MAX_TARGETS = 10; // Limit to prevent memory issues
+
+    const loop = Fx.setupLoop((dt) => {
+      const { width, height } = getSize();
+      
+      // Update player
+      if (input.left) player.x -= player.speed;
+      if (input.right) player.x += player.speed;
+      player.x = Fx.clamp(player.x, player.size, width - player.size);
+
+      // Spawn targets (limited)
+      spawnTimer += dt;
+      if (spawnTimer > 800 && targets.length < MAX_TARGETS) {
+        targets.push({ x: Math.random() * (width - 40) + 20, y: -20, size: 15, speed: 3, color: '#f0f' });
+        spawnTimer = 0;
+      }
+
+      // Update targets and check collisions
+      for (let i = targets.length - 1; i >= 0; i--) {
+        const t = targets[i];
+        t.y += t.speed;
+        if (Fx.collides(t, player)) {
+          // Use glow:10 for neon effect (performance trade-off)
+          particles.push(...Fx.spawnExplosion(t.x, t.y, t.color, Fx.Particle, 20, { glow: 10 }));
+          targets.splice(i, 1);
+          score += 100;
+          document.getElementById('score').textContent = score;
+        } else if (t.y > height + 20) {
+          targets.splice(i, 1);
+        }
+      }
+
+      // Update particles (batch)
+      particles.forEach(p => p.update());
+      particles = particles.filter(p => !p.dead);
+
+      // Draw
+      ctx.fillStyle = 'rgba(5, 5, 16, 0.3)';
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw player (neon triangle)
+      ctx.save();
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = player.color;
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y - player.size);
+      ctx.lineTo(player.x - player.size, player.y + player.size);
+      ctx.lineTo(player.x + player.size, player.y + player.size);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Draw targets
+      targets.forEach(t => {
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = t.color;
+        ctx.fillStyle = t.color;
+        ctx.fillRect(t.x - t.size, t.y - t.size, t.size * 2, t.size * 2);
+        ctx.restore();
+      });
+
+      // Draw particles (batch)
+      Fx.Particle.drawAll(ctx, particles);
+    });
+
+    document.getElementById('start-btn').addEventListener('click', () => {
+      const { width, height } = getSize();
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('controls').style.display = 'flex';
+      player.x = width / 2;
+      player.y = height - 100;
+      loop.start();
+    });
+  </script>
+</body>
+</html>
