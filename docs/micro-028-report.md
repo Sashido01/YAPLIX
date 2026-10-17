@@ -267,8 +267,15 @@ MICRO-028 unit/browser tests, controlled-worker fixture correction and Playwrigh
 report, game-validation guide and compact known-errors guide. Private evidence,
 user PDF, env, SQLite, game source and checkpoint data are excluded.
 
-Branch: `test/micro-028-validator-calibration`. Commit/PR receipt follows final
-review. Merge: **not permitted (PARTIAL)**. Main remains
+Branch: `test/micro-028-validator-calibration`. Implementation commit:
+`f78d6b67f4e4dda51edad568bf61842f09b8caf6`. Draft PR:
+[YAPLIX #34](https://github.com/Sashido01/YAPLIX/pull/34), targeting main.
+The subsequent documentation receipt commit changes only this publication record;
+its final head is available in the PR and private Git receipt. The full reviewed
+change is14 files /557 insertions /13 deletions before this receipt update.
+Separate publication-manifest and PR-body/title Gitleaks scans found no findings.
+The final documentation audit confirmed all three guides against the completed
+logs and made no further changes. Merge: **not permitted (PARTIAL)**. Main remains
 `70fff011a8f01598863010366b3503fbd9d63396`; no merge SHA exists for this task.
 
 Strict acceptance fails because production cannot prove the five good games or
