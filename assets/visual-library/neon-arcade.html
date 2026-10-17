@@ -1,39 +1,39 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Arcade Visual Library</title>
-    <style>
-        /* --- REUSABLE: Base Reset & Mobile First --- */
-        * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
-        body { background: #050510; overflow: hidden; font-family: 'Courier New', monospace; }
-        canvas { display: block; width: 100vw; height: 100vh; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Neon Arcade Visual Library</title>
+  <style>
+    /* --- REUSABLE: Base Reset & Mobile First --- */
+    * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { background: #050510; font-family: 'Courier New', monospace; }
+    /* position:fixed + 100% avoids 100vw horizontal-overflow on desktop scrollbar */
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
 
-        /* --- REUSABLE: UI Overlay --- */
-        #ui { position: absolute; top: 10px; left: 10px; color: #0ff; font-size: 16px; font-weight: bold; text-shadow: 0 0 5px #0ff; pointer-events: none; z-index: 10; }
+    /* --- REUSABLE: UI Overlay --- */
+    #ui { position: absolute; top: 10px; left: 10px; color: #0ff; font-size: 16px; font-weight: bold; text-shadow: 0 0 5px #0ff; pointer-events: none; z-index: 10; }
 
-        /* --- REUSABLE: Touch Controls --- */
-        #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; display: flex; z-index: 5; }
-        .control-zone { flex: 1; border-top: 1px solid rgba(0, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; color: rgba(0, 255, 255, 0.4); font-size: 14px; transition: background 0.1s; }
-        .control-zone:active { background: rgba(0, 255, 255, 0.1); }
+    /* --- REUSABLE: Touch Controls --- */
+    #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; display: flex; z-index: 5; }
+    .control-zone { flex: 1; border-top: 1px solid rgba(0, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; color: rgba(0, 255, 255, 0.4); font-size: 14px; transition: background 0.1s; }
+    .control-zone:active { background: rgba(0, 255, 255, 0.1); }
 
-        /* YAPLIX Contract Compliance (for potential validation) */
-        #start-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 30px; background: transparent; border: 2px solid #0ff; color: #0ff; font-size: 18px; cursor: pointer; box-shadow: 0 0 10px #0ff; z-index: 20; }
-    </style>
+    /* YAPLIX Contract Compliance */
+    #start-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 30px; background: transparent; border: 2px solid #0ff; color: #0ff; font-size: 18px; cursor: pointer; box-shadow: 0 0 10px #0ff; z-index: 20; }
+  </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
-<div id="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span></div>
-
-<button id="start-btn" data-yaplix-start>START NEON</button>
-
-<div id="controls" data-yaplix-input style="display: none;">
+  <canvas id="gameCanvas"></canvas>
+  <div id="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span></div>
+  <button id="start-btn" data-yaplix-start>START NEON</button>
+  <div id="controls" data-yaplix-input style="display: none;">
     <div class="control-zone" id="left-zone">◀ MOVE LEFT</div>
     <div class="control-zone" id="right-zone">MOVE RIGHT ▶</div>
-</div>
+  </div>
 
-<script>
+  <script>
     // ==========================================
     // REUSABLE COMPONENT: Canvas Setup & Resize
     // ==========================================
@@ -42,135 +42,185 @@
     let width, height, dpr;
 
     function resize() {
-        dpr = window.devicePixelRatio || 1;
-        width = window.innerWidth;
-        height = window.innerHeight;
-        canvas.width = width * dpr;
-        canvas.height = height * dpr;
-        ctx.scale(dpr, dpr);
+      dpr = window.devicePixelRatio || 1;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.scale(dpr, dpr);
     }
     window.addEventListener('resize', resize);
     resize();
 
     // ==========================================
-    // REUSABLE COMPONENT: Input Handler (Touch/Mouse)
+    // REUSABLE COMPONENT: Unified Input (keyboard + touch + mouse)
+    // Required by YAPLIX validation: browser-check.ts dispatches real
+    // ArrowLeft/ArrowRight/Space keys, so keyboard MUST move the player.
     // ==========================================
     const input = { left: false, right: false };
-    const setupInput = (zoneId, direction) => {
-        const zone = document.getElementById(zoneId);
-        const start = (e) => { e.preventDefault(); input[direction] = true; };
-        const end = (e) => { e.preventDefault(); input[direction] = false; };
-        zone.addEventListener('touchstart', start, { passive: false });
-        zone.addEventListener('touchend', end, { passive: false });
-        zone.addEventListener('mousedown', start);
-        zone.addEventListener('mouseup', end);
-        zone.addEventListener('mouseleave', end);
+
+    const KEY_LEFT  = ['ArrowLeft', 'a', 'A', 'ф', 'Ф'];
+    const KEY_RIGHT = ['ArrowRight', 'd', 'D', 'в', 'В'];
+
+    const setFromX = (clientX) => {
+      input.left  = clientX <  width / 2;
+      input.right = clientX >= width / 2;
     };
-    setupInput('left-zone', 'left');
-    setupInput('right-zone', 'right');
+    const clearInput = () => { input.left = false; input.right = false; };
+
+    window.addEventListener('keydown', (e) => {
+      if (KEY_LEFT.includes(e.key))  { input.left  = true; e.preventDefault(); }
+      if (KEY_RIGHT.includes(e.key)) { input.right = true; e.preventDefault(); }
+      if (e.key === ' ') e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('keyup', (e) => {
+      if (KEY_LEFT.includes(e.key))  input.left  = false;
+      if (KEY_RIGHT.includes(e.key)) input.right = false;
+    });
+
+    // A single handler on the whole control bar: a tap anywhere moves the
+    // player toward that half. Robust for automated center-tap validation.
+    const controls = document.getElementById('controls');
+    const touchHandler = (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      if (t) setFromX(t.clientX); else clearInput();
+    };
+    controls.addEventListener('touchstart', touchHandler, { passive: false });
+    controls.addEventListener('touchmove',  touchHandler, { passive: false });
+    controls.addEventListener('touchend',   (e) => { e.preventDefault(); clearInput(); }, { passive: false });
+    controls.addEventListener('touchcancel',() => clearInput());
+
+    controls.addEventListener('mousedown', (e) => setFromX(e.clientX));
+    window.addEventListener('mouseup', clearInput);
+    window.addEventListener('blur', clearInput);
 
     // ==========================================
     // REUSABLE COMPONENT: Neon Particle System
     // ==========================================
     class Particle {
-        constructor(x, y, color) {
-            this.x = x; this.y = y;
-            this.vx = (Math.random() - 0.5) * 8;
-            this.vy = (Math.random() - 0.5) * 8;
-            this.life = 1.0;
-            this.color = color;
-            this.size = Math.random() * 3 + 1;
-        }
-        update() {
-            this.x += this.vx; this.y += this.vy;
-            this.life -= 0.02;
-            this.size *= 0.95;
-        }
-        draw(ctx) {
-            ctx.save();
-            ctx.globalAlpha = this.life;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = this.color;
-            ctx.fillStyle = this.color;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-        }
+      constructor(x, y, color) {
+        this.x = x; this.y = y;
+        this.vx = (Math.random() - 0.5) * 10;
+        this.vy = (Math.random() - 0.5) * 10;
+        this.life = 1.0;
+        this.color = color;
+        this.size = Math.random() * 4 + 2;
+      }
+      update() {
+        this.x += this.vx; this.y += this.vy;
+        this.life -= 0.025;
+        this.size *= 0.95;
+      }
+      draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     // ==========================================
     // GAME STATE & LOOP
     // ==========================================
-    let player = { x: 0, y: 0, size: 20, speed: 5, color: '#0ff' };
+    let player = { x: 0, y: 0, size: 20, speed: 6, color: '#0ff' };
     let particles = [];
+    let targets = [];
     let score = 0, lives = 3;
     let isRunning = false;
-    let lastTime = 0;
+    let lastTime = 0, spawnTimer = 0;
 
     function spawnExplosion(x, y, color) {
-        for (let i = 0; i < 15; i++) particles.push(new Particle(x, y, color));
+      for (let i = 0; i < 20; i++) particles.push(new Particle(x, y, color));
     }
 
     function update(dt) {
-        if (input.left) player.x -= player.speed;
-        if (input.right) player.x += player.speed;
+      if (input.left) player.x -= player.speed;
+      if (input.right) player.x += player.speed;
+      player.x = Math.max(player.size, Math.min(width - player.size, player.x));
 
-        // Boundary check
-        player.x = Math.max(player.size, Math.min(width - player.size, player.x));
+      // Spawn demo target
+      spawnTimer += dt;
+      if (spawnTimer > 800) {
+        targets.push({ x: Math.random() * (width - 40) + 20, y: -20, size: 15, speed: 3, color: '#f0f' });
+        spawnTimer = 0;
+      }
 
-        // Simulate collision for demo
-        if (Math.random() < 0.02) {
-            spawnExplosion(player.x, player.y - 30, '#f0f');
-            score += 10;
-            document.getElementById('score').textContent = score;
+      // Collision detection (AABB)
+      for (let i = targets.length - 1; i >= 0; i--) {
+        let t = targets[i];
+        t.y += t.speed;
+
+        if (Math.abs(t.x - player.x) < (t.size + player.size) && Math.abs(t.y - player.y) < (t.size + player.size)) {
+          spawnExplosion(t.x, t.y, t.color);
+          targets.splice(i, 1);
+          score += 100;
+          document.getElementById('score').textContent = score;
+        } else if (t.y > height + 20) {
+          targets.splice(i, 1);
         }
+      }
 
-        particles = particles.filter(p => p.life > 0);
-        particles.forEach(p => p.update());
+      particles = particles.filter(p => p.life > 0);
+      particles.forEach(p => p.update());
     }
 
     function draw() {
-        // Clear with slight trail effect
-        ctx.fillStyle = 'rgba(5, 5, 16, 0.3)';
-        ctx.fillRect(0, 0, width, height);
+      // Trail effect
+      ctx.fillStyle = 'rgba(5, 5, 16, 0.3)';
+      ctx.fillRect(0, 0, width, height);
 
-        // Draw Player (Neon Triangle)
+      // Draw Player (Neon Triangle)
+      ctx.save();
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = player.color;
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y - player.size);
+      ctx.lineTo(player.x - player.size, player.y + player.size);
+      ctx.lineTo(player.x + player.size, player.y + player.size);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Draw Targets
+      targets.forEach(t => {
         ctx.save();
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = player.color;
-        ctx.fillStyle = player.color;
-        ctx.beginPath();
-        ctx.moveTo(player.x, player.y - player.size);
-        ctx.lineTo(player.x - player.size, player.y + player.size);
-        ctx.lineTo(player.x + player.size, player.y + player.size);
-        ctx.closePath();
-        ctx.fill();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = t.color;
+        ctx.fillStyle = t.color;
+        ctx.fillRect(t.x - t.size, t.y - t.size, t.size * 2, t.size * 2);
         ctx.restore();
+      });
 
-        // Draw Particles
-        particles.forEach(p => p.draw(ctx));
+      particles.forEach(p => p.draw(ctx));
     }
 
     function loop(timestamp) {
-        if (!isRunning) return;
-        const dt = timestamp - lastTime;
-        lastTime = timestamp;
-        update(dt);
-        draw();
-        requestAnimationFrame(loop);
+      if (!isRunning) return;
+      const dt = timestamp - lastTime;
+      lastTime = timestamp;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
     }
 
     // YAPLIX Contract: Start Button
     document.getElementById('start-btn').addEventListener('click', () => {
-        document.getElementById('start-btn').style.display = 'none';
-        document.getElementById('controls').style.display = 'flex';
-        player.x = width / 2;
-        player.y = height - 100;
-        isRunning = true;
-        lastTime = performance.now();
-        requestAnimationFrame(loop);
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('controls').style.display = 'flex';
+      player.x = width / 2;
+      player.y = height - 100;
+      isRunning = true;
+      lastTime = performance.now();
+      requestAnimationFrame(loop);
     });
-</script>
+  </script>
 </body>
 </html>
