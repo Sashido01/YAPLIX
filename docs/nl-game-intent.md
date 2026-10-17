@@ -176,3 +176,156 @@ System вырос с 2885 до 2961 символа: в нём явно обоз�
 доступен через старый переключатель; конфликты и мусор дают 0 dispatch;
 успешная генерация — один synthetic вызов. Edit сохраняет полный предыдущий
 HTML, первоначальную идею и исходную правку. Реальные inference POST: **0**.
+
+## NL-003: готовность интеграции #39 и #40
+
+Дата: 2026-10-17. Результат: **PARTIAL**. NL-код и данные проходят относящиеся
+к ним проверки; общий repository checker остаётся красным на существующих
+дефектах Visual Library. Реальных LLM inference POST: **0**. Merge не выполнялся.
+В NL-003 меняется только этот отчёт, функциональные исправления не понадобились.
+
+### Проверенные состояния
+
+Remote refs обновлены `git fetch origin`, затем сопоставлены с GitHub PR metadata.
+Локальный main и origin/main совпадают. Исходный рабочий каталог чист по tracked
+файлам; существующий untracked docs/Keys_Bilayn.pdf сохранён вне изменений.
+
+| Объект | Проверенный commit SHA | Состояние |
+| --- | --- | --- |
+| main / origin/main | `bf85925968372b072a507696aa43b63da4a2b8bc` | Без изменений; ни один NL PR не слит |
+| [PR #39](https://github.com/Sashido01/YAPLIX/pull/39) | `fbc71e234f0c804d0eb71cf8aa2d555b7a064bd6` | OPEN, base main, mergeable |
+| [PR #40](https://github.com/Sashido01/YAPLIX/pull/40), проверенный код | `8a63673242464f8487908ac05239e933e95c4b21` | OPEN, base test/nl-000-prompt-baseline, mergeable |
+| [PR #38](https://github.com/Sashido01/YAPLIX/pull/38) | `4e3d55f9f141e4a9991dc7ccc3ea2b9dd6cc7c81` | OPEN, base main; не изменялся |
+| [PR #37](https://github.com/Sashido01/YAPLIX/pull/37) | `e4a6db09a0065a95d946f50c46c891db15fc27ca` | OPEN/Draft; не изменялся |
+| [PR #34](https://github.com/Sashido01/YAPLIX/pull/34) | `7b61d97faf2ea44f1c5af672feb47003da518782` | OPEN/Draft, отдельный recorder/validator/UI scope; не изменялся |
+
+После публикации отчёта HEAD #40 дополнится только documentation commit.
+Тестируемый production source остаётся побайтно тем же, что в указанном code SHA.
+PR title/body и mergeability не являются доказательством качества LLM-игр.
+
+### PR #39: целостность и freeze
+
+`python docs/nl-evaluation/validate.py` PASS: 5 DEV, 3 HELD-OUT, 40 фраз;
+48 уникальных ID/точных текстов, отсутствие нормализованных непустых дубликатов,
+обязательные поля, provenance, жанры, категории и разделение наборов.
+PR #39 меняет только docs/nl-evaluation; production source совпадает с main.
+
+HELD_OUT_SHA256:
+`0d61469acc1a2c2cdb69f3497e40f8bf09e774dd0ba7aa9258c6abfba60aabd0`
+
+FREEZE_COMMIT_SHA:
+`57d4b73e8965a60f0b69a20476f5057041535023`
+
+Независимо вычислен SHA-256 точных Git blob bytes в freeze commit, HEAD #39 и
+проверенном HEAD #40: все три хэша равны. Freeze commit — ancestor обеих веток.
+Файлы NL-000 не менялись в #40. HELD-OUT проверялся только на целостность;
+никакой настройки Intent, генерации или gameplay evaluation на нём не было.
+
+### PR #40: проверенный сценарий
+
+12 intent-тестов используют DEV и intent corpus: сохранение исходного текста,
+чисел, отрицаний, порядка правил; UNKNOWN вместо недостоверного вывода;
+компактные EXPLICIT/INFERRED подсказки; 5 точных snapshots; исходный запрос в user
+один раз; конфликты/невалидный ввод до dispatch; необычные идеи допускаются.
+Невалидный ввод и распознанные конфликты дают 0 synthetic model calls.
+Обычная успешная генерация и edit используют по одному synthetic complete call.
+Полный предыдущий HTML, первоначальная идея и точная правка сохраняются при edit.
+
+`direct` остаётся default. Системный контракт и legacy direct/spec ветки
+generationMessages сравнены с Git blobs main и совпадают. В live.ts изменены
+только тип/allowlist внутреннего promptStyle; маршруты, endpoints, бюджеты,
+repair/checkpoint, validator, SQLite и публичный API не менялись.
+JSON Intent — входные подсказки, результат генератора по-прежнему полный HTML.
+
+Реальное улучшение LLM-генерации, произвольная семантика русского языка и
+физические Android/iOS/Telegram NOT_VERIFIED; direct остаётся default до отдельно
+разрешённых реальных сравнений. Никакого разрешения на inference этот отчёт не даёт.
+
+### Локальные проверки
+
+Проверены на code SHA #40 выше, Windows, имеющиеся зависимости без установки:
+
+- `npm run typecheck` и `npm run build`: PASS.
+- `node --test tests/*.test.ts`: **258/258 PASS**, включая 12 intent-тестов.
+- Python hygiene/hook tests: **19/19 PASS**.
+- CI-policy tests: **8/8 PASS**.
+- `node scripts/browser-tests.mjs test tests/runtime.spec.ts`: **48/48 PASS**,
+  все 12 Chromium/WebKit/Firefox profiles, mobile 320/360/390/430, tablet/desktop.
+  Проверены authored/synthetic offline HTML, input, win/loss, sandbox/CSP и
+  forwarding в тестовую SQLite :memory:. Это browser emulation, не physical proof.
+- Gitleaks `origin/main..origin/feat/nl-game-intent`: 4 commits, no leaks.
+  Дополнительно полная локальная Git history: 102 commits, no leaks; staged
+  documentation diff также проверен без находок.
+- `git diff --check` для #39/main и #40/#39: PASS.
+- Repository checker: FAIL ровно на шести исходных newline-дефектах ниже.
+
+Hosted Actions не включались, hosted Windows/Ubuntu/FULL не заявляются PASS.
+Повторный read-only GET actions/permissions в NL-003 завершился TCP timeout:
+актуальное enabled:false им не подтверждено заново; действует зафиксированная
+owner-пауза MICRO-019 из [CI economy](ci-economy.md). Timeout не трактуется как CI
+вердикт или повод менять сеть. Перед release обязательный exact-commit FULL
+остаётся требованием; NL-003 не является release.
+
+### Шесть newline-дефектов Visual Library
+
+Проверены точные Git blobs main, #39, #40 и HEAD #38. Все шесть дефектов есть
+в main и обеих NL-ветках. В #38 устранён **только README**, пять HTML остаются
+без финального LF. Файлы #38 и Visual Library здесь не изменялись.
+
+| Путь | main / #39 / #40 | HEAD #38 |
+| --- | --- | --- |
+| assets/visual-library/README.md | Нет final newline | Исправлен |
+| assets/visual-library/neon-arcade.html | Нет final newline | Не исправлен |
+| assets/visual-library/neon-survivor.html | Нет final newline | Не исправлен |
+| assets/visual-library/pixel-breaker.html | Нет final newline | Не исправлен |
+| assets/visual-library/pixel-retro.html | Нет final newline | Не исправлен |
+| assets/visual-library/standalone-example.html | Нет final newline | Не исправлен |
+
+Одно лишь слияние текущего #38 не даст зелёный repository checker: останется
+пять ошибок. Исправления должны пройти отдельно у владельца Visual Library,
+не попадать в NL-код и не скрываться разрешением на отключение проверки.
+
+### Зависимости и параллельная работа
+
+`git merge-tree --write-tree` использовался только как проверка деревьев:
+рабочие файлы, index и refs веток не менялись, merge commit не создавался.
+
+- main + #39: clean; результирующее дерево равно дереву #39.
+- main + #40: clean; результирующее дерево равно дереву #40. #39 уже ancestor #40.
+- #38 + #40: clean, пересечения изменённых путей нет.
+- #37 + #40: clean. Пересекается лишь docs/known-errors.md, изменения объединяются
+  автоматически; интерфейс/phone-connect код #37 не пересекается с NL-кодом.
+- Draft #34 + #40: **CONFLICT** в src/live.ts и docs/known-errors.md. #34 также
+  содержит изменения src/ui.ts/validator; конфликт нельзя скрыть общим заявлением
+  «со всей параллельной UI-работой конфликтов нет». #34 не входит в NL-цепочку и
+  по собственным ограничениям остаётся Draft без merge. Если его интеграция
+  понадобится позже, отдельно согласовать объединение с владельцем и повторить
+  проверки; здесь чужая ветка и validator/UI не менялись.
+
+Чистый merge-tree — доказательство отсутствия текстового конфликта на указанных
+SHA, не тест уже слитого runtime. После движения любой ветки проверку повторить.
+
+### Рекомендуемый порядок после отдельного разрешения владельца
+
+1. В отдельной Visual Library работе завершить оставшиеся пять newline-исправлений
+   и проверить #38. Его возможное слияние требует собственного разрешения;
+   оно не совершается и не подразумевается данным NL-заданием. До этого общий
+   repository checker остаётся подтверждённым препятствием для полностью зелёной
+   интеграции, хотя новых NL-дефектов в проверенном scope не обнаружено.
+2. Перепроверить актуальные base/head SHA и разрешённые локальные/hosted gates.
+   Слить **#39 первым**, используя merge commit. Не squash/rebase: freeze commit
+   должен сохраниться в ancestry main, не только текстом в README.
+3. Выполнить ff-only обновление локального main; проверить настоящий merge SHA,
+   ancestor FREEZE_COMMIT_SHA, целостность наборов и неизменный HELD-OUT hash.
+4. Только после фактического merge #39 переключить base #40 на актуальный main.
+   Если main получил другие изменения (например, отдельно одобренный #38), внести
+   их обычным merge main в feat/nl-game-intent, сохранить обе истории, затем
+   обычный push без force. Не включать в эту цепочку Draft #34/#37 автоматически.
+5. Повторить typecheck/build/unit/repository checker/browser smoke/Gitleaks и
+   diff review на новом точном HEAD #40. Разрешить конфликты только в отдельно
+   согласованном scope; direct оставить default. После gates и разрешения слить
+   #40 merge commit, выполнить ff-only update main и критический post-merge smoke.
+
+Сейчас не выполнялись merge, retarget, rebase, force push, включение Actions или
+реальные LLM-вызовы. NL-004 не начинался. После этого отчёта — остановка до ревью
+и отдельного разрешения на merge.
