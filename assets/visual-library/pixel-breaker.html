@@ -166,7 +166,18 @@
     let score = 0;
     let lives = 3;
     
-    // Entities
+    // Responsive game dimensions
+    let gameWidth = 0;
+    let gameOffsetX = 0;
+    
+    function updateGameDimensions() {
+      const { width } = getSize();
+      // On mobile (< 500px), use full width. On desktop, limit to 400px and center.
+      gameWidth = Math.min(width, 400);
+      gameOffsetX = (width - gameWidth) / 2;
+    }
+    
+    // Entities (will be resized dynamically)
     let paddle = { x: 0, y: 0, width: 80, height: 12, speed: 7, color: '#fff' };
     let ball = { x: 0, y: 0, size: 8, vx: 0, vy: 0, speed: 5, color: '#ffcc00', launched: false };
     let bricks = [];
@@ -187,15 +198,16 @@
     ];
 
     function createBricks() {
-      const { width } = getSize();
+      updateGameDimensions();
       bricks = [];
-      const brickWidth = 60;
+      const brickWidth = Math.floor(gameWidth * 0.15);
       const brickHeight = 20;
-      const padding = 10;
-      const offsetX = (width - (brickWidth * 5 + padding * 4)) / 2;
+      const padding = 8;
+      const cols = Math.floor(gameWidth / (brickWidth + padding));
+      const offsetX = gameOffsetX + (gameWidth - (cols * (brickWidth + padding) - padding)) / 2;
       
       for (let row = 0; row < 4; row++) {
-        for (let col = 0; col < 5; col++) {
+        for (let col = 0; col < cols; col++) {
           bricks.push({
             x: offsetX + col * (brickWidth + padding),
             y: 80 + row * (brickHeight + padding),
@@ -210,7 +222,6 @@
     }
 
     function resetBall() {
-      const { width, height } = getSize();
       ball.x = paddle.x + paddle.width / 2;
       ball.y = paddle.y - ball.size - 5;
       ball.vx = 0;
@@ -224,9 +235,16 @@
       lives = 3;
       particles = [];
       
-      const { width, height } = getSize();
-      paddle.x = (width - paddle.width) / 2;
+      updateGameDimensions();
+      const { height } = getSize();
+      
+      // Scale paddle and ball based on gameWidth
+      paddle.width = Math.floor(gameWidth * 0.2);
+      paddle.height = 12;
+      paddle.x = gameOffsetX + (gameWidth - paddle.width) / 2;
       paddle.y = height - 60;
+      
+      ball.size = Math.max(6, Math.floor(gameWidth * 0.02));
       
       createBricks();
       resetBall();
@@ -264,27 +282,26 @@
 
       const { width, height } = getSize();
 
-      // 1. Paddle Movement
+      // 1. Paddle Movement (constrained to game area)
       if (input.left) paddle.x -= paddle.speed;
       if (input.right) paddle.x += paddle.speed;
-      paddle.x = Fx.clamp(paddle.x, 0, width - paddle.width);
+      paddle.x = Fx.clamp(paddle.x, gameOffsetX, gameOffsetX + gameWidth - paddle.width);
 
       // 2. Ball follows paddle if not launched
       if (!ball.launched) {
         ball.x = paddle.x + paddle.width / 2;
         ball.y = paddle.y - ball.size - 5;
         
-        // Auto-launch on any input
         if (input.left || input.right) launchBall();
       } else {
         // 3. Ball Movement
         ball.x += ball.vx;
         ball.y += ball.vy;
 
-        // Wall collisions
-        if (ball.x <= ball.size || ball.x >= width - ball.size) {
+        // Wall collisions (constrained to game area)
+        if (ball.x - ball.size <= gameOffsetX || ball.x + ball.size >= gameOffsetX + gameWidth) {
           ball.vx *= -1;
-          ball.x = Fx.clamp(ball.x, ball.size, width - ball.size);
+          ball.x = Fx.clamp(ball.x, gameOffsetX + ball.size, gameOffsetX + gameWidth - ball.size);
         }
         if (ball.y <= ball.size) {
           ball.vy *= -1;
@@ -298,7 +315,6 @@
             ball.x <= paddle.x + paddle.width &&
             ball.vy > 0) {
           ball.vy *= -1;
-          // Angle based on where ball hits paddle
           const hitPos = (ball.x - paddle.x) / paddle.width;
           ball.vx = (hitPos - 0.5) * ball.speed * 2;
           ball.y = paddle.y - ball.size;
@@ -329,7 +345,6 @@
             score += brick.points;
             uiScore.textContent = score;
             
-            // Explosion effect
             particles.push(...Fx.spawnExplosion(
               brick.x + brick.width / 2, 
               brick.y + brick.height / 2, 
@@ -339,7 +354,6 @@
               { spread: 3, gravity: 0.4 }
             ));
 
-            // Determine bounce direction
             const overlapX = Math.min(ball.x + ball.size - brick.x, brick.x + brick.width - (ball.x - ball.size));
             const overlapY = Math.min(ball.y + ball.size - brick.y, brick.y + brick.height - (ball.y - ball.size));
             
@@ -365,17 +379,20 @@
     function draw() {
       const { width, height } = getSize();
       
-      // Clear (no trails in retro style)
       ctx.fillStyle = '#1a1a2e';
       ctx.fillRect(0, 0, width, height);
 
       if (state === 'PLAYING' || state === 'WON' || state === 'LOST') {
+        // Draw game area border (visual hint on desktop)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gameOffsetX, 0, gameWidth, height);
+
         // Draw Bricks
         bricks.forEach(brick => {
           if (!brick.alive) return;
           ctx.fillStyle = brick.color;
           ctx.fillRect(Math.floor(brick.x), Math.floor(brick.y), brick.width, brick.height);
-          // Pixel border
           ctx.strokeStyle = '#000';
           ctx.lineWidth = 2;
           ctx.strokeRect(Math.floor(brick.x), Math.floor(brick.y), brick.width, brick.height);
@@ -395,7 +412,6 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(Math.floor(ball.x - ball.size), Math.floor(ball.y - ball.size), ball.size * 2, ball.size * 2);
 
-        // Draw Particles (Batch)
         Fx.PixelParticle.drawAll(ctx, particles);
       }
     }

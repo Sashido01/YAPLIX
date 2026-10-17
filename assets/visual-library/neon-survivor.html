@@ -15,13 +15,12 @@
     #ui { position: absolute; top: 10px; left: 10px; color: #0ff; font-size: 16px; font-weight: bold; text-shadow: 0 0 5px #0ff; pointer-events: none; z-index: 10; line-height: 1.5; }
     #rules { position: absolute; top: 10px; right: 10px; color: #fff; font-size: 12px; text-align: right; pointer-events: none; z-index: 10; opacity: 0.8; }
     
-    /* --- Touch Controls Grid (3x3 implied by library logic) --- */
-    #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 50%; display: none; z-index: 5; }
-    .control-hint { position: absolute; color: rgba(0, 255, 255, 0.3); font-size: 12px; pointer-events: none; }
-    .hint-tl { top: 10px; left: 10px; }
-    .hint-tr { top: 10px; right: 10px; }
-    .hint-bl { bottom: 10px; left: 10px; }
-    .hint-br { bottom: 10px; right: 10px; }
+    /* --- Touch hint (shown only on touch devices) --- */
+    #touch-hint { 
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); 
+      color: rgba(0, 255, 255, 0.4); font-size: 12px; text-align: center; 
+      pointer-events: none; z-index: 10; display: none;
+    }
 
     /* --- YAPLIX CONTRACT: Start/Restart Button --- */
     #start-btn { 
@@ -152,17 +151,13 @@
     🟢 Собери 10 сфер<br>
     🔴 Избегай 3 мин
   </div>
+  <div id="touch-hint">Коснись и веди палец</div>
 
   <div id="message"></div>
   <button id="start-btn" data-yaplix-start>НАЧАТЬ ИГРУ</button>
   
-  <!-- YAPLIX CONTRACT: Input Zone -->
-  <div id="controls" data-yaplix-input>
-    <div class="control-hint hint-tl">↖ ВВЕРХ-ВЛЕВО</div>
-    <div class="control-hint hint-tr">ВВЕРХ-ВПРАВО ↗</div>
-    <div class="control-hint hint-bl">↙ ВНИЗ-ВЛЕВО</div>
-    <div class="control-hint hint-br">ВНИЗ-ВПРАВО ↘</div>
-  </div>
+  <!-- YAPLIX CONTRACT: Input Zone (для keyboard fallback) -->
+  <div id="controls" data-yaplix-input style="position:absolute;bottom:0;left:0;width:100%;height:1px;opacity:0;pointer-events:none;"></div>
 
   <script>
     // ==========================================
@@ -170,15 +165,63 @@
     // ==========================================
     const Fx = window.YaplixFx;
     const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
-    const { input } = Fx.setupUnifiedInput('controls', { vertical: true });
+    
+    // Custom input: keyboard uses standard keys, touch uses "follow finger"
+    const input = { left: false, right: false, up: false, down: false };
+    let touchTarget = null; // {x, y} for touch movement
+    
+    // Keyboard setup
+    const KEY_LEFT = ['ArrowLeft', 'a', 'A', 'ф', 'Ф'], KEY_RIGHT = ['ArrowRight', 'd', 'D', 'в', 'В'];
+    const KEY_UP = ['ArrowUp', 'w', 'W', 'ц', 'Ц'], KEY_DOWN = ['ArrowDown', 's', 'S', 'ы', 'Ы'];
+    
+    window.addEventListener('keydown', (e) => {
+      if (KEY_LEFT.includes(e.key)) { input.left = true; e.preventDefault(); }
+      if (KEY_RIGHT.includes(e.key)) { input.right = true; e.preventDefault(); }
+      if (KEY_UP.includes(e.key)) { input.up = true; e.preventDefault(); }
+      if (KEY_DOWN.includes(e.key)) { input.down = true; e.preventDefault(); }
+      if (e.key === ' ') e.preventDefault();
+    }, { passive: false });
+    
+    window.addEventListener('keyup', (e) => {
+      if (KEY_LEFT.includes(e.key)) input.left = false;
+      if (KEY_RIGHT.includes(e.key)) input.right = false;
+      if (KEY_UP.includes(e.key)) input.up = false;
+      if (KEY_DOWN.includes(e.key)) input.down = false;
+    });
+    
+    // Touch: "follow finger" — intuitive mobile control
+    const canvas = document.getElementById('gameCanvas');
+    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    
+    if (isTouchDevice) {
+      document.getElementById('touch-hint').style.display = 'block';
+    }
+    
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchTarget = { x: t.clientX, y: t.clientY };
+    }, { passive: false });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchTarget = { x: t.clientX, y: t.clientY };
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      touchTarget = null;
+    }, { passive: false });
+    
+    canvas.addEventListener('touchcancel', () => { touchTarget = null; });
 
     // Game State
-    let state = 'MENU'; // MENU, PLAYING, WON, LOST
+    let state = 'MENU';
     let score = 0;
     let lives = 3;
     const WIN_SCORE = 10;
     
-    // Entities
     let player = { x: 0, y: 0, size: 15, speed: 5, color: '#0ff' };
     let enemies = [];
     let collectibles = [];
@@ -189,7 +232,6 @@
     const uiLives = document.getElementById('lives');
     const uiMessage = document.getElementById('message');
     const startBtn = document.getElementById('start-btn');
-    const controls = document.getElementById('controls');
 
     function resetGame() {
       state = 'PLAYING';
@@ -199,6 +241,7 @@
       collectibles = [];
       particles = [];
       spawnTimer = 0;
+      touchTarget = null;
       
       const { width, height } = getSize();
       player.x = width / 2;
@@ -208,7 +251,6 @@
       uiLives.textContent = lives;
       uiMessage.style.display = 'none';
       startBtn.style.display = 'none';
-      controls.style.display = 'block';
     }
 
     function endGame(won) {
@@ -218,10 +260,7 @@
       uiMessage.style.display = 'block';
       startBtn.textContent = 'ИГРАТЬ СНОВА';
       startBtn.style.display = 'block';
-      controls.style.display = 'none';
       
-      // Epic explosion on end
-      const { width, height } = getSize();
       particles.push(...Fx.spawnExplosion(player.x, player.y, won ? '#0f0' : '#f00', Fx.Particle, 50, { glow: 20, spread: 15 }));
     }
 
@@ -231,17 +270,29 @@
       const { width, height } = getSize();
 
       // 1. Player Movement
+      // Touch: move toward target (follow finger)
+      if (touchTarget) {
+        const dx = touchTarget.x - player.x;
+        const dy = touchTarget.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 5) { // Dead zone
+          player.x += (dx / dist) * player.speed;
+          player.y += (dy / dist) * player.speed;
+        }
+      }
+      // Keyboard: directional
       if (input.left) player.x -= player.speed;
       if (input.right) player.x += player.speed;
       if (input.up) player.y -= player.speed;
       if (input.down) player.y += player.speed;
+      
       player.x = Fx.clamp(player.x, player.size, width - player.size);
       player.y = Fx.clamp(player.y, player.size, height - player.size);
 
       // 2. Spawning
       spawnTimer += dt;
       if (spawnTimer > 600) {
-        const isEnemy = Math.random() > 0.4; // 60% enemies, 40% collectibles
+        const isEnemy = Math.random() > 0.4;
         const obj = {
           x: Math.random() * (width - 40) + 20,
           y: -30,
@@ -295,7 +346,6 @@
     function draw() {
       const { width, height } = getSize();
       
-      // Clear with trail effect
       ctx.fillStyle = 'rgba(5, 5, 16, 0.4)';
       ctx.fillRect(0, 0, width, height);
 
@@ -335,24 +385,22 @@
           ctx.restore();
         });
 
-        // Draw Particles (Batch)
+        // Draw Particles
         Fx.Particle.drawAll(ctx, particles);
       }
     }
 
-    // Game Loop
     const loop = Fx.setupLoop((dt) => {
       update(dt);
       draw();
     });
 
-    // Start/Restart Handler
     startBtn.addEventListener('click', () => {
       resetGame();
       if (!loop.isRunning()) loop.start();
     });
 
-    // Initial draw to show something before start
+    // Initial draw
     const { width, height } = getSize();
     ctx.fillStyle = '#050510';
     ctx.fillRect(0, 0, width, height);
