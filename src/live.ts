@@ -4,7 +4,7 @@ import { CloudTransport, CloudOutputFailure, ProviderFailure } from './transport
 import type { CodeTransport, Generator, GenerationContext, TokenUsage, ProviderMode } from './transport.ts';
 import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { generationMessages, validateDocument } from './generation.ts';
-import { prepareDocument } from './validation.ts';
+import { prepareDocument, validationOutcome } from './validation.ts';
 
 export class GenerationFailure extends Fault {
   readonly attempts: GenerationAttempt[];
@@ -67,13 +67,14 @@ export class GenerationEngine implements Generator {
           const evidence=await this.check(prepared.html,controller.signal);
           if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
           context?.trace?.('browser.validation_completed',{durationMs:Math.round(performance.now()-browserBegan),next:'save'});
-          context?.validation?.({level:'VERIFIED',code:'BROWSER_CHECK_PASSED',phase:'short-browser-check',feedback:'Startup/runtime checked; per-aspect gameplay evidence is separate.'});
+          context?.validation?.({level:'VERIFIED',outcome:validationOutcome(undefined,evidence.checks),code:'BROWSER_CHECK_PASSED',phase:'short-browser-check',feedback:'Startup/runtime checked; per-aspect gameplay evidence is separate.'});
           return{code:prepared.html,evidence};
         }catch(error){
           context?.preserveOriginal?.(raw);
           const code=error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';
           context?.trace?.(/JAVASCRIPT_EXCEPTION|CONSOLE_ERROR/.test(code)?'browser.runtime_error':code.startsWith('BROWSER_')?'browser.validation_completed':'html.validated',{errorCode:code,durationMs:Math.round(performance.now()-(browserBegan??formatBegan)),validationPhase:(error as {validationPhase?:string})?.validationPhase,profileWidth:(error as {profileWidth?:number})?.profileWidth,next:'needs_attention'});
-          context?.validation?.({level:/TIMEOUT|CANCELLED|SANDBOX|INSTALL_REQUIRED|STARTUP_FAILED|INCONCLUSIVE/.test(code)?'NOT_VERIFIED':'FAILED',code,phase:'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
+          const outcome=validationOutcome(code);
+          context?.validation?.({level:outcome==='CHECKER_ERROR'?'NOT_VERIFIED':outcome,outcome,code,phase:(error as {validationPhase?:string})?.validationPhase??'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
           throw error;
         }
       };
@@ -84,7 +85,7 @@ export class GenerationEngine implements Generator {
             context.stage('validating');
             try{const checked=await checkDocument(partial),evidence=checked.evidence;complete=checked.code;if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);const attempt:GenerationAttempt={route:route.route,provider:origin.provider,requestedModel:origin.requestedModel,model:origin.model,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-started),requestMs:0,validationMs:Math.round(performance.now()-started)};context.attempt(attempt);
               return parseArtifact({html:complete,method:'llm_code',provider:origin.provider,model:origin.model,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[attempt],fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
-            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE/.test(error.code)))throw error;
+            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||!(error instanceof Fault)||validationOutcome(error.code)==='CHECKER_ERROR'||(/TIMEOUT|INCONCLUSIVE/.test(error.code)))throw error;
               context?.trace?.('repair.started');context?.claimRepair?.();repairUsed=true;recoveryRoute=route;}
           }else{
             context.preserveOriginal?.(partial);
@@ -141,7 +142,7 @@ export class GenerationEngine implements Generator {
               if(!['openrouter','ollama','ollama.com'].includes(route.provider))context.blockRoute?.(route,lastCode);
               const until=Date.now()+5000;this.cooldowns.set(key,{until,code:lastCode});context.cooldownRoute?.(route,until,lastCode);context.retryAt?.(until);break;
             }
-            if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
+            if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED','BROWSER_CHECKER_ERROR','BROWSER_STARTUP_FAILED'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
             const repairable=error instanceof BrowserFailure||/^(?:BROWSER_|JAVASCRIPT_EXCEPTION|LLM_INVALID_HTML|LLM_UNSAFE_ARTIFACT|LLM_OUTPUT_TRUNCATED)/.test(lastCode);
             if(!actual||!repairable)break;
             if(route.provider==='openrouter'||!this.allowLlmRepair||repairUsed||repair>=Math.min(1,this.repairs)||/BROWSER_TIMEOUT|INCONCLUSIVE/.test(lastCode))throw new GenerationFailure(lastCode,attempts);

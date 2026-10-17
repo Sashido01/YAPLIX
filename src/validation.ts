@@ -2,12 +2,22 @@ import { Fault } from './contracts.ts';
 import { extractDocument } from './generation.ts';
 
 export type EvidenceLevel = 'VERIFIED' | 'FAILED' | 'NOT_VERIFIED';
+export type ValidationOutcome = EvidenceLevel | 'CHECKER_ERROR';
+/** Overall gameplay outcome is distinct from the compatible technical gate level.
+ * Missing evidence is never a game defect, and startup is never gameplay proof. */
+export function validationOutcome(code?:string,checks?:{level:EvidenceLevel}[]):ValidationOutcome {
+  if(!code)return checks?.length===6&&checks.every(c=>c.level==='VERIFIED')?'VERIFIED':'NOT_VERIFIED';
+  if(/SANDBOX|INSTALL_REQUIRED|CHECKER_ERROR|STARTUP_FAILED/.test(code))return 'CHECKER_ERROR';
+  if(/TIMEOUT|CANCELLED|INCONCLUSIVE/.test(code))return 'NOT_VERIFIED';
+  return 'FAILED';
+}
 export type ValidationAspect = 'html-runs' | 'input-works' | 'gameplay-observed' | 'win-reachable' | 'loss-reachable' | 'restart-works';
 export interface ValidationDiagnostic {
   level: EvidenceLevel;
   code: string;
   phase: string;
   feedback: string;
+  outcome?: ValidationOutcome;
 }
 export type FormatRepair = 'JSON_STRING_DOCUMENT' | 'MISSING_DOCTYPE';
 

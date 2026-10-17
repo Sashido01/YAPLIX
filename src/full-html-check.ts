@@ -1,6 +1,7 @@
 import type { Browser } from 'playwright-core';
 import { Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
+import {BrowserFailure} from './browser-check.ts';
 import type { BrowserEvidence } from './browser-check.ts';
 
 /** Bounded technical checks for arbitrary standalone games, without game-specific
@@ -9,10 +10,10 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
   const began=performance.now();
   for(const width of [320,390]){
     const context=await browser.newContext({viewport:{width,height:700},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
-    let failure='',phase='load';
+    let failure='',exception='',exceptionPhase='',phase='load';
     try{
       const page=await context.newPage();page.setDefaultTimeout(1500);
-      page.on('pageerror',()=>{failure='JAVASCRIPT_EXCEPTION';});
+      page.on('pageerror',error=>{if(!exception){exception=error.message.slice(0,250);exceptionPhase=phase;}failure='JAVASCRIPT_EXCEPTION';});
       page.on('console',m=>{if(m.type()==='error')failure||='BROWSER_CONSOLE_ERROR';});
       page.on('dialog',d=>{failure||='NATIVE_DIALOG';void d.dismiss();});
       context.on('page',p=>{if(p!==page){failure||='POPUP';void p.close();}});
@@ -43,9 +44,11 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       if(failure)throw new Fault(failure,502);
       if(signal.aborted)throw new Fault('BROWSER_TIMEOUT',504);
     }catch(error){
-      if(failure)throw Object.assign(new Fault(failure,502),{validationPhase:phase,profileWidth:width});
+      if(failure)throw Object.assign(new BrowserFailure(failure,exception?'JavaScript error in generated code: '+exception:'A forbidden browser operation or console error occurred.'),{validationPhase:exceptionPhase||phase,profileWidth:width});
       if(error instanceof Fault)throw Object.assign(error,{validationPhase:phase,profileWidth:width});
-      throw Object.assign(new Fault(signal.aborted?'BROWSER_TIMEOUT':'BROWSER_CHECK_INCONCLUSIVE',502),{validationPhase:phase,profileWidth:width});
+      const timeout=(error as Error).name==='TimeoutError';
+      const code=signal.aborted?'BROWSER_TIMEOUT':timeout?'BROWSER_CHECK_INCONCLUSIVE':'BROWSER_CHECKER_ERROR';
+      throw Object.assign(new BrowserFailure(code,signal.aborted?'NOT_VERIFIED: browser time budget expired.':timeout?'NOT_VERIFIED: '+phase+' action timed out; an overlay or unsupported control may prevent this probe. No game defect is proven.':'CHECKER_ERROR: '+phase+' could not execute; game mechanics were not classified.'),{validationPhase:phase,profileWidth:width});
     }finally{await context.close().catch(()=>{});}
   }
   return {profiles:[320,390],offline:true,errors:0,scope:'full-html',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],elapsedMs:Math.round(performance.now()-began),checks:([
