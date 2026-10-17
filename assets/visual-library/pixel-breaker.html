@@ -163,7 +163,7 @@
     const Fx = window.YaplixFx;
     const { canvas, ctx, getSize } = Fx.setupCanvas('gameCanvas');
     ctx.imageSmoothingEnabled = false;
-    const { input } = Fx.setupUnifiedInput('controls');
+    const { input, clearInput } = Fx.setupUnifiedInput('controls');
 
     // Game State
     let state = 'MENU';
@@ -202,28 +202,30 @@
       { color: '#00aaff', points: 10 }
     ];
 
-    function createBricks() {
-      updateGameDimensions();
-      bricks = [];
-      const brickWidth = Math.floor(gameWidth * 0.15);
-      const brickHeight = 20;
+    function layoutBricks() {
+      const cols = Math.max(1, ...bricks.map(b => b.col + 1));
       const padding = 8;
-      const cols = Math.floor(gameWidth / (brickWidth + padding));
+      const brickWidth = Math.min(Math.floor(gameWidth * 0.15),
+        Math.floor((gameWidth - padding * (cols + 1)) / cols));
       const offsetX = gameOffsetX + (gameWidth - (cols * (brickWidth + padding) - padding)) / 2;
+      for (const brick of bricks) {
+        brick.x = offsetX + brick.col * (brickWidth + padding);
+        brick.y = 80 + brick.row * (20 + padding);
+        brick.width = brickWidth;
+        brick.height = 20;
+      }
+    }
 
+    function createBricks() {
+      bricks = [];
+      const cols = Math.floor(gameWidth / (Math.floor(gameWidth * 0.15) + 8));
       for (let row = 0; row < 4; row++) {
         for (let col = 0; col < cols; col++) {
-          bricks.push({
-            x: offsetX + col * (brickWidth + padding),
-            y: 80 + row * (brickHeight + padding),
-            width: brickWidth,
-            height: brickHeight,
-            color: BRICK_COLORS[row].color,
-            points: BRICK_COLORS[row].points,
-            alive: true
-          });
+          bricks.push({ row, col, color: BRICK_COLORS[row].color,
+            points: BRICK_COLORS[row].points, alive: true });
         }
       }
+      layoutBricks();
     }
 
     function resetBall() {
@@ -235,6 +237,7 @@
     }
 
     function resetGame() {
+      clearInput();
       state = 'PLAYING';
       score = 0;
       lives = 3;
@@ -423,21 +426,32 @@
       }
     }
 
-    // Handle orientation change: redraw bricks in new dimensions
+    // Relayout the same objects: resize must never create a new round.
     window.addEventListener('resize', () => {
-      if (state === 'PLAYING') {
-        const ballWasLaunched = ball.launched;
-        const ballVx = ball.vx;
-        const ballVy = ball.vy;
-        createBricks();
-        const { height } = getSize();
-        paddle.width = Math.floor(gameWidth * 0.2);
-        paddle.x = Fx.clamp(paddle.x, gameOffsetX, gameOffsetX + gameWidth - paddle.width);
-        paddle.y = height - 60;
-        ball.launched = ballWasLaunched;
-        ball.vx = ballVx;
-        ball.vy = ballVy;
+      if (state === 'MENU') return;
+      const oldWidth = gameWidth;
+      const oldOffsetX = gameOffsetX;
+      const oldPaddleY = paddle.y;
+      const paddleRatio = (paddle.x - oldOffsetX) / (oldWidth - paddle.width);
+      const ballRatioX = (ball.x - oldOffsetX) / oldWidth;
+      const ballRatioY = ball.y / oldPaddleY;
+      updateGameDimensions();
+      const { height } = getSize();
+      layoutBricks();
+      paddle.width = Math.floor(gameWidth * 0.2);
+      paddle.x = Fx.clamp(gameOffsetX + paddleRatio * (gameWidth - paddle.width),
+        gameOffsetX, gameOffsetX + gameWidth - paddle.width);
+      paddle.y = height - 60;
+      ball.size = Math.max(6, Math.floor(gameWidth * 0.02));
+      if (ball.launched) {
+        ball.x = Fx.clamp(gameOffsetX + ballRatioX * gameWidth,
+          gameOffsetX + ball.size, gameOffsetX + gameWidth - ball.size);
+        ball.y = Fx.clamp(ballRatioY * paddle.y, ball.size, paddle.y - ball.size - 1);
+      } else {
+        resetBall();
       }
+      ctx.imageSmoothingEnabled = false;
+      draw();
     });
 
     const loop = Fx.setupLoop((dt) => {

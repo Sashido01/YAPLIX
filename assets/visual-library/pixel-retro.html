@@ -85,6 +85,12 @@
       Fx.PixelParticle.drawAll(ctx, particles);
     });
 
+    window.addEventListener('resize', () => {
+      const { width, height } = getSize();
+      player.x = Fx.clamp(player.x, player.size, width - player.size);
+      player.y = height - 80;
+    });
+
     document.getElementById('start-btn').addEventListener('click', () => {
       const { width, height } = getSize();
       document.getElementById('start-btn').style.display = 'none';
