@@ -258,7 +258,11 @@ QR создаётся локально. Ссылка содержит време
 
 Legacy `npm run lan` остаётся инструментом разработчика с полным ключевым входом,
 отдельным от ограниченного мобильного доступа. Обычный запуск остаётся loopback.
-Физические Android/iOS остаются NOT_TESTED; browser emulation не заменяет телефон.
+MICRO-028N: после согласованных Private profile и узкого Firewall rule владелец
+подтвердил Android / Brave: запуск, touch, прогресс, restart, поворот, reopen и
+отказ после отзыва доступа. Новый QR меняет порт и требует нового узкого правила;
+постоянное широкое разрешение Node не создаётся. iOS NOT_TESTED.
+См. [диагностику и восстановление](docs/micro-028n-phone-connectivity.md).
 
 Собственный бот — [@YaplixBot](https://t.me/YaplixBot). Добавьте локально
 TELEGRAM_BOT_TOKEN и TELEGRAM_ALLOWED_USER_IDS. `npm run telegram:check` проверяет

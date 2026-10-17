@@ -1,9 +1,13 @@
 # MICRO-028N — Physical Phone LAN/QR Connectivity Recovery
 
-17 октября 2026. **EXTERNAL_ACTION_REQUIRED**. Physical Android: **FAIL**
-по сообщению владельца: страница не открылась. Модель телефона, OS/browser,
-его Wi-Fi IPv4/шлюз и текст браузерной ошибки пока не получены.
-Новых LLM inference/repair POST: **0**. Это диагностика, не исправление кода.
+17 октября 2026. **PASS для проверенной LAN-сессии**.
+Physical Android / Brave: **PASS по подтверждению владельца** после согласованного
+восстановления. До восстановления страница не открылась на Android
+с Chrome и Brave. Владелец описывает телефон как «Android от 2022 года»;
+точные модель/OS/browser version, Wi-Fi IPv4/шлюз и текст ошибки не установлены.
+Новых LLM inference/repair POST: **0**. Это диагностика и согласованная настройка
+Windows, не исправление production-кода. Новая QR-сессия меняет порт: правило
+52604 не является постоянным разрешением для будущих QR.
 
 ## Baseline и STOP-GATE
 
@@ -17,8 +21,10 @@
 политики Windows с фактическим YAPLIX executable/listener. Не установлено,
 что это единственная преграда: нет packet/drop trace и параметров сети телефона.
 Отказ наблюдается при открытии страницы, до подтверждённого token POST/cookie.
-Причина не требует программного обхода; Stage F остановлен. Нельзя объявлять
-Physical PASS или выполнять merge до успешной проверки настоящего телефона.
+Причина не требует программного обхода; Stage F не применялся. После разрешённого
+изменения Windows владелец подтвердил полный physical сценарий; merge gate
+по телефону открыт. Проверка системного изменения — before/after owner evidence,
+не packet capture и не универсальная гарантия для других сетей/устройств.
 
 ## Stage A — цепочка существующего кода
 
@@ -33,7 +39,7 @@ Physical PASS или выполнять merge до успешной провер
 | Token POST | `phone-ui.ts` удаляет hash из history, затем bounded POST `/phone/access`; сервер сравнивает SHA-256 timing-safe | Не поддерживается передача секрета в query; shell с ручного URL без fragment ожидаемо не авторизует игру |
 | Cookie | 256-bit random cookie, HttpOnly, SameSite=Strict, Path=/phone, Max-Age до TTL | HTTP trusted LAN: Secure cookie здесь не используется; новая redemption заменяет единственную cookie-сессию |
 | Версия | GET `/phone/version` с cookie, exact выбранные HTML/versionId, no-store; lastOpenedAt | lastOpenedAt означает запрос версии, не physical/gameplay PASS |
-| Игра | `runtime.ts`: opaque `allow-scripts` iframe, CSP, UUID compatibility для HTTP, touch/rotation/restart shell | Нельзя гарантировать произвольный LLM HTML; физические Start/Touch/Progress/Restart не подтверждены |
+| Игра | `runtime.ts`: opaque `allow-scripts` iframe, CSP, UUID compatibility для HTTP, touch/rotation/restart shell | Нельзя гарантировать произвольный LLM HTML; в этой сессии owner подтвердил Android/Brave Start/Touch/Progress/Restart, другие устройства не проверены |
 | Refresh/revoke | Refresh закрывает прежний listener, меняет token/port; TTL 30 min, shutdown и DELETE закрывают соединения | Уже загруженный offline HTML может работать до TTL/reload; revoke не является удалённой остановкой уже исполняемого HTML |
 | Смена IP | Enable повторно проверяет доступные адреса | «Обновить список сетей и статус» при той же версии не всегда перевключает listener; старый QR может остаться после смены IP. В данном случае неправильный IP не наблюдался; исправление вне установленной причины |
 
@@ -44,8 +50,9 @@ Origin/Host/forwarded проверки, token TTL и read-only allowlist не о
 
 Android HTTP: код уже имеет crypto.randomUUID fallback через getRandomValues;
 cookie передаётся same-origin после fragment redemption. Chromium HTTP regression
-не воспроизводит auth defect. Совместимость конкретного Android/browser ещё
-не проверена; браузерная ошибка не может объяснить timeout до получения shell
+не воспроизводит auth defect. Owner подтвердил эту Android/Brave сессию;
+версии неизвестны, другие устройства не проверены. Браузерная ошибка не может
+объяснить отказ до получения shell
 без дополнительных фактов. URL/token/cookie/body не добавлялись в логи.
 
 ## Stage B — FinPlay, только чтение исходников
@@ -69,9 +76,11 @@ YAPLIX не меняет Windows и использует временный по
 
 ## Stage C — наблюдение Windows
 
-Read-only PowerShell выполнен без RunAs/изменения конфигурации. Sandbox сначала
-отвергал CIM cmdlets; повтор вне ограниченного sandbox использовал обычные
-права пользователя Windows, не запуск администратора.
+На этапе первоначальной диагностики read-only PowerShell выполнен без RunAs/
+изменения конфигурации. Sandbox сначала
+отвергал CIM cmdlets; повтор вне ограниченного sandbox не запускал новый
+RunAs/UAC. Поздняя проверка установила уже существовавший административный token;
+отсутствие административных прав первоначальной диагностики не утверждается.
 
 - Активный физический адаптер: `Беспроводная сеть`, index 4, Realtek Wi-Fi.
   IPv4 `192.168.0.12/24`, gateway `192.168.0.1`, connected subnet route
@@ -100,42 +109,67 @@ Read-only PowerShell выполнен без RunAs/изменения конфи
 
 ## Stage D/E — физическая проверка и категории
 
-Владелец открыл адрес текущего phone listener и сообщил: **страница не открылась**.
+Владелец открыл адрес текущего phone listener и сообщил: **страница не открылась**,
+позже уточнил Android, Chrome и Brave. После восстановления повторил сценарий
+в **Brave**: bare URL открыл YAPLIX, QR запустил игру, затем сообщил **«всё
+получилось в brave»** в ответ на Start/touch/progress/restart/rotation/reopen и
+отзыв на ПК с отказом reload на телефоне. Это owner-confirmed physical evidence.
 Полный QR URL из ответа владельца не переносится в отчёт, логи или Git.
-Успешные `/phone/access`, cookie и `/phone/version` на физическом телефоне
-не наблюдались. Start/Touch/Progress/Restart/rotation/reopen/revoke на нём
-**NOT_TESTED**; общий physical connection — **FAIL** по owner evidence.
+По существующей цепочке fragment → POST → cookie → selected version игра
+стала доступна, но содержимое POST/cookie и mobile DevTools не снимались.
+Start/Touch/Progress/Restart/rotation/reopen/revoke на Android / Brave —
+**PASS по сообщению владельца**. Точные hardware/OS/browser versions не получены;
+Chrome после восстановления, System WebView, iOS и Telegram — **NOT_TESTED**.
 
 | Категория | Доказательства / решение |
 | --- | --- |
-| FIREWALL_BLOCK | Primary: matching enabled Public TCP Block + actual executable + Public Wi-Fi + listener/PC 200 + owner page failure. External policy action required; packet attribution и успех после изменения ещё не проверены |
+| FIREWALL_BLOCK | Primary: matching Public TCP Block + actual executable + Public Wi-Fi + listener/PC 200 + owner page failure; после согласованных Private profile и narrow Allow physical Brave scenario PASS. Отдельный packet attribution не выполнялся |
 | WRONG_INTERFACE | В текущей сессии IP QR/API == bind == единственный physical Wi-Fi; не подтверждено |
 | AP_CLIENT_ISOLATION | Нет данных роутера/второго клиента; UNKNOWN, не объявляется причиной |
 | NETWORK_ROUTE | PC subnet/default route проверены; phone IPv4/gateway ещё нужны, VPN exclusion/return path не доказаны |
-| PHONE_BROWSER | OS/browser/error text не получены; UNKNOWN |
-| QR_OR_AUTH | Локальные QR decode/auth regressions проверяют контракт; physical ещё не дошёл до подтверждённой авторизации |
-| PHONE_UI | Локальный smoke не воспроизвёл дефект; physical gameplay не проверен |
-| UNKNOWN | Возможные дополнительные препятствия остаются до физического retest |
+| PHONE_BROWSER | Владелец сообщил Android, Chrome/Brave; точные версии и error text неизвестны. Нет browser-specific defect evidence |
+| QR_OR_AUTH | Active production QR независимо декодирован в памяти и совпал со state: IP/port/path, 256-bit fragment, no query/credentials. Owner physical QR login PASS; raw HTTP/cookie не снимались |
+| PHONE_UI | Локальный smoke и owner physical Brave scenario PASS; универсальная совместимость не утверждается |
+| UNKNOWN | Другие сети/устройства не проверены; дополнительных препятствий в успешно проверенном сценарии не наблюдалось |
 
-## Owner action — согласование отдельно от выполнения
+## Согласованное восстановление и Owner action
 
-1. В наблюдаемой сессии bare URL — **`http://192.168.0.12:53094/phone`**.
-   В заключительном GET owner `127.0.0.1:3000` уже вернул connection refused:
-   прежде чем повторять проверку, запустить YAPLIX и включить доступ снова;
-   новый порт получить из текущего UI, не использовать исторический порт вслепую.
+После первоначальной диагностики владелец подтвердил, что Wi-Fi домашний
+и доверенный, и явно согласовал Public → Private плюс узкое правило.
+Профиль только физического Wi-Fi index 4 изменён **Public → Private**;
+readback подтвердил Private. Исходное значение записано в
+`.local/micro028n/profile-before.json`. Новый elevated process, RunAs или UAC
+не запускались: текущий процесс уже имел административный token.
+После повторного запуска владельцем существующей игры phone listener выдал
+`http://192.168.0.12:52604/phone`. Создано и прочитано из ActiveStore правило
+**`YAPLIX-MICRO028N-52604`**: enabled Inbound Allow, Private, TCP **52604**,
+local **192.168.0.12**, remote **192.168.0.0/24**, программа
+**`C:\Program Files\nodejs\node.exe`**, только `Беспроводная сеть`.
+Receipts: `.local/micro028n/rule-before.json`, `rule-after.json`.
+Существующие Public Block не менялись. Никакие новые elevated processes,
+Firewall disable, all-interface listeners, VPN/route/router changes не применялись.
+После согласованного изменения владелец подтвердил успешный physical Android /
+Brave сценарий, затем выключил доступ на ПК и подтвердил отказ после phone reload.
+
+1. Успешно проверенная сессия использовала **`http://192.168.0.12:52604/phone`**;
+   прежний 53094 относится к первому запуску. После physical retest последний
+   GET owner `127.0.0.1:3000` вернул connection refused: backend уже остановлен.
+   Для следующего подключения запустить YAPLIX, включить доступ и проверить
+   **новый** порт. Не использовать исторический 52604 вслепую.
    Открыть bare URL вручную, без `#...`. Сообщить только текст ошибки, Wi-Fi IPv4/gateway,
    модель/OS/browser и является ли эта Wi-Fi сеть домашней доверенной.
-2. Для доверенной домашней сети отдельно согласовать переход Public → Private
-   и точное правило ниже. Смена профиля может активировать другие уже имеющиеся
+2. Переход Public → Private и точное правило ниже согласованы владельцем;
+   профиль уже изменён. Смена профиля может активировать другие уже имеющиеся
    Private rules; это системное изменение, не часть автоматической диагностики.
    На чужой/общедоступной сети этот переход не выполнять.
-3. Команда ниже подготовлена **для владельца после явного разрешения**.
-   Здесь она **НЕ ВЫПОЛНЯЛАСЬ**. Private сейчас не активен; preflight остановит
-   её при текущем Public. Порт берётся строго из активного phone state в памяти;
+3. Правило для **52604** уже создано с разрешения владельца. Команда ниже —
+   воспроизводимая процедура для **новой** сессии после удаления старого правила,
+   не команда для повторного запуска сейчас. Preflight остановит её, если профиль
+   вернулся в Public. Порт берётся строго из активного phone state в памяти;
    token не выводится. Проверяется exact IP и executable; диапазон не расширяется.
 
 ```powershell
-# Только после согласования владельцем, в его административном PowerShell.
+# Только для согласованной владельцем домашней сети, с текущими правами администратора.
 $ErrorActionPreference = 'Stop'
 if ((Get-NetConnectionProfile -InterfaceIndex 4).NetworkCategory -ne 'Private') {
     throw 'STOP: эта сеть ещё Public; изменение профиля требует отдельного согласия'
@@ -149,6 +183,7 @@ $taskListener = Get-NetTCPConnection -State Listen -LocalAddress '192.168.0.12' 
 $taskExecutable = (Get-CimInstance Win32_Process -Filter "ProcessId = $($taskListener.OwningProcess)").ExecutablePath
 if ($taskExecutable -ne 'C:\Program Files\nodejs\node.exe') { throw 'STOP: executable изменился' }
 $taskRuleName = "YAPLIX-MICRO028N-$taskPort"
+if (Get-NetFirewallRule -Name $taskRuleName -ErrorAction SilentlyContinue) { throw 'STOP: правило уже существует' }
 New-NetFirewallRule -Name $taskRuleName -DisplayName "YAPLIX phone TCP $taskPort" `
     -Direction Inbound -Action Allow -Enabled True -Profile Private -Protocol TCP `
     -Program 'C:\Program Files\nodejs\node.exe' -InterfaceAlias 'Беспроводная сеть' `
@@ -163,11 +198,12 @@ Remove-NetFirewallRule -Name $taskRuleName
 ```
 
 Добавление и удаление показаны раздельными действиями; откат — в той же консоли.
-В новой консоли использовать точное имя правила из вывода, например
-`Remove-NetFirewallRule -Name 'YAPLIX-MICRO028N-53094'` для исторического порта.
+В новой консоли использовать точное имя созданного правила:
+`Remove-NetFirewallRule -Name 'YAPLIX-MICRO028N-52604'`.
 Для возврата профиля использовать прежнее значение Public в настройках
-только этого Wi-Fi подключения. Изменение профиля/правила здесь не разрешено
-и не выполнено; широкое разрешение Node, отключение Block/Firewall, VPN kill-switch,
+только этого Wi-Fi подключения: `Set-NetConnectionProfile -InterfaceIndex 4 -NetworkCategory Public`.
+Создание/удаление правила и возврат профиля — отдельные действия, а не один script.
+Широкое разрешение Node, отключение Block/Firewall, VPN kill-switch,
 UPnP, router changes, all-interface bind и owner API proxy не предлагаются.
 
 После разрешённого внешнего действия: текущий bare URL должен показать YAPLIX shell
@@ -190,12 +226,17 @@ UPnP, router changes, all-interface bind и owner API proxy не предлаг�
   Это ограничение автоматической очистки, не phone defect. Independent QR decode, HTTP auth, opaque iframe,
   touch/progress/restart, rotation/reduced viewport, reopen, expiry и revoke.
   Synthetic Store/игры, браузеры на одном ПК; это не физическое устройство.
-- Gitleaks: **89 commits**, reviewed manifest из двух docs — **0 находок**.
+- Первоначальный Gitleaks history: **89 commits**, финальный reviewed manifest
+  из README и двух docs — **0 находок**. Финальный HEAD scan записывается в PR receipt.
   Repo checker PASS, Python **19/19**, CI policy **8/8**, diff whitespace PASS.
   Source/security review: только docs; production security controls без изменений.
+- Active production QR: SVG rendered и decoded в памяти, exact state match,
+  `192.168.0.12:52604/phone`, fragment shape 43 base64url chars, no query/userinfo.
+  Полный URL/token/image не сохранялись; receipt `active-qr-receipt.json`.
 - Нового regression test для «исправленного дефекта» нет: production fix не сделан,
-  Windows policy не исправляется synthetic тестом. Android physical FAIL до
-  авторизации; iOS/Telegram physical NOT_TESTED; новых LLM POST **0**.
+  Windows policy не исправляется synthetic тестом. Android / Brave physical
+  **PASS по подтверждению владельца** после восстановления; iOS/Telegram physical
+  NOT_TESTED; новых LLM POST **0**.
 - Actions не включались. Последний документированный state — disabled MICRO-019;
   текущий REST permissions запрос завершился network timeout, не CI PASS.
   Hosted Ubuntu/Windows, release FULL, LIVE inference не подтверждены.
@@ -208,9 +249,13 @@ Working source и `assets/visual-library/` остаются без измене�
 совпал по SHA-256 при заключительной проверке. Это сравнение именно между
 двумя снимками текущей диагностики, не утверждение о прежних запусках владельца.
 
-**MAIN** `70fff011...`; **MERGED** нет, physical merge gate закрыт.
+**MAIN** baseline `70fff011...`; финальные commit/PR/merge SHA — в Git receipt PR.
+**MERGED** требует заключительного diff/security review и ff-only main smoke;
+physical merge gate подтверждён владельцем.
 **RUN** owner loopback + scoped phone listener наблюдались выше.
-**VERIFIED** локальные контракты и Windows inventory; **MVP** physical gap открыт.
-**LIVE** 0 новых POST; **DOCS** этот отчёт + compact known-errors.
-**NEXT** получить bare-URL результат/сеть телефона и согласовать узкое внешнее
-действие; затем повторить physical acceptance до любых merge claims.
+**VERIFIED** локальные контракты, Windows inventory и owner physical Brave scenario;
+**MVP** эта LAN-сессия принята; другие устройства/сети остаются отдельной проверкой.
+**LIVE** 0 новых POST; **DOCS** этот отчёт, compact known-errors и README.
+**NEXT** для нового QR проверить новый порт и пересоздать такое же узкое правило
+после удаления прежнего. Постоянный порт потребует отдельного изменения кода;
+оно здесь не выполнялось, broad Node Allow не создавался.
