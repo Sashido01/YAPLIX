@@ -5,22 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Pixel Retro Visual Library</title>
   <style>
-    /* --- REUSABLE: Base Reset & Pixel Perfect --- */
     * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
     html, body { width: 100%; height: 100%; overflow: hidden; }
     body { background: #2b2b2b; font-family: 'Courier New', monospace; image-rendering: pixelated; }
-    /* position:fixed + 100% avoids 100vw horizontal-overflow on desktop scrollbar */
     canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
-
-    /* --- REUSABLE: UI Overlay (Retro Style) --- */
     #ui { position: absolute; top: 10px; left: 10px; color: #fff; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; pointer-events: none; z-index: 10; text-shadow: 2px 2px 0 #000; }
-
-    /* --- REUSABLE: Touch Controls --- */
     #controls { position: absolute; bottom: 0; left: 0; width: 100%; height: 40%; display: flex; z-index: 5; }
     .control-zone { flex: 1; border-top: 4px solid #555; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; font-weight: bold; transition: background 0.1s; }
     .control-zone:active { background: #444; color: #fff; }
-
-    /* YAPLIX Contract Compliance */
     #start-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 30px; background: #fff; border: 4px solid #000; color: #000; font-size: 18px; font-weight: bold; cursor: pointer; box-shadow: 4px 4px 0 #000; z-index: 20; }
     #start-btn:active { transform: translate(-46%, -46%); box-shadow: 2px 2px 0 #000; }
   </style>
@@ -30,100 +22,19 @@
   <div id="ui">SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span></div>
   <button id="start-btn" data-yaplix-start>START GAME</button>
   <div id="controls" data-yaplix-input style="display: none;">
-    <div class="control-zone" id="left-zone">◀ LEFT</div>
-    <div class="control-zone" id="right-zone">RIGHT ▶</div>
+    <div class="control-zone">◀ LEFT</div>
+    <div class="control-zone">RIGHT ▶</div>
   </div>
 
+  <!-- THE LIBRARY -->
+  <script src="effects.js"></script>
+
   <script>
-    // ==========================================
-    // REUSABLE COMPONENT: Canvas Setup (Pixel Perfect)
-    // ==========================================
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false; // Critical for pixel art
-    let width, height, dpr;
+    const Fx = window.YaplixFx;
+    const { canvas, ctx, getSize } = Fx.setupCanvas('gameCanvas');
+    ctx.imageSmoothingEnabled = false; // pixel-perfect
+    const { input } = Fx.setupUnifiedInput('controls');
 
-    function resize() {
-      dpr = window.devicePixelRatio || 1;
-      width = window.innerWidth;
-      height = window.innerHeight;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      ctx.scale(dpr, dpr);
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    // ==========================================
-    // REUSABLE COMPONENT: Unified Input (keyboard + touch + mouse)
-    // Required by YAPLIX validation: browser-check.ts dispatches real
-    // ArrowLeft/ArrowRight/Space keys, so keyboard MUST move the player.
-    // ==========================================
-    const input = { left: false, right: false };
-
-    const KEY_LEFT  = ['ArrowLeft', 'a', 'A', 'ф', 'Ф'];
-    const KEY_RIGHT = ['ArrowRight', 'd', 'D', 'в', 'В'];
-
-    const setFromX = (clientX) => {
-      input.left  = clientX <  width / 2;
-      input.right = clientX >= width / 2;
-    };
-    const clearInput = () => { input.left = false; input.right = false; };
-
-    window.addEventListener('keydown', (e) => {
-      if (KEY_LEFT.includes(e.key))  { input.left  = true; e.preventDefault(); }
-      if (KEY_RIGHT.includes(e.key)) { input.right = true; e.preventDefault(); }
-      if (e.key === ' ') e.preventDefault();
-    }, { passive: false });
-
-    window.addEventListener('keyup', (e) => {
-      if (KEY_LEFT.includes(e.key))  input.left  = false;
-      if (KEY_RIGHT.includes(e.key)) input.right = false;
-    });
-
-    const controls = document.getElementById('controls');
-    const touchHandler = (e) => {
-      e.preventDefault();
-      const t = e.touches[0];
-      if (t) setFromX(t.clientX); else clearInput();
-    };
-    controls.addEventListener('touchstart', touchHandler, { passive: false });
-    controls.addEventListener('touchmove',  touchHandler, { passive: false });
-    controls.addEventListener('touchend',   (e) => { e.preventDefault(); clearInput(); }, { passive: false });
-    controls.addEventListener('touchcancel',() => clearInput());
-
-    controls.addEventListener('mousedown', (e) => setFromX(e.clientX));
-    window.addEventListener('mouseup', clearInput);
-    window.addEventListener('blur', clearInput);
-
-    // ==========================================
-    // REUSABLE COMPONENT: Pixel Particle System
-    // ==========================================
-    class PixelParticle {
-      constructor(x, y, color) {
-        this.x = Math.floor(x); this.y = Math.floor(y);
-        this.vx = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 4 + 2);
-        this.vy = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 4 + 2);
-        this.life = 1.0;
-        this.color = color;
-        this.size = Math.random() > 0.5 ? 6 : 3;
-      }
-      update() {
-        this.x += this.vx; this.y += this.vy;
-        this.vy += 0.3; // Gravity
-        this.life -= 0.03;
-      }
-      draw(ctx) {
-        ctx.globalAlpha = this.life;
-        ctx.fillStyle = this.color;
-        ctx.fillRect(Math.floor(this.x), Math.floor(this.y), this.size, this.size);
-        ctx.globalAlpha = 1.0;
-      }
-    }
-
-    // ==========================================
-    // GAME STATE & LOOP
-    // ==========================================
     let player = { x: 0, y: 0, size: 16, speed: 6, color: '#fff' };
     let particles = [];
     let targets = [];
@@ -131,14 +42,11 @@
     let isRunning = false;
     let lastTime = 0, spawnTimer = 0;
 
-    function spawnPixelExplosion(x, y, color) {
-      for (let i = 0; i < 15; i++) particles.push(new PixelParticle(x, y, color));
-    }
-
     function update(dt) {
-      if (input.left) player.x -= player.speed;
+      const { width, height } = getSize();
+      if (input.left)  player.x -= player.speed;
       if (input.right) player.x += player.speed;
-      player.x = Math.max(player.size, Math.min(width - player.size, player.x));
+      player.x = Fx.clamp(player.x, player.size, width - player.size);
 
       spawnTimer += dt;
       if (spawnTimer > 1000) {
@@ -147,11 +55,10 @@
       }
 
       for (let i = targets.length - 1; i >= 0; i--) {
-        let t = targets[i];
+        const t = targets[i];
         t.y += t.speed;
-
-        if (Math.abs(t.x - player.x) < (t.size + player.size) && Math.abs(t.y - player.y) < (t.size + player.size)) {
-          spawnPixelExplosion(t.x, t.y, t.color);
+        if (Fx.collides(t, player)) {
+          particles.push(...Fx.spawnExplosion(t.x, t.y, t.color, Fx.PixelParticle, 15));
           targets.splice(i, 1);
           score += 50;
           document.getElementById('score').textContent = score;
@@ -160,23 +67,21 @@
         }
       }
 
-      particles = particles.filter(p => p.life > 0);
       particles.forEach(p => p.update());
+      particles = particles.filter(p => !p.dead);
     }
 
     function draw() {
-      // Solid clear (no trails in retro style)
+      const { width, height } = getSize();
       ctx.fillStyle = '#2b2b2b';
       ctx.fillRect(0, 0, width, height);
 
-      // Draw Player (Pixel Ship)
       ctx.fillStyle = player.color;
       const s = player.size / 3;
       ctx.fillRect(player.x - s, player.y - s, s, s);
       ctx.fillRect(player.x + s, player.y - s, s, s);
       ctx.fillRect(player.x - s, player.y, s * 3, s * 2);
 
-      // Draw Targets
       targets.forEach(t => {
         ctx.fillStyle = t.color;
         ctx.fillRect(t.x - t.size, t.y - t.size, t.size * 2, t.size * 2);
@@ -194,8 +99,8 @@
       requestAnimationFrame(loop);
     }
 
-    // YAPLIX Contract: Start Button
     document.getElementById('start-btn').addEventListener('click', () => {
+      const { width, height } = getSize();
       document.getElementById('start-btn').style.display = 'none';
       document.getElementById('controls').style.display = 'flex';
       player.x = width / 2;

@@ -1,31 +1,49 @@
 # YAPLIX Visual Library
 
-Эта директория содержит эталонные, оптимизированные визуальные шаблоны для генерации HTML5 Canvas игр. 
+Переиспользуемые визуальные эффекты и два эталонных демо для HTML5 Canvas игр.
 
-## Доступные стили
+## Структура
 
-1. **`neon-arcade.html`**: 
-   - Использует `shadowBlur` для свечения.
-   - Процедурные круглые частицы с затуханием `globalAlpha`.
-   - Цветовая палитра: тёмный фон (#050510), циан (#0ff), маджента (#f0f).
+- **`effects.js`** — сама библиотека. Подключается одним `<script src="effects.js"></script>`.
+- **`neon-arcade.html`** — демо в стиле Neon Arcade (свечение, круглые частицы, trail).
+- **`pixel-retro.html`** — демо в стиле Pixel Retro (пиксель-арт, блочные частицы с гравитацией).
 
-2. **`pixel-retro.html`**: 
-   - Отключает сглаживание: `ctx.imageSmoothingEnabled = false`.
-   - Использует `fillRect` для блочных, пиксельных частиц с простой гравитацией.
-   - Цветовая палитра: серый фон (#2b2b2b), белый (#fff), жёлтый (#ffcc00).
+## API библиотеки (`window.YaplixFx`)
 
-## Как использовать в генерации (Инструкция для LLM)
+| Функция / класс | Назначение |
+|---|---|
+| `setupCanvas(canvasId)` | Инициализирует canvas с DPR-скейлингом. Возвращает `{ canvas, ctx, getSize() }`. |
+| `setupUnifiedInput(controlsId)` | Единый ввод: клавиатура (стрелки, A/D, русская Ф/В), touch, mouse. Возвращает `{ input, clearInput() }`. **Обязателен** для прохождения `browser-check.ts`. |
+| `Particle` | Неоновая частица (glow + fade + shrink). |
+| `PixelParticle` | Пиксельная частица (блок + гравитация). |
+| `spawnExplosion(x, y, color, ParticleClass, count, opts?)` | Фабрика взрыва: возвращает массив частиц. |
+| `clamp(v, min, max)` | Ограничение значения. |
+| `collides(a, b)` | AABB-коллизия для объектов `{x, y, size}`. |
 
-При генерации новой игры скопируйте **только нужные блоки** из этих файлов, а не весь файл целиком:
+## Быстрый старт
 
-1. **Настройка Canvas**: Всегда используйте блок `REUSABLE COMPONENT: Canvas Setup & Resize` с обработкой `window.devicePixelRatio` и `touch-action: none` в CSS.
-2. **Управление**: Используйте блок `REUSABLE COMPONENT: Input Handler`. Он поддерживает и `touch`, и `mouse`, предотвращая зум и скролл на мобильных устройствах.
-3. **Эффекты**: 
-   - Для свечения скопируйте класс `Particle` из Neon.
-   - Для пиксель-арта скопируйте класс `PixelParticle` из Retro.
-4. **Контракт YAPLIX**: Убедитесь, что в HTML есть кнопка с `data-yaplix-start` и контейнер управления с `data-yaplix-input`, чтобы пройти валидацию `browser-check.ts`.
+```html
+<canvas id="gameCanvas"></canvas>
+<div id="controls" data-yaplix-input>...</div>
+<script src="effects.js"></script>
+<script>
+  const Fx = window.YaplixFx;
+  const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
+  const { input } = Fx.setupUnifiedInput('controls');
 
-## Ограничения
-- Вес JS-кода в этих шаблонах < 5 КБ.
-- Нет внешних изображений или шрифтов (всё рисуется через Canvas API).
-- Полная совместимость с viewport 320px–430px.
+  // в цикле:
+  if (input.left) player.x -= 5;
+  particles.push(...Fx.spawnExplosion(x, y, '#f0f', Fx.Particle, 20));
+  particles.forEach(p => p.update());
+  particles = particles.filter(p => !p.dead);
+  particles.forEach(p => p.draw(ctx));
+</script>
+```
+
+## Важные правила YAPLIX
+
+- Canvas: `position: fixed; width: 100%; height: 100%` — **не** `100vw` (даёт `BROWSER_HORIZONTAL_OVERFLOW`).
+- Кнопка старта: `data-yaplix-start`, минимум 44×44 px.
+- Зона управления: `data-yaplix-input`.
+- Поддержка клавиатуры обязательна — `browser-check.ts` шлёт реальные `ArrowLeft`/`ArrowRight`.
+- Никаких внешних ресурсов, никаких библиотек. Всё рисуется через Canvas API.
