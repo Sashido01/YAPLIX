@@ -1,49 +1,72 @@
-# YAPLIX Visual Library
+# YAPLIX Visual Library v2.0
 
-Переиспользуемые визуальные эффекты и два эталонных демо для HTML5 Canvas игр.
+Переиспользуемые визуальные эффекты и два эталонных демо для HTML5 Canvas игр. Оптимизировано для мобильных устройств.
 
 ## Структура
+- **`effects.js`** — ядро библиотеки (~3KB minified).
+- **`neon-arcade.html`** — демо: свечение, круглые частицы, trail-эффект.
+- **`pixel-retro.html`** — демо: пиксель-арт, блочные частицы с гравитацией.
 
-- **`effects.js`** — сама библиотека. Подключается одним `<script src="effects.js"></script>`.
-- **`neon-arcade.html`** — демо в стиле Neon Arcade (свечение, круглые частицы, trail).
-- **`pixel-retro.html`** — демо в стиле Pixel Retro (пиксель-арт, блочные частицы с гравитацией).
+## API (`window.YaplixFx`)
 
-## API библиотеки (`window.YaplixFx`)
-
-| Функция / класс | Назначение |
+### Настройка
+| Функция | Назначение |
 |---|---|
-| `setupCanvas(canvasId)` | Инициализирует canvas с DPR-скейлингом. Возвращает `{ canvas, ctx, getSize() }`. |
-| `setupUnifiedInput(controlsId)` | Единый ввод: клавиатура (стрелки, A/D, русская Ф/В), touch, mouse. Возвращает `{ input, clearInput() }`. **Обязателен** для прохождения `browser-check.ts`. |
-| `Particle` | Неоновая частица (glow + fade + shrink). |
+| `setupCanvas(canvasId)` | Инициализация canvas с DPR-скейлингом. Возвращает `{ canvas, ctx, getSize() }`. |
+| `setupUnifiedInput(controlsId, opts?)` | Единый ввод: клавиатура (стрелки, WASD, русская раскладка), touch, mouse. Опционально: `{ vertical: true }` для поддержки up/down. |
+| `setupLoop(callback)` | Утилита для game loop с автоматическим ограничением `dt` (макс. 100мс). Возвращает `{ start(), stop(), isRunning() }`. |
+
+### Эффекты частиц
+| Класс/метод | Назначение |
+|---|---|
+| `Particle` | Неоновая частица (опциональное свечение `glow`, затухание). **По умолчанию `glow=0` для производительности.** |
 | `PixelParticle` | Пиксельная частица (блок + гравитация). |
-| `spawnExplosion(x, y, color, ParticleClass, count, opts?)` | Фабрика взрыва: возвращает массив частиц. |
+| `spawnExplosion(x, y, color, Class, count, opts?)` | Фабрика взрыва: возвращает массив частиц. |
+| `Particle.drawAll(ctx, particles)` | Batch-рендеринг: один `save()`/`restore()` на весь массив. |
+| `PixelParticle.drawAll(ctx, particles)` | Batch-рендеринг для пиксельных частиц. |
+
+### Утилиты
+| Функция | Назначение |
+|---|---|
 | `clamp(v, min, max)` | Ограничение значения. |
 | `collides(a, b)` | AABB-коллизия для объектов `{x, y, size}`. |
+| `clampDelta(dt, max=100)` | Ограничение `dt` для предотвращения "телепортации" после неактивности вкладки. |
 
-## Быстрый старт
+## Производительность
 
-```html
-<canvas id="gameCanvas"></canvas>
-<div id="controls" data-yaplix-input>...</div>
-<script src="effects.js"></script>
-<script>
-  const Fx = window.YaplixFx;
-  const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
-  const { input } = Fx.setupUnifiedInput('controls');
+### Оптимизации для мобильных
+1. **`shadowBlur` отключён по умолчанию** в `Particle`. Включайте явно через `{ glow: 10 }` только для неоновых эффектов.
+2. **Batch-рендеринг**: используйте `Particle.drawAll()` вместо `forEach(p => p.draw())` — это уменьшает количество `save()`/`restore()` в N раз.
+3. **Ограничение `dt`**: `setupLoop()` автоматически ограничивает `dt` до 100мс, предотвращая проблемы после возврата на вкладку.
+4. **Лимит объектов**: в демо ограничен `MAX_TARGETS = 10`, чтобы избежать утечки памяти.
 
-  // в цикле:
+### Рекомендации
+- Для мобильных игр используйте `PixelParticle` (без `shadowBlur`) или `Particle` с `glow: 0`.
+- Избегайте более 50 активных частиц на слабых устройствах.
+- Используйте `clampDelta()` или `setupLoop()` для стабильного FPS.
+
+## Пример использования
+
+```javascript
+const Fx = window.YaplixFx;
+const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
+const { input } = Fx.setupUnifiedInput('controls', { vertical: true });
+
+let particles = [];
+const loop = Fx.setupLoop((dt) => {
+  const { width, height } = getSize();
+  
+  // Update
   if (input.left) player.x -= 5;
-  particles.push(...Fx.spawnExplosion(x, y, '#f0f', Fx.Particle, 20));
+  if (Fx.collides(player, enemy)) {
+    particles.push(...Fx.spawnExplosion(enemy.x, enemy.y, '#f00', Fx.Particle, 20, { glow: 10 }));
+  }
   particles.forEach(p => p.update());
   particles = particles.filter(p => !p.dead);
-  particles.forEach(p => p.draw(ctx));
-</script>
-```
+  
+  // Draw
+  ctx.clearRect(0, 0, width, height);
+  Fx.Particle.drawAll(ctx, particles);
+});
 
-## Важные правила YAPLIX
-
-- Canvas: `position: fixed; width: 100%; height: 100%` — **не** `100vw` (даёт `BROWSER_HORIZONTAL_OVERFLOW`).
-- Кнопка старта: `data-yaplix-start`, минимум 44×44 px.
-- Зона управления: `data-yaplix-input`.
-- Поддержка клавиатуры обязательна — `browser-check.ts` шлёт реальные `ArrowLeft`/`ArrowRight`.
-- Никаких внешних ресурсов, никаких библиотек. Всё рисуется через Canvas API.
+loop.start();

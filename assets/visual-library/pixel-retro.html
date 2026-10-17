@@ -26,30 +26,28 @@
     <div class="control-zone">RIGHT ▶</div>
   </div>
 
-  <!-- THE LIBRARY -->
   <script src="effects.js"></script>
-
   <script>
     const Fx = window.YaplixFx;
-    const { canvas, ctx, getSize } = Fx.setupCanvas('gameCanvas');
-    ctx.imageSmoothingEnabled = false; // pixel-perfect
+    const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
+    ctx.imageSmoothingEnabled = false;
     const { input } = Fx.setupUnifiedInput('controls');
 
     let player = { x: 0, y: 0, size: 16, speed: 6, color: '#fff' };
-    let particles = [];
-    let targets = [];
+    let particles = [], targets = [];
     let score = 0, lives = 3;
-    let isRunning = false;
-    let lastTime = 0, spawnTimer = 0;
+    let spawnTimer = 0;
+    const MAX_TARGETS = 10;
 
-    function update(dt) {
+    const loop = Fx.setupLoop((dt) => {
       const { width, height } = getSize();
-      if (input.left)  player.x -= player.speed;
+      
+      if (input.left) player.x -= player.speed;
       if (input.right) player.x += player.speed;
       player.x = Fx.clamp(player.x, player.size, width - player.size);
 
       spawnTimer += dt;
-      if (spawnTimer > 1000) {
+      if (spawnTimer > 1000 && targets.length < MAX_TARGETS) {
         targets.push({ x: Math.floor(Math.random() * (width - 40) + 20), y: -20, size: 12, speed: 4, color: '#ffcc00' });
         spawnTimer = 0;
       }
@@ -69,10 +67,7 @@
 
       particles.forEach(p => p.update());
       particles = particles.filter(p => !p.dead);
-    }
 
-    function draw() {
-      const { width, height } = getSize();
       ctx.fillStyle = '#2b2b2b';
       ctx.fillRect(0, 0, width, height);
 
@@ -87,17 +82,8 @@
         ctx.fillRect(t.x - t.size, t.y - t.size, t.size * 2, t.size * 2);
       });
 
-      particles.forEach(p => p.draw(ctx));
-    }
-
-    function loop(timestamp) {
-      if (!isRunning) return;
-      const dt = timestamp - lastTime;
-      lastTime = timestamp;
-      update(dt);
-      draw();
-      requestAnimationFrame(loop);
-    }
+      Fx.PixelParticle.drawAll(ctx, particles);
+    });
 
     document.getElementById('start-btn').addEventListener('click', () => {
       const { width, height } = getSize();
@@ -105,9 +91,7 @@
       document.getElementById('controls').style.display = 'flex';
       player.x = width / 2;
       player.y = height - 80;
-      isRunning = true;
-      lastTime = performance.now();
-      requestAnimationFrame(loop);
+      loop.start();
     });
   </script>
 </body>
