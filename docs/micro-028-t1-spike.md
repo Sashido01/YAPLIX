@@ -297,6 +297,12 @@ Private outputs: `heldout-final/plan.json`, per-document `result.json`, A/B
 
 ## Stage 5 — ручная T2-приёмка
 
+**Процедура recorder ниже историческая (MICRO-028.2).** Для текущего запуска
+использовать [MICRO-028.3](micro-028-t2-pilot.md): журнал ввода, partial recovery,
+HUMAN_REPORTED без auto-VERIFIED и export только в offline opaque iframe.
+Прямой переход на оригинальный `file://` удалён; native file acceptance остаётся
+NATIVE_FILE_EXPORT_NOT_VERIFIED. T1 NO_GO и исторические измерения не изменяются.
+
 Доступно достаточно сохранённых provenance игр: подготовлен private
 `manual-plan.json` на **10 разных HTML** с разными game/source groups, включая
 две обязательные регрессии. Для каждого сохранены hash, источник/provenance и
