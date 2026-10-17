@@ -1,0 +1,13 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{margin:8px;font:16px system-ui;background:#fafafa}main{max-width:360px;margin:auto}canvas{width:100%;height:180px}button{min-height:44px;min-width:70px} [hidden]{display:none!important}
+</style></head><body><main><h1>Pressure chamber</h1><p>Vent adds three pressure units. Pressure drops once each half second. Below minus seven ends the run. Restart restores zero.</p><section id="intro"><button id="begin">Begin</button></section><output id="readout"></output><canvas width="320" height="180"></canvas><button hidden id="pulse">Vent</button><p id="message"></p><button hidden id="repeat">Restart</button></main><script>
+const ctx=document.querySelector('canvas').getContext('2d'),intro=document.querySelector('#intro'),control=document.querySelector('#pulse'),again=document.querySelector('#repeat'),msg=document.querySelector('#message');
+let active=false,value=0,turns=0,lamp=false,elapsed=0,last=performance.now();
+function paint(){ctx.clearRect(0,0,320,180);ctx.fillStyle=lamp?'#f4bb22':'#145278';ctx.fillRect(30,60,40,40);const text='Pressure: '+value;document.querySelector('#readout').textContent=text;}
+function finish(){active=false;msg.textContent='Game over';again.hidden=false;control.hidden=true;}
+function begin(){value=0;turns=0;lamp=false;elapsed=0;active=true;intro.hidden=true;msg.textContent='';again.hidden=true;control.hidden=false;last=performance.now();paint();}
+function act(){if(!active)return;value+=3;paint();}
+function tick(dt){if(active){const before=Math.floor(elapsed/500);elapsed+=dt;value-=Math.floor(elapsed/500)-before;if(value< -7)finish();}paint();}
+document.querySelector('#begin').onclick=begin;again.onclick=begin;control.onclick=act;
+addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat)act();});setInterval(()=>tick(20),20);
+paint();</script></body></html>

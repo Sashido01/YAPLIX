@@ -1,0 +1,13 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{margin:8px;font:16px system-ui;background:#fafafa}main{max-width:360px;margin:auto}canvas{width:100%;height:180px}button{min-height:44px;min-width:70px} [hidden]{display:none!important}
+</style></head><body><main><h1>Switch register</h1><p>Toggle reverses one lamp and adds one turn. Three toggles finish. Inactivity ends after five seconds.</p><section id="intro"><button id="activate">Begin</button></section><output id="readout"></output><canvas width="320" height="180"></canvas><button hidden id="lever">Toggle</button><p id="message"></p><button hidden id="renew">Restart</button></main><script>
+const ctx=document.querySelector('canvas').getContext('2d'),intro=document.querySelector('#intro'),control=document.querySelector('#lever'),again=document.querySelector('#renew'),msg=document.querySelector('#message');
+let active=false,value=0,turns=0,lamp=false,elapsed=0,last=performance.now();
+function paint(){ctx.clearRect(0,0,320,180);ctx.fillStyle=lamp?'#f4bb22':'#145278';ctx.fillRect(30,60,40,40);const text='Turns: '+turns;ctx.fillStyle='#111';ctx.fillText(text,10,25);}
+function finish(){active=false;msg.textContent='Game over';again.hidden=false;control.hidden=true;}
+function begin(){value=0;turns=0;lamp=false;elapsed=0;active=true;intro.hidden=true;msg.textContent='';again.hidden=true;control.hidden=false;last=performance.now();paint();}
+function act(){if(!active)return;lamp=!lamp;turns++;if(turns===3)finish();paint();}
+function tick(dt){if(active){const before=Math.floor(elapsed/500);elapsed+=dt;if(elapsed>=5000)finish();}paint();}
+document.querySelector('#activate').onclick=begin;again.onclick=begin;control.onclick=act;
+let held=false;addEventListener('keydown',e=>{if(e.code==='Space'&&!held){held=true;act();}});addEventListener('keyup',()=>held=false);function frame(t){tick(t-last);last=t;requestAnimationFrame(frame);}requestAnimationFrame(frame);
+paint();</script></body></html>

@@ -1,0 +1,54 @@
+{
+  "independence": "Same Codex author; frozen before prototype, not independently blind.",
+  "families": [
+    {
+      "files": [
+        "a.html",
+        "b.html",
+        "c.html"
+      ],
+      "mechanic": "binary switch register",
+      "equivalence": "same lamp/turn rules; DOM+interval versus Canvas+RAF and key latch",
+      "good": [
+        "a.html",
+        "b.html"
+      ],
+      "defective": "c.html",
+      "defect": "Toggle and Space are disconnected; turns remain zero.",
+      "affectedAspect": "inputNumericDifference",
+      "oracleActions": [
+        "Begin",
+        "Toggle",
+        "Toggle",
+        "Toggle",
+        "Restart",
+        "Toggle"
+      ],
+      "expected": "turns 0,1,2,3; end; restart 0; then 1. c stays 0 until passive timeout."
+    },
+    {
+      "files": [
+        "d.html",
+        "e.html",
+        "f.html"
+      ],
+      "mechanic": "pressure regulation",
+      "equivalence": "Vent +3, loss below -7, drift -1/500ms; DOM+interval versus Canvas+RAF (frame quantization <20ms)",
+      "good": [
+        "d.html",
+        "e.html"
+      ],
+      "defective": "f.html",
+      "defect": "Restart leaves terminal pressure -8 instead of restoring zero.",
+      "affectedAspect": "restartObservedReset",
+      "oracleActions": [
+        "Begin",
+        "idle 4100ms",
+        "Restart",
+        "Vent"
+      ],
+      "expected": "pressure 0,-8; end; restart 0; Vent 3. f restarts at -8 then Vent -5."
+    }
+  ],
+  "scoring": "Aspect-level only. Correct partial observations on a defective document are not a whole-game accept. Also report undetected defective games explicitly."
+}
