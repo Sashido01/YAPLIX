@@ -2,44 +2,47 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Neon Survivor - Complete Demo</title>
   <style>
     /* --- YAPLIX CONTRACT: Base Reset & Mobile First --- */
     * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      /* Safe area for iPhone notch / dynamic island */
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
     body { background: #050510; font-family: 'Courier New', monospace; }
-    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
-    
-    /* --- UI Overlay --- */
-    #ui { position: absolute; top: 10px; left: 10px; color: #0ff; font-size: 16px; font-weight: bold; text-shadow: 0 0 5px #0ff; pointer-events: none; z-index: 10; line-height: 1.5; }
-    #rules { position: absolute; top: 10px; right: 10px; color: #fff; font-size: 12px; text-align: right; pointer-events: none; z-index: 10; opacity: 0.8; }
-    
-    /* --- Touch hint (shown only on touch devices) --- */
-    #touch-hint { 
-      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); 
-      color: rgba(0, 255, 255, 0.4); font-size: 12px; text-align: center; 
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+    /* --- UI Overlay (with safe-area offsets) --- */
+    #ui { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px; color: #0ff; font-size: 16px; font-weight: bold; text-shadow: 0 0 5px #0ff; pointer-events: none; z-index: 10; line-height: 1.5; }
+    #rules { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; color: #fff; font-size: 12px; text-align: right; pointer-events: none; z-index: 10; opacity: 0.8; }
+
+    #touch-hint {
+      position: absolute; bottom: calc(20px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+      color: rgba(0, 255, 255, 0.4); font-size: 12px; text-align: center;
       pointer-events: none; z-index: 10; display: none;
     }
 
-    /* --- YAPLIX CONTRACT: Start/Restart Button --- */
-    #start-btn { 
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-      padding: 15px 30px; background: transparent; border: 2px solid #0ff; 
-      color: #0ff; font-size: 18px; font-weight: bold; cursor: pointer; 
+    /* --- YAPLIX CONTRACT: Start/Restart Button (≥44px touch target) --- */
+    #start-btn {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      padding: 15px 30px; min-height: 44px; min-width: 44px;
+      background: transparent; border: 2px solid #0ff;
+      color: #0ff; font-size: 18px; font-weight: bold; cursor: pointer;
       box-shadow: 0 0 15px #0ff; z-index: 20; text-transform: uppercase;
-      transition: all 0.2s;
+      transition: all 0.2s; touch-action: manipulation;
     }
     #start-btn:active { background: rgba(0, 255, 255, 0.2); transform: translate(-50%, -48%); }
-    
-    /* State messages */
-    #message { 
-      position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); 
-      color: #fff; font-size: 24px; font-weight: bold; text-align: center; 
+
+    #message {
+      position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+      color: #fff; font-size: 24px; font-weight: bold; text-align: center;
       text-shadow: 0 0 10px #fff; pointer-events: none; z-index: 15; display: none;
     }
   </style>
-  
+
   <!-- INLINE VISUAL LIBRARY (v2.0) -->
   <script>
   (function (global) {
@@ -142,7 +145,7 @@
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
-  
+
   <div id="ui">
     СЧЁТ: <span id="score">0</span> / 10<br>
     ЖИЗНИ: <span id="lives">3</span>
@@ -155,25 +158,22 @@
 
   <div id="message"></div>
   <button id="start-btn" data-yaplix-start>НАЧАТЬ ИГРУ</button>
-  
-  <!-- YAPLIX CONTRACT: Input Zone (для keyboard fallback) -->
-  <div id="controls" data-yaplix-input style="position:absolute;bottom:0;left:0;width:100%;height:1px;opacity:0;pointer-events:none;"></div>
+
+  <!-- YAPLIX CONTRACT: Input Zone (real bounding box for validator, but transparent to touch) -->
+  <div id="controls" data-yaplix-input style="position:absolute;bottom:0;left:0;width:100%;height:40%;background:transparent;pointer-events:none;"></div>
 
   <script>
-    // ==========================================
-    // GAME LOGIC (Using YaplixFx Library)
-    // ==========================================
     const Fx = window.YaplixFx;
     const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
-    
+
     // Custom input: keyboard uses standard keys, touch uses "follow finger"
     const input = { left: false, right: false, up: false, down: false };
-    let touchTarget = null; // {x, y} for touch movement
-    
+    let touchTarget = null;
+
     // Keyboard setup
     const KEY_LEFT = ['ArrowLeft', 'a', 'A', 'ф', 'Ф'], KEY_RIGHT = ['ArrowRight', 'd', 'D', 'в', 'В'];
     const KEY_UP = ['ArrowUp', 'w', 'W', 'ц', 'Ц'], KEY_DOWN = ['ArrowDown', 's', 'S', 'ы', 'Ы'];
-    
+
     window.addEventListener('keydown', (e) => {
       if (KEY_LEFT.includes(e.key)) { input.left = true; e.preventDefault(); }
       if (KEY_RIGHT.includes(e.key)) { input.right = true; e.preventDefault(); }
@@ -181,39 +181,39 @@
       if (KEY_DOWN.includes(e.key)) { input.down = true; e.preventDefault(); }
       if (e.key === ' ') e.preventDefault();
     }, { passive: false });
-    
+
     window.addEventListener('keyup', (e) => {
       if (KEY_LEFT.includes(e.key)) input.left = false;
       if (KEY_RIGHT.includes(e.key)) input.right = false;
       if (KEY_UP.includes(e.key)) input.up = false;
       if (KEY_DOWN.includes(e.key)) input.down = false;
     });
-    
+
     // Touch: "follow finger" — intuitive mobile control
     const canvas = document.getElementById('gameCanvas');
     const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    
+
     if (isTouchDevice) {
       document.getElementById('touch-hint').style.display = 'block';
     }
-    
+
     canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
       const t = e.touches[0];
       touchTarget = { x: t.clientX, y: t.clientY };
     }, { passive: false });
-    
+
     canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
       const t = e.touches[0];
       touchTarget = { x: t.clientX, y: t.clientY };
     }, { passive: false });
-    
+
     canvas.addEventListener('touchend', (e) => {
       e.preventDefault();
       touchTarget = null;
     }, { passive: false });
-    
+
     canvas.addEventListener('touchcancel', () => { touchTarget = null; });
 
     // Game State
@@ -221,12 +221,16 @@
     let score = 0;
     let lives = 3;
     const WIN_SCORE = 10;
-    
+
     let player = { x: 0, y: 0, size: 15, speed: 5, color: '#0ff' };
     let enemies = [];
     let collectibles = [];
     let particles = [];
     let spawnTimer = 0;
+
+    // Limits for long sessions (prevent memory issues on weak phones)
+    const MAX_OBJECTS = 20;
+    const MAX_PARTICLES = 200;
 
     const uiScore = document.getElementById('score');
     const uiLives = document.getElementById('lives');
@@ -242,11 +246,11 @@
       particles = [];
       spawnTimer = 0;
       touchTarget = null;
-      
+
       const { width, height } = getSize();
       player.x = width / 2;
       player.y = height - 100;
-      
+
       uiScore.textContent = score;
       uiLives.textContent = lives;
       uiMessage.style.display = 'none';
@@ -260,7 +264,7 @@
       uiMessage.style.display = 'block';
       startBtn.textContent = 'ИГРАТЬ СНОВА';
       startBtn.style.display = 'block';
-      
+
       particles.push(...Fx.spawnExplosion(player.x, player.y, won ? '#0f0' : '#f00', Fx.Particle, 50, { glow: 20, spread: 15 }));
     }
 
@@ -270,28 +274,26 @@
       const { width, height } = getSize();
 
       // 1. Player Movement
-      // Touch: move toward target (follow finger)
       if (touchTarget) {
         const dx = touchTarget.x - player.x;
         const dy = touchTarget.y - player.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 5) { // Dead zone
+        if (dist > 5) {
           player.x += (dx / dist) * player.speed;
           player.y += (dy / dist) * player.speed;
         }
       }
-      // Keyboard: directional
       if (input.left) player.x -= player.speed;
       if (input.right) player.x += player.speed;
       if (input.up) player.y -= player.speed;
       if (input.down) player.y += player.speed;
-      
+
       player.x = Fx.clamp(player.x, player.size, width - player.size);
       player.y = Fx.clamp(player.y, player.size, height - player.size);
 
-      // 2. Spawning
+      // 2. Spawning (with limits for long sessions)
       spawnTimer += dt;
-      if (spawnTimer > 600) {
+      if (spawnTimer > 600 && (enemies.length + collectibles.length) < MAX_OBJECTS) {
         const isEnemy = Math.random() > 0.4;
         const obj = {
           x: Math.random() * (width - 40) + 20,
@@ -310,7 +312,7 @@
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         e.y += e.speed;
-        
+
         if (Fx.collides(player, e)) {
           particles.push(...Fx.spawnExplosion(e.x, e.y, '#f04', Fx.Particle, 20, { glow: 15 }));
           enemies.splice(i, 1);
@@ -326,7 +328,7 @@
       for (let i = collectibles.length - 1; i >= 0; i--) {
         const c = collectibles[i];
         c.y += c.speed;
-        
+
         if (Fx.collides(player, c)) {
           particles.push(...Fx.spawnExplosion(c.x, c.y, '#0f8', Fx.Particle, 15, { glow: 10 }));
           collectibles.splice(i, 1);
@@ -338,14 +340,17 @@
         }
       }
 
-      // 5. Update Particles
+      // 5. Update Particles (with hard cap)
       particles.forEach(p => p.update());
       particles = particles.filter(p => !p.dead);
+      if (particles.length > MAX_PARTICLES) {
+        particles = particles.slice(particles.length - MAX_PARTICLES);
+      }
     }
 
     function draw() {
       const { width, height } = getSize();
-      
+
       ctx.fillStyle = 'rgba(5, 5, 16, 0.4)';
       ctx.fillRect(0, 0, width, height);
 
