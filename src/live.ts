@@ -4,6 +4,7 @@ import { CloudTransport, CloudOutputFailure, ProviderFailure } from './transport
 import type { CodeTransport, Generator, GenerationContext, TokenUsage, ProviderMode } from './transport.ts';
 import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { generationMessages, validateDocument } from './generation.ts';
+import type { PromptStyle } from './generation.ts';
 import { prepareDocument } from './validation.ts';
 
 export class GenerationFailure extends Fault {
@@ -13,16 +14,16 @@ export class GenerationFailure extends Fault {
 export class GenerationEngine implements Generator {
   readonly routes: CodeTransport[]; private timeout: number; private repairs: number; private active?: AbortController;
   private requestTimeout:number; private cooldowns=new Map<string,{until:number;code:string}>();
-  private promptStyle:'spec'|'direct';
+  private promptStyle:PromptStyle;
   private check: typeof browserCheck;
   private defaultMode:ProviderMode;
   private allowLlmRepair:boolean;
-  constructor(routes: CodeTransport[],options:{timeoutMs?:number;requestTimeoutMs?:number;repairs?:number;allowLlmRepair?:boolean;check?:typeof browserCheck;promptStyle?:'spec'|'direct';defaultMode?:ProviderMode}={}){
+  constructor(routes: CodeTransport[],options:{timeoutMs?:number;requestTimeoutMs?:number;repairs?:number;allowLlmRepair?:boolean;check?:typeof browserCheck;promptStyle?:PromptStyle;defaultMode?:ProviderMode}={}){
     this.defaultMode=options.defaultMode??'auto';this.routes=routes;this.timeout=options.timeoutMs??180000;this.repairs=options.repairs??1;this.check=options.check??browserCheck;
     if(!routes.length||routes.length>3||!Number.isSafeInteger(this.timeout)||this.timeout<1000||this.timeout>300000||!Number.isSafeInteger(this.repairs)||this.repairs<0||this.repairs>2)throw new Fault('INVALID_LLM_CONFIGURATION');
     this.requestTimeout=options.requestTimeoutMs??Math.min(this.timeout,60000);
     this.allowLlmRepair=options.allowLlmRepair??!routes.some(r=>r instanceof CloudTransport);
-    this.promptStyle=options.promptStyle??'direct';if(!['spec','direct'].includes(this.promptStyle))throw new Fault('INVALID_LLM_CONFIGURATION');
+    this.promptStyle=options.promptStyle??'direct';if(!['spec','direct','intent'].includes(this.promptStyle))throw new Fault('INVALID_LLM_CONFIGURATION');
     if(!Number.isSafeInteger(this.requestTimeout)||this.requestTimeout<1000||this.requestTimeout>this.timeout)throw new Fault('INVALID_LLM_CONFIGURATION');
   }
   routesFor(mode:ProviderMode=this.defaultMode){
@@ -167,5 +168,5 @@ export function configuredGenerator(env:NodeJS.ProcessEnv=process.env):Generatio
   if(env.OLLAMA_CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://ollama.com/v1',key:env.OLLAMA_CLOUD_API_KEY,model:'gemma4:31b',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
   if(env.CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://openrouter.ai/api/v1',key:env.CLOUD_API_KEY,model:'openrouter/free',route:routes.length?'secondary':'primary',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
   if(!routes.length)return;
-  return new GenerationEngine(routes,{allowLlmRepair:env.LLM_AUTO_REPAIR==='1',defaultMode:selected as ProviderMode,timeoutMs:Number(env.LLM_TIMEOUT_MS??180000),requestTimeoutMs:Number(env.LLM_REQUEST_TIMEOUT_MS??Math.min(Number(env.LLM_TIMEOUT_MS??180000),60000)),repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'direct') as 'spec'|'direct'});
+  return new GenerationEngine(routes,{allowLlmRepair:env.LLM_AUTO_REPAIR==='1',defaultMode:selected as ProviderMode,timeoutMs:Number(env.LLM_TIMEOUT_MS??180000),requestTimeoutMs:Number(env.LLM_REQUEST_TIMEOUT_MS??Math.min(Number(env.LLM_TIMEOUT_MS??180000),60000)),repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'direct') as PromptStyle});
 }
