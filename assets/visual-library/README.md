@@ -6,8 +6,8 @@
 - **`effects.js`** — ядро библиотеки (~3KB minified), экспортирует `window.YaplixFx`.
 - **`neon-arcade.html`** — базовое демо: свечение, круглые частицы, trail-эффект.
 - **`pixel-retro.html`** — базовое демо: пиксель-арт, блочные частицы с гравитацией.
-- **`neon-survivor.html`** — полноценная мини-игра: уклонение от врагов, сбор предметов, 4-направленное управление, состояния победы/поражения и полный сброс.
-- **`pixel-breaker.html`** — полноценная мини-игра (Arkanoid): физика отскока мяча, разрушение кирпичей, горизонтальное управление.
+- **`neon-survivor.html`** — полноценная мини-игра: уклонение от врагов, сбор предметов, 4-направленное управление, интуитивное touch-управление "follow finger", состояния победы/поражения и полный сброс.
+- **`pixel-breaker.html`** — полноценная мини-игра (Arkanoid): физика отскока мяча, разрушение кирпичей, горизонтальное управление, адаптация при повороте экрана.
 - **`standalone-example.html`** — технический пример полностью автономной сборки (библиотека встроена инлайном в `<head>`).
 
 ## API (`window.YaplixFx`)
@@ -41,35 +41,29 @@
 1. **`shadowBlur` отключён по умолчанию** в `Particle`. Включайте явно через `{ glow: 10 }` только для неоновых эффектов.
 2. **Batch-рендеринг**: используйте `Particle.drawAll()` вместо `forEach(p => p.draw())` — это уменьшает количество `save()`/`restore()` в N раз.
 3. **Ограничение `dt`**: `setupLoop()` автоматически ограничивает `dt` до 100мс, предотвращая проблемы после возврата на вкладку.
-4. **Лимит объектов**: в демо ограничен `MAX_TARGETS = 10`, чтобы избежать утечки памяти.
+4. **Лимит объектов**: в демо ограничено `MAX_OBJECTS = 20` (враги/сферы) и `MAX_PARTICLES = 200` (частицы), чтобы избежать утечки памяти при длительной игре.
 
 ### Рекомендации
 - Для мобильных игр используйте `PixelParticle` (без `shadowBlur`) или `Particle` с `glow: 0`.
 - Избегайте более 50 активных частиц на слабых устройствах.
 - Используйте `clampDelta()` или `setupLoop()` для стабильного FPS.
+- Всегда добавляйте лимиты на количество игровых объектов и частиц.
 
-## Пример использования
+## Мобильная совместимость
 
-```javascript
-const Fx = window.YaplixFx;
-const { ctx, getSize } = Fx.setupCanvas('gameCanvas');
-const { input } = Fx.setupUnifiedInput('controls', { vertical: true });
+### Проверенные разрешения
+- ✅ 320×568 (iPhone SE)
+- ✅ 360×640 (Android стандарт)
+- ✅ 390×844 (iPhone 13/14)
+- ✅ 430×932 (iPhone 14 Pro Max)
 
-let particles = [];
-const loop = Fx.setupLoop((dt) => {
-  const { width, height } = getSize();
-  
-  // Update
-  if (input.left) player.x -= 5;
-  if (Fx.collides(player, enemy)) {
-    particles.push(...Fx.spawnExplosion(enemy.x, enemy.y, '#f00', Fx.Particle, 20, { glow: 10 }));
+### Safe area (iPhone notch / dynamic island)
+Все демо используют `env(safe-area-inset-*)` для корректного отображения на устройствах с вырезом:
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<style>
+  html, body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
-  particles.forEach(p => p.update());
-  particles = particles.filter(p => !p.dead);
-  
-  // Draw
-  ctx.clearRect(0, 0, width, height);
-  Fx.Particle.drawAll(ctx, particles);
-});
-
-loop.start();
+</style>
