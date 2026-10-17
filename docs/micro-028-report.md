@@ -1,5 +1,10 @@
 # MICRO-028 — Validator calibration and gameplay reachability
 
+**Latest revision: MICRO-028.1 — STOP_GATE (2026-10-17).** Production checker is
+unchanged. See the revision section below for the feasibility decision, audited
+oracle dependencies, case-by-case causes and current regression results. The
+original MICRO-028 measurements below are historical, not a new PASS claim.
+
 2026-10-17, Europe/Moscow. **RESULT: PARTIAL. Merge prohibited.**
 
 ## Preflight and protected data
@@ -283,8 +288,260 @@ identify the nine remaining semantic defects. Absence of false VERIFIED is usefu
 but insufficient. The independent replay is not a production validator replacement
 and authored miniatures do not establish real LLM generation reliability.
 
-**NEXT:** extend the existing bounded gameplay replay with independently audited
+**Historical MICRO-028 NEXT (superseded by the MICRO-028.1 STOP-GATE):** extend the existing bounded gameplay replay with independently audited
 semantic observations/actions for a supported Full HTML game, starting with the
 observed finite collect/deliver objective; rerun the unchanged corpus and retain
 NOT_VERIFIED for unsupported mechanics. Keep generator/prompt changes and any
 real inference comparison separately authorized.
+
+## MICRO-028.1 revision — Stage A feasibility decision
+
+**RESULT: STOP_GATE. No production, test, fixture, prompt, route, contract,
+Blueprint, Visual Kit, engine or network code changed in this revision.**
+The current branch and Draft PR34 are retained. The revised user instruction
+explicitly requires Stage A before implementation and permits documentation/PR
+updates at STOP_GATE. Stages B/C/D2/E implementation acceptance are not entered.
+
+Revision preflight: HEAD and remote feature head
+`5ae7c105a30d0769073d2005967cbd4d2e7a92ad`; local main, origin/main and remote
+main `70fff011a8f01598863010366b3503fbd9d63396`. No tracked dirty work existed;
+the pre-existing untracked PDF remains untouched. No new branch/worktree/PR,
+ff-update of the feature branch, or switch away from the requested branch.
+Actions GET reports enabled:false. External LLM inference/repair POST: **0**.
+
+### Why 14 results are NOT_VERIFIED
+
+All15 documents enter the arbitrary Full HTML path: none has the legacy
+data-yaplix-start marker. In `src/full-html-check.ts`, the successful return
+explicitly assigns VERIFIED only to html-runs and NOT_VERIFIED to the other
+five aspects. This is the existing honest technical-gate contract, not an
+unhandled timeout, hidden semantic test failure, or a claim of gameplay proof.
+`validationOutcome` consequently cannot return overall VERIFIED for these
+successful Full HTML probes. Merely increasing time/actions will not change
+that return policy or supply semantic evidence.
+
+Stage A replayed all15 unchanged documents against that frozen checker. A
+private observer records ordinary locator taps, DOM snapshots and traces without
+changing verdict logic, adding controls, reading fixture oracle, setting game
+state, advancing its clock, or passing hints to production. Extra read-only
+sampling adds overhead, so these timings are not a performance comparison.
+Before/final-MICRO-028/Stage-A document hashes and all15 classifications agree.
+
+The actual per-profile trace is usually **Start, Start, Start, Restart, Left,
+Restart**, not a meaningful path to the objective. The second Start comes from
+the first visible generic input locator: in these documents Start precedes the
+canvas in DOM order. The third is the first of three generic action buttons.
+For match-three, the fifth tap selects Cell0 (displayed value1), not Left.
+These observations correct any inference that the corpus probe necessarily
+tapped a canvas or exercised a completed swap. Two profiles produce12 taps per
+document; the JS-exception document stops after6 taps at its first profile.
+Total174 taps, zero keyboard actions. None of the14 completes the reference
+winning/losing sequences or evaluates semantic progress/reset invariants.
+
+**Classification convention:** primary = immediate reason the production run
+does not establish the mechanism. Supplementary ORACLE_DEPENDENT = the existing
+independent proof recipe relies on preselected paths and semantic/defect-specific
+assertions not supplied to or derived by production. It does **not** mean the
+fixture's DOM is secret, unreadable or fundamentally unobservable. All14 have
+readable rendered HUD state. Unknown-genre interpretation is a separate problem
+from acquiring text/pixels. No case is classified fundamentally NOT_OBSERVABLE
+merely because it uses Canvas.
+
+In the table, N = NOT_ATTEMPTED (primary), O = ORACLE_DEPENDENT proof recipe
+(supplementary). Trace and before/after snapshots are in private
+`.local/micro028/revision1/audit.json` and numbered 320/390 ZIP files.
+
+| Case | Primary / extra | Actually observed and missing proof | Oracle-dependent reference capability |
+| --- | --- | --- | --- |
+| 01 Snake good | N / O | Left moves head; restart resets. No apples, declared goal, win or loss evaluated. | Right x3, Up x3, coordinate/apple/score/terminal/reset assertions. |
+| 02 Snake movement defect | N / O | Left leaves head in place and produces loss through self-contact; checker does not interpret it. | Knows movement invariant, compares unchanged position to directional action. |
+| 03 Snake target defect | N / O | Left, score0, reset; target30/available3 contradiction not examined. | Collects the known three apples and interprets inventory/goal/phase. |
+| 04 Match-three good | N / O | Cell0 selected; no completed adjacent swap or exhausted moves. | Preselected cells1,4 and losing swaps; board/score/moves mapping. |
+| 06 Match-three freeze | N / O | Cell0 selected only; resolving state never entered. | Specific invalid swap0,1, then another input and stable-state check. |
+| 07 Collection good | N / O | Left at boundary; no collection, hazard or goal reached. | Right x3 and Down hazard route; item/score/health/reset assertions. |
+| 08 Collection score defect | N / O | No item contact; removal-to-progress relationship not tested. | Known item route and comparison of remaining items with score. |
+| 09 Collection restart defect | N / O | Restart tapped after boundary action; turn remains1, no semantic reset assertion. No collected progress or win established. | Reaches win first and checks full initial-world restoration. |
+| 10 Lane good | N / O | Lane changes, road turn stays0. No Step, obstacle, goal or loss. | Knows obstacle order and steering/Step sequence; health/phase/reset. |
+| 11 Lane loss defect | N / O | No road advancement/contact; health exhaustion not exercised. | Step on starting obstacle, health0 with no loss transition. |
+| 12 Lane collision defect | N / O | No road advancement/contact; collision effect absent from the probe. | Knows initial obstacle lane; checks missing damage/progress mismatch. |
+| 13 Breakout good | N / O | Paddle moves; ball/brick unchanged because Step is never used. | Ball-advance and launch-miss paths; brick, score, health, terminal/reset. |
+| 14 Breakout brick defect | N / O | No ball advance or hit; no removal comparison. | Known three-step hit, remaining-brick assertion. |
+| 15 Breakout target defect | N / O | No brick route/score progression; absence of win is not impossibility proof. | Hits the single brick and applies the known goal/score/phase assertions. |
+
+Case05 is outside the14 missing-evidence rows: the actual cell selection throws
+`Cannot select cell`, yielding FAILED with action-controls phase. That concrete
+runtime defect is still correctly detected; it is not CHECKER_ERROR.
+
+Counts over the14: primary NOT_ATTEMPTED14/14; supplementary oracle-dependent
+reference recipes14/14; proven fundamental NOT_OBSERVABLE0/14; demonstrated
+BUDGET_LIMIT0/14; demonstrated checker malfunction causing the mass result0/14;
+unexplained primary cause UNKNOWN0/14. An incomplete semantic capability is not
+automatically labelled CHECKER_BUG. The 1007–2013ms completed corpus checks do not
+exhaust the18-second deadline; waiting longer cannot execute absent assertions.
+
+### Independent replay audit
+
+| Question | Calibration replay | Saved real-game investigation |
+| --- | --- | --- |
+| Prepared input paths? | Yes: win/loss arrays per genre; extra branches use genre and mutation index. No search/planning is demonstrated. | Adaptive path still has source-specific target selection, not generic perception. |
+| Internal state available? | Nearly the whole world is serialized into visible #hud JSON; replay reads/compares fields. This is public DOM, not direct lexical state injection. | The kindness replay reads lexical player/citizens/hearts/gameState through DevTools. |
+| Special API? | No getState/GameBlueprint API. However #hud/#result/#start, data-action and cell labels form a fixture-specific schema, not a Full HTML requirement. | Source-specific evaluate expressions and #start-btn selector; not a portable black-box observer. |
+| Seed/time? | No installed seed or virtual clock. Worlds are hard-coded, deterministic, turn-based; normal browser time. | Kindness uses page.clock.install/runFor to drive the unchanged RAF loop; random positions are not seeded. |
+| Coordinates known? | Winning/losing routes embed knowledge of item/hazard/road/board/brick positions. Positions are not discovered from Canvas. | Reads exact object coordinates from lexical state and dispatches touch movement toward them. |
+| Oracle/defect manifest? | Yes: imports calibrationOracle, knows index%3 ground truth and genre/variant-specific assertions. Production gets only HTML. | Source was manually inspected; trajectory is designed using that knowledge. |
+| What is missing in production? | Those paths, HUD schema/meaning, target/rule interpretation, variant-specific invariants, paired win/loss/reset assertions. | No general mapping from arbitrary Canvas pixels/JS bindings to citizen/heart/goal semantics. |
+
+Thus the old replay is independent of **production verdict**, not universal or
+blind to the game. Its140 logged directional/cell/Step actions exclude clicks
+on Start/Restart and keyboard-focus canvas; that number is not directly comparable
+to the174 production taps. It is an authored regression suite, not an automatic
+gameplay verifier or an external audit. Reading a rich HUD does not establish that
+an arbitrary game truthfully exposes its world or terminal conditions.
+
+### The 5/20 claim: MIXED_EVIDENCE
+
+The source copy is byte-identical to both checkpoint and originalCheckpoint in
+the preserved private job capture. This revision did not reopen or write user
+SQLite. The exact captured program has one inline script. Relevant source paths
+and every ordinary callback were re-inspected; a private reference index and
+syntax-only parse are in `revision1/static-proof.json`. Syntax parsing is not a
+semantic proof tool and no game code runs in Node.
+
+Static reasoning for this exact artifact:
+
+1. Score is initialized to0 (line150) and reset to0 by initGame (line247).
+   The latter clears citizens, constructs exactly5 unhappy citizens (lines250–257),
+   and resets held hearts. Configuration specifies5 citizens and winning score20.
+2. The **only** score increment is line319, inside the !happy/collision/held-heart
+   branch. That same synchronous branch first changes that citizen to happy
+   (line317). No path changes a happy citizen back to unhappy within a round.
+3. spawnCitizen has no ordinary call other than the five-iteration init loop.
+   No in-round citizen append, respawn, removal/refill or alternate round transition
+   exists. Heart spawning repeats (lines295–298), but collection changes inventory,
+   not score or the number of citizens. More hearts cannot add scoring opportunities.
+4. Therefore the invariant **score = current happy-citizen count**, with0<=score<=5,
+   holds at initialization and every scoring transition. A further initGame resets
+   score and the five citizens together; there is no cross-round accumulation,
+   persistence reload or alternative source of points. FrameCount may carry across
+   resets, affecting heart timing only, not this score invariant.
+5. WIN is entered only at score>=20 (lines323–325). showWinScreen is scheduled only
+   there, and the restart label is set only in that callback. No loss transition
+   is implemented. Other callbacks move the player, resize, or draw/age particles;
+   they do not invalidate the score bound.
+
+The historical controlled replay corroborates this: all5 citizens happy, score5,
+extra held heart, PLAYING, no visible restart, no runtime errors. A bounded replay
+alone would be RUNTIME_OBSERVATION and insufficient to prove a global bound.
+Here the result is **MIXED_EVIDENCE**: a static invariant argument over all relevant
+ordinary program paths plus runtime corroboration. It is scoped to this exact
+captured program without source/DevTools mutation, not a mechanized mathematical
+verifier or a method for proving arbitrary JavaScript unsolvable. The production
+checker itself does not perform this static proof and must not borrow it for FAILED.
+
+A first private helper attempted an unavailable bundled TypeScript AST API and
+failed before analysis; it is recorded in static-ast-attempt1.log. No dependency
+was installed. The final helper only parses syntax and indexes references; the
+static semantic argument above remains explicit human/code inspection.
+
+### Before/current measurements and real regressions
+
+Checker frozen before Stage A at
+`5ae7c105a30d0769073d2005967cbd4d2e7a92ad`; browser-check/full-html-check/
+validation/live source hashes were taken before the run and rechecked afterward.
+There is no candidate checker implementation and no claim of improvement.
+
+| Metric | MICRO-028 Before | MICRO-028 final After | MICRO-028.1 Stage A, same checker |
+| --- | --- | --- | --- |
+| Good VERIFIED | 0/5 | 0/5 | 0/5 |
+| Proven, correctly diagnosed defects | 1/10 | 1/10 | 1/10 |
+| Defective VERIFIED | 0/10 | 0/10 | 0/10 |
+| Good FAILED | 0/5 | 0/5 | 0/5 |
+| NOT_VERIFIED | 14/15 | 14/15 | 14/15 |
+| Determinate verdicts | 1/15 | 1/15 | 1/15 |
+| CHECKER_ERROR | 0/15 | 0/15 | 0/15 |
+| Completed without checker technical error (game exception counts as completed detection) | 15/15 | 15/15 | 15/15 |
+| Median duration | 1679ms | 1768ms | 1964ms with diagnostic observer |
+| Recorded production inputs | Not recorded | Not recorded | 174 taps, 0 keys over15 cases |
+
+Specific per-case missing-evidence reasons emitted by **production**:0/14;
+the generic aspect names are not a reason. Stage A analyst explanations backed
+by source and recorded actions:14/14. The five aspect names appear as
+NOT_VERIFIED in70/70 aspect slots across14 cases, but this is a fixed policy,
+not a useful100% semantic-accuracy score. Independent correctness/generalization
+of a reason-generating algorithm was not measured: there is no such algorithm.
+Low false-accept/reject counts must be read together with only1/15 determinate
+outcomes and1/10 detection coverage, never as a reliability score.
+
+| Existing real regression | Source provenance | Fresh production result | What this revision does not establish |
+| --- | --- | --- | --- |
+| Kindness | Hash matches captured checkpoint and originalCheckpoint | NOT_VERIFIED; BROWSER_CHECK_INCONCLUSIVE, touch-input,1 attempted tap,2292ms; no page errors | Checker does not prove win impossible; static 5/20 reasoning is separate. No new full gameplay replay. |
+| Successful MICRO-027 LIVE export | Preserved9894-byte HTML hash matches delivered version metadata | Technical gate passes320/390; overall NOT_VERIFIED,4 taps,1667ms; no page errors | Win/loss/reset not re-proven by this generic run. Historical manual keyboard/touch proof remains historical; no new FAILED is justified. |
+
+Neither is a blind held-out. **D2 prospective held-out: NOT_RUN_STOP_GATE,
+0 examples, no success/failure denominators available.** Freezing the existing
+checker for diagnostics does not turn previously known games into held-out data.
+No four-game prospective corpus is created after a decision to stop development.
+
+### STOP-GATE rationale and comparison
+
+The majority threshold is exceeded by the14/14 **current reference proof
+recipes** that depend on supplied game-specific semantics/paths. This is not
+14 proofs that the underlying DOM information is inherently inaccessible. The
+immediate reason remains NOT_ATTEMPTED; no universal semantic recovery method
+has been demonstrated. Some extra generic actions are feasible and the HUDs can
+be read cheaply, but that does not establish that a goal, collision, loss or
+reset rule held. Pixel movement, a literal won string, or self-reported score
+alone cannot justify the requested gameplay VERIFIED.
+
+Transferring these exact oracle trajectories/field assertions would tune the
+checker to15 known examples. Making #hud/state fields mandatory would change
+the Full HTML contract. A new visual/planning system has no demonstrated
+practical advantage here. The existing optional rules-aware Orchestrator probe
+also needs explicit rules, marked HUD/controls, sequences or a calibrated visual
+adapter; it is not automatically applicable to arbitrary Full HTML. Consequently
+there is no demonstrated universal, minimal correction of this checker that
+meets5/5 semantic verification honestly. **Stop before Stage B.** This is a
+feasibility/no-go decision under the task's evidence/scope constraints, not a
+theorem that black-box testing can never be useful or that every case is impossible.
+
+The following comparison uses the requirements recorded in
+[project brief](project-brief.md) and [case acceptance matrix](demo-readiness.md):
+natural-language creation, actual original LLM game code, a complete playable
+loop, autonomous HTML5/JS/WebView, mobile controls and preserved versions/exports.
+The protected official PDF is not reopened; this is an engineering comparison,
+not a new independent legal/organizer acceptance of the competition rules.
+Costs below are relative engineering/operational judgments, not measured budgets.
+
+| Approach | Engineering / ongoing cost | Reliability and honest boundary | Full HTML compatibility | Fit to recorded Beeline requirements |
+| --- | --- | --- | --- | --- |
+| Generic black-box validation | Existing technical gate is cheap; general rule understanding/input planning across arbitrary games is substantial, unmeasured work. | Good at observed runtime/security faults. Bounded exploration may add evidence, but cannot infer impossibility or certify arbitrary goals; unknowns remain. | Highest: existing arbitrary self-contained HTML unchanged. Canvas-only semantics are challenging. | Preserves model-authored code and export. Current technical gate alone does not establish a complete playable loop. |
+| Voluntary observability contract | Moderate initial protocol/validator/adapter work plus per-game integration and independent corroboration. Not implemented or measured. | Explicit goals, progress, controls and outcomes make targeted proof easier. Self-reported state can lie or be wrong; contract compliance alone is not gameplay proof. | HTML remains full/self-contained if hooks are optional/offline. Legacy and opt-out games retain NOT_VERIFIED; must not silently impose a core requirement. | Can support generated original mechanics, mobile/export/history. Any prompt/contract integration needs a separate decision and task. |
+| GameBlueprint plus checked runtime | High schema/runtime/semantic/compiler/coverage work; existing experiment remains ITERATE, advantage unproven. | Shared tested mechanics reduce repeated implementation bugs, but wrong/unreachable game configurations or generated extensions still need checks. No automatic universal guarantee. | Changes generator output contract; compiled HTML may export, but adoption/edits/freedom/novel modules must be proven. Production migration is prohibited here. | Risk if it becomes template selection instead of model-written original mechanics. Earlier experiment does not establish case acceptance or quality advantage. |
+| Bounded manual MVP acceptance | Low new platform engineering; recurring human scenario design/execution cost for each accepted version. Not scalable universal automation. | Concrete keyboard/touch progress, win/loss and restart can be independently observed and recorded; untested mechanics/devices remain unverified. Scope and reviewer errors must be explicit. | Fully preserves current Full HTML, immutable versions and offline export. | Best immediate compatibility with demonstrating an actually generated playable artifact. Authored examples cannot replace failed LIVE generation; no physical-device PASS without device checks. |
+
+No option is adopted automatically. For the MVP, an explicitly limited manual
+acceptance process is compatible with the already observed proof style; an
+optional observability experiment could be evaluated separately. That judgment
+does not authorize a contract, prompts, runtime migration or additional inference.
+
+### Revision checks, publication and next gate
+
+Fresh in MICRO-028.1: source/fixture fingerprint consistency,15 production browser
+diagnostic runs plus2 real regression checks, recorded actions/traces, checkpoint
+capture matching, full relevant source-path inspection, documentation/diff review
+and publication secret scan. Only documentation is eligible for commit. Private
+helpers, source copies, snapshots, traces and user PDF are excluded.
+
+Full typecheck/build/unit/browser suite and actual launcher UI smoke from MICRO-028
+remain **historical**; Stage E was not rerun after STOP_GATE because no code changed
+and it cannot resolve the semantic feasibility barrier. No new UI PASS, new
+generated-game improvement, new physical-device result or held-out PASS is claimed.
+User SQLite, saved versions, checkpoints, env/secrets and original HTML are not
+written. New LLM POST remains0. Draft PR34 must stay Draft; merge is prohibited.
+Final revision commit/head is recorded in the PR and private revision Git receipt.
+Main/origin-main remain separately verified at publication.
+
+**NEXT:** make an explicit acceptance-architecture decision from the four options
+before further checker implementation; define a bounded proof scope and a
+prospective evaluation protocol. Do not implement oracle-specific heuristics or
+an observability contract inside this revision.
