@@ -8,7 +8,13 @@ function activeElement(el:Element):boolean {
   for(let p:Element|null=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility!=='visible'||Number(s.opacity)===0||s.pointerEvents==='none')return false;}
   const r=el.getBoundingClientRect();
   // Do not auto-scroll to controls belonging to an unobserved offscreen state.
-  return r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight;
+  if(!(r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight))return false;
+  // A visible canvas can still be covered by a start overlay. Probe a point
+  // inside its visible intersection, retaining partially visible controls.
+  const x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2;
+  const y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
+  const hit=document.elementFromPoint(x,y);
+  return !!hit&&el.contains(hit);
 }
 
 /** Fail only on a wholly offscreen, active control with no scroll route back.
@@ -99,6 +105,9 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       phase='control-reachability';await checkControlReachability(frame,knownControls,width===844);
       phase='touch-input';const input=frame.locator('canvas:visible,button:visible:enabled,[role="grid"]:visible');
       for(let i=0,n=Math.min(64,await input.count());i<n;i++)if(await input.nth(i).evaluate(activeElement)){await input.nth(i).tap();break;}
+      // An arbitrary start label may be opened by the generic touch probe.
+      // Observe its newly exposed controls before comparing landscape geometry.
+      phase='control-reachability';await checkControlReachability(frame,knownControls,width===844);
       // This is a phone probe: keyboard input would hide missing touch controls.
       // Probe real visible action controls, but never infer rules from pixels.
       phase='action-controls';const actions=frame.getByRole('button').filter({visible:true});

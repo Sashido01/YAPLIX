@@ -35,6 +35,28 @@ for(const kind of ['fit','scroll','nested','states','decor','future'] as const)t
  expect(evidence.profiles).toEqual([320,390,844]);expect(evidence.elapsedMs).toBeLessThan(18000);
 });
 
+// An unknown Start label must not make the checker tap the canvas underneath
+// its overlay. Controls become observable only after a real tap opens the game.
+function coveredCanvas(clipped:boolean,label='Начать играть'){
+ return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+ body{margin:0;overflow:hidden}canvas{display:block;width:100%;height:180px}button{min-height:48px}
+ #cover{position:fixed;inset:0;display:grid;place-items:center;background:white}
+ ${clipped?'@media(orientation:landscape){canvas{height:460px}}':''}
+ </style></head><body><canvas></canvas><button id="action">Move</button>
+ <div id="cover"><button id="launch">${label}</button></div><script>
+ document.querySelector('#launch').onclick=()=>document.querySelector('#cover').remove();
+ document.querySelector('#action').onclick=()=>{};
+ </script></body></html>`;
+}
+for(const label of ['Начать играть','Launch session'])test('MICRO-032 overlay opens through reachable touch control: '+label,async()=>{
+ const evidence=await browserCheck(coveredCanvas(false,label),AbortSignal.timeout(18000));
+ expect(evidence.profiles).toEqual([320,390,844]);
+ expect(evidence.checks?.find(c=>c.aspect==='gameplay-observed')?.level).toBe('NOT_VERIFIED');
+});
+test('MICRO-032 observes controls after opening overlay before proving landscape failure',async()=>{
+ await expect(browserCheck(coveredCanvas(true),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CONTROLS_UNREACHABLE',profileWidth:844,profileHeight:390,validationPhase:'control-reachability'});
+});
+
 test('MICRO-030 engine reports FAILED and rejects the candidate without repair or real transport',async()=>{
  let calls=0;const diagnostics:{level:string;code:string}[]=[];
  const engine=new GenerationEngine([{route:'primary',provider:'synthetic',model:'fixture',readiness:async()=>'ready',complete:async()=>{calls++;return{code:mobileLayout('direct'),model:'fixture'};}}],{repairs:0});
