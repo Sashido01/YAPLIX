@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { gameIntent, intentDefaults } from '../src/game-intent.ts';
+import { gameIntent, intentDefaults, compactGameIntent } from '../src/game-intent.ts';
 import type { Requirement } from '../src/game-intent.ts';
 import { generationMessages, GAME_GENERATION_CONTRACT } from '../src/generation.ts';
 import { GenerationEngine, configuredGenerator } from '../src/live.ts';
@@ -24,18 +24,20 @@ test('DEV: five exact prompt snapshots preserve raw text, numbers, bans and expl
     assert.deepEqual({ id: row.id, messages }, snapshots[index]);
     const request = JSON.parse(messages[1].content);
     assert.equal(request.request, row.text);
-    assert.equal(request.intent.originalRequest, row.text);
-    assert.equal(request.intent.genre.value, row.expected_genre);
-    assert.equal(request.intent.audience.value, row.expected_audience === 'UNKNOWN' ? null : row.expected_audience);
+    const intent = gameIntent(row.text);
+    assert.equal(intent.originalRequest, row.text);
+    assert.equal(intent.genre.value, row.expected_genre);
+    assert.equal(intent.audience.value, row.expected_audience === 'UNKNOWN' ? null : row.expected_audience);
+    assert.equal(request[intent.genre.source].genre, row.expected_genre);
     assert.ok(messages[0].content.includes('untrusted user data'));
     assert.equal(messages.length, 2);
   }
-  const bakery = payload(dev[3].text).intent;
+  const bakery = gameIntent(dev[3].text);
   assert.deepEqual(bakery.numbers.map((n: any) => n.value.literal), ['1 монетку', '10', '2 монеты', '100 монетах']);
   assert.ok(bakery.requirements.some((r: any) => r.value.includes('печку') && r.value.includes('2 монеты в секунду')));
   assert.ok(bakery.mechanics.some((r: any) => r.value === 'purchase' && r.source === 'EXPLICIT'));
   assert.ok(bakery.mechanics.some((r: any) => r.value === 'passive_income' && r.source === 'EXPLICIT'));
-  const platforms = payload(dev[1].text).intent;
+  const platforms = gameIntent(dev[1].text);
   assert.ok(platforms.requirements.some((r: any) => r.value.includes('5 рыбок') && r.value.includes('потом')));
   assert.ok(platforms.loss.some((r: any) => r.value.includes('3 раза')));
 });
@@ -61,6 +63,9 @@ test('all 40 corpus phrases retain evidence, unknown audience/genre and explicit
     } else if (row.tags.includes('injection')) {
       assert.equal(intent.inputStatus.value, 'unsafe_instruction', row.id);
       assert.throws(() => generationMessages(spec(row.text), undefined, 'intent'), /GAME_INTENT_CONFLICT/, row.id);
+    } else if (row.expected.input_status.value === 'invalid') {
+      assert.equal(intent.inputStatus.value, 'invalid', row.id);
+      assert.throws(() => generationMessages(spec(row.text), undefined, 'intent'), /INVALID_STRING|GAME_INTENT_INPUT/, row.id);
     } else if (row.text.trim() && row.expected.input_status.value !== 'off_topic') {
       const messages = generationMessages(spec(row.text), undefined, 'intent');
       assert.equal(JSON.parse(messages[1].content).request, row.text);
@@ -87,10 +92,11 @@ test('conservative interpretation: relationship, author age, unspecified goals a
 test('numbers, purchasing, passive income, progression and formatting remain exact beyond DEV', () => {
   const text = '  Платформер: 4 уровня, по 7 ключей; после последней двери победа.\nПокупка за 23 монеты, доход 1,5 монеты в секунду. Скорость 0.25, не 10.  ';
   const body = payload(text);
+  const intent = gameIntent(text);
   assert.equal(body.request, text);
-  assert.deepEqual(body.intent.numbers.map((n: any) => n.value.literal), ['4 уровня', '7', '23 монеты', '1,5 монеты', '0.25', '10']);
-  assert.equal(body.intent.numbers[3].value.value, null, 'decimal semantics are left unresolved; literal remains exact');
-  assert.ok(body.intent.requirements.some((r: any) => r.value.includes('Покупка за 23') && r.value.includes('1,5')));
+  assert.deepEqual(intent.numbers.map((n: any) => n.value.literal), ['4 уровня', '7', '23 монеты', '1,5 монеты', '0.25', '10']);
+  assert.equal(intent.numbers[3].value!.value, null, 'decimal semantics are left unresolved; literal remains exact');
+  assert.ok(intent.requirements.some((r: any) => r.value.includes('Покупка за 23') && r.value.includes('1,5')));
   const unusual = gameIntent('Кликер: штраф -3 очка, множитель 1/2, цель 1e3, число 9007199254740993.');
   assert.deepEqual(unusual.numbers.map(n => n.value!.literal), ['-3 очка', '1/2', '1e3', '9007199254740993']);
   assert.deepEqual(unusual.numbers.map(n => n.value!.value), [-3, null, null, null]);
@@ -106,12 +112,13 @@ test('negated hints, no-score/no-loss/endless and presentation never gain positi
   assert.equal(gameIntent('Аркада, без сетевых игр. Не используй CDN. Работает не только клавиатурой.').conflicts.length, 0);
   const text = 'Пазл без очков и поражения. Без врагов, без таймера, без конца игры. Крупные буквы, синий фон, звук выключен.';
   const body = payload(text);
-  assert.ok(body.intent.requirements.some((r: any) => r.value.includes('без очков и поражения')));
-  assert.deepEqual(body.intent.win, []);
-  assert.ok(body.intent.presentation.length > 0);
+  const intent = gameIntent(text);
+  assert.ok(intent.requirements.some((r: any) => r.value.includes('без очков и поражения')));
+  assert.deepEqual(intent.win, []);
+  assert.ok(intent.presentation.length > 0);
   const system = generationMessages(spec(text), undefined, 'intent')[0].content;
   assert.match(system, /including endless or no-loss play/);
-  assert.ok(body.technicalRequirements.some((r: any) => r.value.includes('do not force a score')));
+  assert.ok(body.technicalRequirements.some((r: string) => r.includes('without forced scoring')));
 });
 
 test('conflicts keep both sides and block before model dispatch; unknown phrasing stays verbatim', async () => {
@@ -157,7 +164,7 @@ test('engine switch defaults to byte-identical legacy messages and intent adds n
   assert.equal(captured[0][0].content, GAME_GENERATION_CONTRACT);
   assert.equal(captured[0][1].content, 'User request: '+text+'\nAudience: default\nGenre: unknown\nMechanics: \nControls: keyboard, touch, pointer');
   assert.equal(JSON.parse(captured[2][1].content).request, text);
-  assert.equal(JSON.parse(captured[3][1].content).intent.originalRequest, text);
+  assert.equal(JSON.parse(captured[3][1].content).request, text);
   assert.ok(configuredGenerator({ OLLAMA_CLOUD_API_KEY: 'synthetic', LLM_PROMPT_STYLE: 'intent' }));
   assert.throws(() => configuredGenerator({ OLLAMA_CLOUD_API_KEY: 'synthetic', LLM_PROMPT_STYLE: 'invalid' }), /INVALID_LLM_CONFIGURATION/);
 });
@@ -170,12 +177,54 @@ test('intent edits carry full old HTML, original idea and verbatim change withou
   assert.equal(body.originalRequest, previous.spec.prompt);
   assert.equal(body.currentCompleteHtml, html);
   assert.equal(body.request, change);
-  assert.equal(body.intent.genre.source, 'UNKNOWN');
-  assert.equal(body.intent.presentation[0].value, change);
+  assert.equal(gameIntent(change).genre.source, 'UNKNOWN');
+  assert.equal(gameIntent(change).presentation[0].value, change);
+  assert.ok(!('EXPLICIT' in body) && !('INFERRED' in body));
   assert.equal(body.modification, true);
   assert.match(messages[0].content, /hints concern only the change request/);
   let calls = 0;
   const route: CodeTransport = { route: 'primary', provider: 'synthetic', model: 'test', readiness: async () => 'ready', complete: async m => { calls++; assert.deepEqual(m, messages); return { code: html, model: 'test' }; } };
   await new GenerationEngine([route], { promptStyle: 'intent', repairs: 0, check: evidence }).generate(spec(change), previous);
   assert.equal(calls, 1);
+});
+
+test('obvious filler is rejected before dispatch, while unusual ideas and UNKNOWN remain allowed', async () => {
+  let calls = 0;
+  const route: CodeTransport = { route: 'primary', provider: 'synthetic', model: 'test', readiness: async () => 'ready', complete: async () => { calls++; return { code: html, model: 'test' }; } };
+  const engine = new GenerationEngine([route], { promptStyle: 'intent', repairs: 0, check: evidence });
+  for (const text of ['', '   ', 'a\u0001b', 'a\u007fb', 'x'.repeat(501), 'абвгд 999 ???', '???', '!!!', 'qwerty 111 ???', 'аааааааа 999 !!!']) {
+    assert.equal(gameIntent(text).inputStatus.value, 'invalid', text);
+    await assert.rejects(engine.generate(spec(text)), /INVALID_STRING|GAME_INTENT_INPUT/, text);
+  }
+  assert.equal(calls, 0);
+  for (const text of ['Шмуркобол', '2048', '111', '🐍', 'Луна поёт', 'qwerty', 'АБВГД для малышей', 'абвгд 999 ??? — это надпись на стене в игре', '🌙 abcde 999 ???']) {
+    assert.notEqual(gameIntent(text).inputStatus.value, 'invalid', text);
+    await engine.generate(spec(text));
+  }
+  assert.equal(calls, 9, 'each accepted request needs one synthetic call, no interpretation call');
+});
+
+test('LLM representation contains each raw DEV request once without internal evidence or duplicate rule fields', () => {
+  for (const row of dev) {
+    const content = generationMessages(spec(row.text), undefined, 'intent')[1].content;
+    assert.equal(content.split(JSON.stringify(row.text)).length - 1, 1, row.id);
+    const body = JSON.parse(content);
+    for (const key of ['intent', 'idea', 'requirements', 'numbers', 'win', 'loss', 'suppliedSpec']) assert.ok(!(key in body), `${row.id}: ${key}`);
+    assert.ok(!content.includes('"evidence":'), row.id);
+    assert.ok(!content.includes('"UNKNOWN"'), row.id);
+    assert.equal(body.request, row.text);
+  }
+});
+
+test('compact hints deduplicate by priority and preserve additional API metadata without placeholders', () => {
+  const intent = gameIntent('Кликер без таймера');
+  intent.mechanics.push({ value: 'clicking', source: 'INFERRED', evidence: 'Кликер' }, { value: 'clicking', source: 'EXPLICIT', evidence: 'Кликер' });
+  const compact = compactGameIntent(intent);
+  assert.deepEqual(compact.EXPLICIT!.mechanics, ['no_timer', 'clicking']);
+  assert.ok(!compact.INFERRED?.mechanics?.includes('clicking'));
+  assert.equal(JSON.stringify(compact).split('"clicking"').length - 1, 1);
+  const supplied = { ...spec('Аркада'), genre: 'custom', audience: 'elderly' as const, mechanics: ['custom_move', 'custom_move'], controls: ['touch'] as GameSpec['controls'] };
+  assert.deepEqual(JSON.parse(generationMessages(supplied, undefined, 'intent')[1].content).suppliedSpec,
+    { audience: 'elderly', genre: 'custom', mechanics: ['custom_move'], controls: ['touch'] });
+  assert.ok(!('suppliedSpec' in payload('Аркада')));
 });

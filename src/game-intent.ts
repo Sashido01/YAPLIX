@@ -92,6 +92,18 @@ const forbiddenInference: Record<string, RegExp> = {
 // even for attacks this list does not recognise. No user text becomes system text.
 const unsafe = /(?:игнорируй\s+(?:все\s+)?(?:правила|инструкции)|забудь\s+инструкции|(?:отключи|ослабь)\s+(?:CSP|защит[\p{L}]*)|(?:покажи|прочитай|отправь)[^.!?\n]{0,60}(?:\.env|ключ\s+сервера|секрет)|подключи\s+платную\s+модель)/iu;
 
+function obviousFiller(text: string): boolean {
+  // No vocabulary/genre whitelist. A title, unknown word, number or emoji may
+  // be an idea. Reject only symbol-only input or corroborated placeholder runs.
+  if (!/[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(text)) return true;
+  if (/\p{Extended_Pictographic}/u.test(text)) return false;
+  if (!/(\d)\1{2,}|[!?._]{3,}/u.test(text)) return false;
+  const words = [...text.toLowerCase().matchAll(/\p{L}+/gu)].map(m => m[0]);
+  if (!words.length) return /[!?._]{3,}/u.test(text);
+  const runs = ['абвгдеёжзийклмнопрстуфхцчшщъыьэюя', 'abcdefghijklmnopqrstuvwxyz', 'qwertyuiop', 'asdfghjkl', 'йцукенгшщзхъ', 'фывапролджэ'];
+  return words.every(word => word.length >= 5 && (runs.some(run => run.includes(word)) || /^(.)\1+$/u.test(word)));
+}
+
 export function gameIntent(originalRequest: string): GameIntent {
   const unquoted = withoutQuotes(originalRequest);
   // Keep every original clause as untrusted data, including unclassified rules.
@@ -150,7 +162,8 @@ export function gameIntent(originalRequest: string): GameIntent {
   const unsafeMatch = unquoted.match(unsafe);
   if (unsafeMatch) conflict('Untrusted host instructions cannot change security, reveal secrets or select paid providers.', unsafeMatch[0]);
   let inputStatus: GameIntent['inputStatus'] = unknown();
-  if (!originalRequest.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(originalRequest) || originalRequest.length > 500) inputStatus = fact('invalid', 'Empty, oversized or invalid control characters');
+  if (!originalRequest.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(originalRequest) || originalRequest.length > 500) inputStatus = fact('invalid', 'Empty, oversized or invalid control characters');
+  else if (obviousFiller(originalRequest)) inputStatus = fact('invalid', 'Symbol-only input or corroborated placeholder sequence');
   else if (unsafeMatch) inputStatus = fact('unsafe_instruction', unsafeMatch[0]);
   else if (conflicts.length) inputStatus = fact('needs_clarification', conflicts.map(c => c.evidence).join('; '));
   else if (/^\s*(?:подскажи|дай|напиши)\s+рецепт(?![\p{L}])/iu.test(text)) inputStatus = fact('off_topic', originalRequest);
@@ -158,6 +171,30 @@ export function gameIntent(originalRequest: string): GameIntent {
   return { originalRequest, idea: originalRequest.trim() ? fact(originalRequest, originalRequest) : unknown(), genre, audience,
     entities: hits(text, entityWords), actions, mechanics, numbers, win, loss, controls, presentation,
     requirements: clauses.map(s => fact(s, s)), conflicts, inputStatus };
+}
+
+/** Wire projection only: rules/numbers/bans stay verbatim in request, once.
+ * Detailed facts and evidence remain available internally through gameIntent.
+ */
+export function compactGameIntent(intent: GameIntent) {
+  const groups: Partial<Record<'EXPLICIT' | 'INFERRED', { genre?: string; audience?: string; mechanics?: string[] }>> = {};
+  const seenMechanics = new Set<string>();
+  for (const source of ['EXPLICIT', 'INFERRED'] as const) {
+    const group: { genre?: string; audience?: string; mechanics?: string[] } = {};
+    for (const key of ['genre', 'audience'] as const) {
+      const requirement = intent[key];
+      if (requirement.source === source && requirement.value !== null) group[key] = requirement.value;
+    }
+    const mechanics: string[] = [];
+    for (const requirement of intent.mechanics) {
+      if (requirement.source !== source || requirement.value === null || seenMechanics.has(requirement.value)) continue;
+      seenMechanics.add(requirement.value);
+      mechanics.push(requirement.value);
+    }
+    if (mechanics.length) group.mechanics = mechanics;
+    if (Object.keys(group).length) groups[source] = group;
+  }
+  return { request: intent.originalRequest, ...groups };
 }
 
 export const intentDefaults: Requirement<string>[] = [
