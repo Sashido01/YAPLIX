@@ -5,6 +5,45 @@ import {Store} from '../src/store.ts';
 import {createApp} from '../src/api.ts';
 import {html,spec} from './helpers.ts';
 
+// Authored reductions of NL-004 geometry, not copies or repairs of its games.
+function mobileLayout(kind:'direct'|'intent'|'fit'|'scroll'|'nested'|'states'|'decor'|'future'|'native'|'fixed'){
+ const tall=kind==='direct'?420:kind==='intent'?360:100;
+ return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+ *{box-sizing:border-box}body{margin:0;overflow:${kind==='scroll'?'auto':'hidden'}}
+ main{width:100%;max-width:500px;margin:auto;padding:10px}.board{height:${tall}px}
+ .pad{display:grid;grid-template-columns:repeat(3,60px);gap:10px}.key{width:60px;height:60px;cursor:pointer}
+ @media(orientation:landscape){.board{height:${['fit','states','decor','future'].includes(kind)?100:kind==='nested'?100:kind==='fixed'?100:420}px}}
+ ${kind==='nested'?'.scroller{height:150px;overflow:auto}.pad{margin-top:450px}':''}
+ ${kind==='states'?'.later{display:none}.transparent{opacity:0}.invisible{visibility:hidden}':''}
+ ${kind==='decor'?'.decoration{position:absolute;top:900px;cursor:pointer}':''}
+ ${kind==='native'?'.key{display:none}button{display:block;margin-top:480px}':''}
+ ${kind==='fixed'?'@media(orientation:landscape){.key{position:fixed;top:900px}}':''}
+ </style></head><body><main><div class="board">Game</div><div class="scroller"><div class="pad">
+ <div class="key">↑</div><div class="key">←</div><div class="key">↓</div><div class="key">→</div></div></div>
+ ${kind==='native'?'<button>Action</button>':''}
+ ${kind==='decor'?'<div class="decoration">Decoration</div>':''}
+ ${kind==='future'?'<button style="position:absolute;top:900px">Future state</button>':''}
+ ${kind==='states'?'<button class="later">Restart</button><button class="transparent" style="position:absolute;top:900px">Later</button><div aria-hidden="true" style="position:absolute;top:900px"><button>Future</button></div><button disabled style="position:absolute;top:900px">Disabled</button><button class="invisible" style="position:absolute;top:900px">Hidden</button><div inert style="position:absolute;top:900px"><button>Inactive</button></div>':''}
+ </main><script>document.querySelectorAll('.key').forEach(e=>e.addEventListener('pointerdown',()=>{}));</script></body></html>`;
+}
+
+for(const kind of ['direct','intent','native','fixed'] as const)test('MICRO-030 rejects unreachable landscape controls: '+kind,async()=>{
+ await expect(browserCheck(mobileLayout(kind),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CONTROLS_UNREACHABLE',profileWidth:844,profileHeight:390,validationPhase:'control-reachability'});
+});
+for(const kind of ['fit','scroll','nested','states','decor','future'] as const)test('MICRO-030 accepts reachable or inactive controls: '+kind,async()=>{
+ const evidence=await browserCheck(mobileLayout(kind),AbortSignal.timeout(18000));
+ expect(evidence.profiles).toEqual([320,390,844]);expect(evidence.elapsedMs).toBeLessThan(18000);
+});
+
+test('MICRO-030 engine reports FAILED and rejects the candidate without repair or real transport',async()=>{
+ let calls=0;const diagnostics:{level:string;code:string}[]=[];
+ const engine=new GenerationEngine([{route:'primary',provider:'synthetic',model:'fixture',readiness:async()=>'ready',complete:async()=>{calls++;return{code:mobileLayout('direct'),model:'fixture'};}}],{repairs:0});
+ try{
+  await expect(engine.generate(spec,undefined,undefined,AbortSignal.timeout(18000),{stage:()=>{},dispatch:()=>{},partial:()=>{},attempt:()=>{},validation:d=>diagnostics.push(d)})).rejects.toMatchObject({code:'BROWSER_CONTROLS_UNREACHABLE'});
+  expect(diagnostics).toContainEqual(expect.objectContaining({level:'FAILED',code:'BROWSER_CONTROLS_UNREACHABLE'}));expect(calls).toBe(1);
+ }finally{engine.close();}
+});
+
 test('MICRO-023 arbitrary full HTML runs without telemetry or fixed selectors; critical errors still fail',async()=>{
  test.setTimeout(40000);
  const plain=html.replaceAll('data-yaplix-','data-custom-').replace('<main>','<main><canvas hidden></canvas><button disabled>Unavailable action</button>');
