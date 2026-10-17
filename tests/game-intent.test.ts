@@ -15,6 +15,46 @@ const corpus: { id: string; text: string; tags: string[]; expected: Record<strin
 const spec = (prompt: string): GameSpec => ({ prompt, audience: 'default', genre: 'unknown', mechanics: [], controls: ['keyboard', 'touch', 'pointer'], responsive: true, webview: true });
 const payload = (prompt: string) => JSON.parse(generationMessages(spec(prompt), undefined, 'intent')[1].content);
 
+test('MICRO-031 direct and intent prepare concrete layout checks for creation and edits', () => {
+  const request = spec('Аркада с магнитными облаками');
+  const previous = { spec: spec('Игра про облака'), html } as GameVersion;
+  for (const style of ['direct', 'intent'] as const) {
+    for (const old of [undefined, previous]) {
+      const messages = generationMessages(request, old, style);
+      assert.deepEqual(messages.map(m => m.role), ['system', 'user']);
+      const system = messages[0].content;
+      for (const size of ['320x700', '390x700', '844x390']) assert.ok(system.includes(size), `${style}: ${size}`);
+      assert.match(system, /before Start, during play, after restart and after orientation changes/);
+      assert.match(system, /every essential control fully inside the usable viewport.*safe areas.*real user scrolling/);
+      assert.match(system, /height is limited, shrink the playfield or reflow the UI with CSS/);
+      assert.match(system, /Never use overflow:hidden when it makes controls unreachable/);
+      assert.match(system, /do not block scrolling with global touch-action or preventDefault/);
+      assert.match(system, /desktop keyboard\/pointer and phone touch/);
+      assert.match(system, /touch targets at least 44px/);
+      assert.match(system, /Choose Canvas or DOM to suit the game; no fixed engine or element IDs/);
+      assert.match(system, /No external resources/);
+      assert.ok(!system.includes(request.prompt), 'requirements stay in the user message');
+      if (style === 'intent') {
+        const body = JSON.parse(messages[1].content);
+        assert.equal(body.request, request.prompt);
+        if (old) assert.equal(body.currentCompleteHtml, old.html);
+      } else {
+        assert.ok(messages[1].content.includes(request.prompt));
+        if (old) assert.ok(messages[1].content.endsWith(old.html));
+      }
+    }
+  }
+  assert.deepEqual(generationMessages(request), generationMessages(request, undefined, 'direct'));
+});
+
+test('MICRO-031 layout guidance keeps system message growth below 20 percent', () => {
+  // UTF-8 system-message sizes at base c3ce3c2; user requirements/HTML are separate.
+  for (const [style, baseline] of [['direct', 2106], ['intent', 2961]] as const) {
+    const messages = generationMessages(spec('Аркада'), undefined, style);
+    assert.ok(Buffer.byteLength(messages[0].content) <= baseline * 1.2, style);
+  }
+});
+
 test('DEV: five exact prompt snapshots preserve raw text, numbers, bans and explicit rules', () => {
   assert.equal(dev.length, 5);
   const snapshots = JSON.parse(readFileSync(new URL('./fixtures/nl-intent-prompts.json', import.meta.url), 'utf8'));
