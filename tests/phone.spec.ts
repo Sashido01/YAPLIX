@@ -15,7 +15,7 @@ test('one click QR decodes to actual selected game; isolated phone touch, rotati
   const store=new Store(':memory:'),version=store.save(spec,artifact);
   const other=store.save({...spec,prompt:'Another private game'},artifact);
   // Synthetic adapter inventory; a real bound server, HTTP, QR and browser.
-  const phone=new PhoneConnection(store,async()=>[{name:'WiFi test',address:host}]);
+  const phone=new PhoneConnection(store,async()=>[{name:'WiFi test',address:host}],Date.now,undefined,0);
   const jobs=new GenerationJobs(store,undefined,undefined,false);
   const app=createApp(store,undefined,undefined,undefined,undefined,undefined,jobs,phone);
   const server=serve({fetch:app.fetch,hostname:'127.0.0.1',port:0});await new Promise<void>(r=>server.once('listening',r));
@@ -53,7 +53,7 @@ test('one click QR decodes to actual selected game; isolated phone touch, rotati
     await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#games button[data-version="'+other.versionId+'"]').click();
     await page.locator('#phone details summary').click();await page.getByRole('button',{name:'Обновить список сетей и статус',exact:true}).click();
     await expect.poll(async()=>await page.locator('#phone-url').inputValue()).not.toBe(target);
-    const fresh=await page.locator('#phone-url').inputValue();await mobile.goto(fresh);await expect(frame.locator('#start')).toBeVisible();
+    const fresh=await page.locator('#phone-url').inputValue();expect(new URL(fresh).port).toBe(new URL(target).port);expect(new URL(fresh).hash).not.toBe(new URL(target).hash);await mobile.goto(fresh);await expect(frame.locator('#start')).toBeVisible();
     expect((await(await page.request.get(url+'/api/phone')).json()).versionId).toBe(other.versionId);await expect(page.locator('#phone-version')).toHaveValue(other.versionId);
     await mobile.clock.fastForward(31*60_000);await expect(mobile.locator('iframe')).toHaveCount(0);await expect(mobile.locator('#restart')).toBeDisabled();await expect(mobile.locator('#status')).toContainText('доступ истёк');
     await page.clock.fastForward(31*60_000);await expect(page.locator('#phone-ready')).toBeHidden();
@@ -76,4 +76,15 @@ test('phone errors and multiple networks show a choice without a ready QR; LIVE 
   await page.locator('#system summary').click();
   await expect(page.locator('#system-info')).toContainText('доступность генерации не определена');await expect(page.locator('#system-info')).toContainText('models-api-get');await expect(page.locator('#system-info')).toContainText('история версий');await expect(page.locator('#system-info')).toContainText('Сервер на этом компьютере');
   await page.route('**/api/phone',route=>route.abort());await page.getByRole('button',{name:'Обновить подключение',exact:true}).click();await expect(page.locator('#phone-ready')).toBeHidden();
+});
+
+
+test('occupied phone port explains the fixed-port conflict without extra launch steps',async({page})=>{
+  await page.route('**/api/games',route=>route.fulfill({json:{games:[{versionId:'00000000-0000-4000-8000-000000000000',spec}]}}));
+  await page.route('**/api/phone',route=>route.request().method()==='POST'
+    ?route.fulfill({status:503,json:{error:'PORT_IN_USE'}})
+    :route.fulfill({json:{enabled:false,networks:[{name:'WiFi',address:'192.168.1.2'}]}}));
+  await page.goto('/');await page.locator('#phone summary').first().click();
+  await expect(page.locator('#phone-status')).toContainText('Порт подключения телефона занят');
+  await expect(page.locator('#phone-ready')).toBeHidden();
 });
