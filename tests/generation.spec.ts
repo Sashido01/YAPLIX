@@ -4,6 +4,9 @@ import {GenerationEngine} from '../src/live.ts';
 import {Store} from '../src/store.ts';
 import {createApp} from '../src/api.ts';
 import {html,spec} from './helpers.ts';
+import {checkFullHtml} from '../src/full-html-check.ts';
+import {parseArtifact,type Artifact} from '../src/contracts.ts';
+import {mkdtempSync} from 'node:fs';
 
 // Authored reductions of NL-004 geometry, not copies or repairs of its games.
 function mobileLayout(kind:'direct'|'intent'|'fit'|'scroll'|'nested'|'states'|'decor'|'future'|'native'|'fixed'){
@@ -77,6 +80,35 @@ test('MICRO-023 arbitrary full HTML runs without telemetry or fixed selectors; c
  await expect(browserCheck(restart,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
 });
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Server-side Chromium checker is independent of the frontend browser profile.'));
+
+test('MICRO-036.3 real Full HTML evidence survives parse, save and reopened version',async({browser})=>{
+ const source=mobileLayout('fit');
+ const viewports=new Map<string,{width:number;height:number}>();
+ // Observe real pages without replacing the checker, browser or context factory.
+ const observe=()=>{for(const context of browser.contexts())for(const page of context.pages()){const size=page.viewportSize();if(size)viewports.set(JSON.stringify(size),size);}};
+ const timer=setInterval(observe,10);
+ let evidence;
+ try{evidence=await checkFullHtml(browser,source,AbortSignal.timeout(18000));}finally{clearInterval(timer);}
+ expect([...viewports.values()]).toEqual([{width:320,height:700},{width:390,height:700},{width:844,height:390}]);
+ expect(evidence.profiles).toEqual([320,390,844]);
+ const candidate:Artifact={html:source,method:'llm_code',provider:'offline-test',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline-test',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:evidence}};
+ const artifact=parseArtifact(candidate);
+ const directory=mkdtempSync('.local/metadata-integration-'),path=directory+'/versions.sqlite';
+ let store=new Store(path);
+ try{
+  const historical=structuredClone(candidate);historical.generation!.browser.profiles=[320,390];
+  const old=store.save(spec,parseArtifact(historical));
+  const saved=store.save(spec,artifact,old.versionId);
+  expect(saved.generation!.browser).toEqual(evidence);
+  expect(saved.gameId).toBe(old.gameId);expect(saved.previousVersionId).toBe(old.versionId);expect(saved.versionId).not.toBe(old.versionId);
+  store.close();store=new Store(path);
+  expect(store.getVersion(saved.versionId)).toEqual(saved);
+  expect(store.getVersion(old.versionId)).toEqual(old);
+  expect(store.getVersion(old.versionId).generation!.browser.profiles).toEqual([320,390]);
+  expect(store.history(old.gameId).map(v=>v.versionId)).toEqual([old.versionId,saved.versionId]);
+  expect(saved.html).toBe(source);expect(saved.sha256).toBe(old.sha256);
+ }finally{store.close();}
+});
 test('real checker accepts authored fixture at 320/390 and offline',async()=>{
  const evidence=await browserCheck(html,AbortSignal.timeout(18000));
  expect(evidence).toMatchObject({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});

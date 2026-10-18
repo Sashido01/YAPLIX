@@ -6,14 +6,14 @@ import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import { PROJECT_ROOT } from './store.ts';
 import { summarizeSession } from './orchestrator/gameplay-check.ts';
 import { checkFullHtml } from './full-html-check.ts';
-import type { EvidenceLevel, ValidationAspect } from './validation.ts';
+import type { BrowserEvidence } from './contracts.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
 const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
 for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
-export type BrowserEvidence = { profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause' | 'full-html'; levels?:string[]; checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number };
+export type { BrowserEvidence } from './contracts.ts';
 export const VALIDATION_BUDGETS = Object.freeze({ totalMs:18000, startupMs:8000, renderMs:3500, criticalMs:100, interactionMs:6000, restartMs:2500 });
 export class BrowserFailure extends Fault {
   readonly feedback:string;

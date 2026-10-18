@@ -119,6 +119,28 @@ initData или необработанные журналы. [Запуск и о
   проверку. Это не доказательство gameplay/win или физических Android/iOS.
   Детали и границы: [MICRO-030](micro-030-report.md).
 
+## MICRO-036.3: Full HTML прошёл checker, но не сохраняется
+
+- RED на базе `942387e`: настоящий `checkFullHtml` успешно проверил
+  320×700, 390×700 и 844×390, затем `parseArtifact` выбросил
+  `INVALID_GENERATION_METADATA`: парсер принимал только `[320,390]`.
+- BrowserEvidence теперь общий для checker и Artifact. Парсер принимает строго
+  `[320,390]` для `startup-input-pause`; для `full-html` также `[320,390,844]`.
+  Список копируется без потери профилей; порядок, дубли, неизвестные значения,
+  строковые числа и объекты с поддельным `toJSON` отклоняются.
+- До MICRO-030 (`a0d3f41`) настоящий Full HTML checker выдавал `[320,390]`.
+  Исторические metadata поддерживаются без добавления непроверенного landscape.
+  Read-only inventory основной `.local/data/yaplix.sqlite` нашёл одну версию
+  без browser metadata; это не инвентаризация всех архивов/других баз.
+- GREEN: `tests/generation.spec.ts`, тест MICRO-036.3, наблюдает три настоящих
+  viewport и проходит `checkFullHtml → parseArtifact → Store.save → getVersion`
+  после закрытия/повторного открытия отдельной тестовой SQLite. Предыдущая версия,
+  её ID, SHA, HTML и два профиля остаются неизменны. Checker не подменяется.
+- Landscape-регрессии MICRO-030/MICRO-032 по-прежнему отклоняют обрезанные
+  controls с `BROWSER_CONTROLS_UNREACHABLE` при 844×390. Код checker не изменён.
+  Проверки offline/synthetic; реальные inference/repair POST: 0. Это не LIVE,
+  не доказательство gameplay/win/loss и не physical-device PASS.
+
 ## MICRO-032.4: стартовый overlay скрывает результат landscape gate
 
 - На сохранённой контрольной змейке 7/7 offline запусков Full HTML checker
