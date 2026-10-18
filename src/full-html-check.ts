@@ -2,6 +2,7 @@ import type { Browser, Frame } from 'playwright-core';
 import { Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import type { BrowserEvidence } from './browser-check.ts';
+import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
 
 function activeElement(el:Element):boolean {
   if(el.matches(':disabled')||el.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]'))return false;
@@ -81,7 +82,7 @@ async function checkControlReachability(frame:Frame,known:Set<string>,landscape:
 export async function checkFullHtml(browser:Browser,html:string,signal:AbortSignal):Promise<BrowserEvidence> {
   const began=performance.now();
   const knownControls=new Set<string>();
-  for(const [width,height] of [[320,700],[390,700],[844,390]]){
+  for(const {width,height} of BROWSER_VIEWPORTS['full-html']){
     const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
     let failure='',phase='load';
     try{
@@ -126,7 +127,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       throw Object.assign(new Fault(signal.aborted?'BROWSER_TIMEOUT':'BROWSER_CHECK_INCONCLUSIVE',502),{validationPhase:phase,profileWidth:width,profileHeight:height});
     }finally{await context.close().catch(()=>{});}
   }
-  return {profiles:[320,390,844],offline:true,errors:0,scope:'full-html',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],elapsedMs:Math.round(performance.now()-began),checks:([
+  return {profiles:[...BROWSER_PROFILES['full-html']],offline:true,errors:0,scope:'full-html',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],elapsedMs:Math.round(performance.now()-began),checks:([
     'html-runs','input-works','gameplay-observed','win-reachable','loss-reachable','restart-works'
   ] as const).map(aspect=>({aspect,level:aspect==='html-runs'?'VERIFIED':'NOT_VERIFIED'}))};
 }

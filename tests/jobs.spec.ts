@@ -10,7 +10,7 @@ import {GenerationJobs} from '../src/jobs.ts';
 test('MICRO-023 create, edit with Ollama, old version, reopen and export (mocked inference)',async({page,context,baseURL},info)=>{
  test.setTimeout(30000);
  const store=new Store(':memory:');const messages:any[]=[];
- const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async m=>{messages.push(structuredClone(m));return{code:messages.length===1?html:html.replace('Synthetic test game','Edited game'),model:'gemma4:31b'};}}],{repairs:0,check:async()=>({profiles:[320,390],offline:true,errors:0,scope:'full-html'})});
+ const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async m=>{messages.push(structuredClone(m));return{code:messages.length===1?html:html.replace('Synthetic test game','Edited game'),model:'gemma4:31b'};}}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html'})});
  const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
  try{

@@ -1,9 +1,10 @@
 // Pure validators shared by the API and the browser bridge. No Node dependencies.
 import type { EvidenceLevel, ValidationAspect } from './validation.ts';
+import {validBrowserProfiles,type BrowserScope} from './browser-profiles.ts';
 export interface BrowserChecks { checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number }
 // Historical full-html evidence predates landscape. Preserve its exact profiles;
 // the current checker emits 320/390/844, while startup-input-pause uses 320/390.
-export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offline:true; errors:0; scope:'startup-input-pause'|'full-html'; levels?:string[] }
+export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offline:true; errors:0; scope:BrowserScope; levels?:string[] }
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_EVENT_BYTES = 4096;
 export const methods = ['llm_code', 'template_config', 'mock', 'fallback','authored'] as const;
@@ -82,7 +83,7 @@ export function parseSpec(value: unknown): GameSpec {
   if (!controls.length) throw new Fault('CONTROLS_REQUIRED');
   return { prompt: string(o.prompt, 500, 2), audience: choice(o.audience, ['default', 'kids', 'elderly', 'hardcore'] as const), genre: string(o.genre, 64), mechanics: strings(o.mechanics), controls, responsive: o.responsive, webview: o.webview };
 }
-export function parseArtifact(value: unknown): Artifact {
+export function parseArtifact(value: unknown, source:'generation'|'saved-metadata'='generation'): Artifact {
   const o = object(value, ['html', 'method', 'provider', 'model', 'generationStatus', 'validationStatus','generation']);
   const html = string(o.html, MAX_HTML_BYTES);
   if (new TextEncoder().encode(html).byteLength > MAX_HTML_BYTES) throw new Fault('ARTIFACT_TOO_LARGE', 413);
@@ -97,8 +98,7 @@ export function parseArtifact(value: unknown): Artifact {
     const b=object(g.browser,['profiles','offline','errors','scope','levels','checks','elapsedMs']);
     const levels=['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'];if(b.levels!==undefined&&JSON.stringify(b.levels)!==JSON.stringify(levels))throw new Fault('INVALID_GENERATION_METADATA');
     const profiles=b.profiles;
-    const validProfiles=Array.isArray(profiles)&&profiles[0]===320&&profiles[1]===390&&
-      (profiles.length===2||(b.scope==='full-html'&&profiles.length===3&&profiles[2]===844));
+    const validProfiles=validBrowserProfiles(profiles,b.scope,source==='saved-metadata');
     if(!validProfiles||b.offline!==true||b.errors!==0||(b.scope!=='startup-input-pause'&&b.scope!=='full-html')||artifact.method!=='llm_code'||artifact.validationStatus!=='passed')throw new Fault('INVALID_GENERATION_METADATA');
     const final=attempts.at(-1)!;if(final.outcome!=='accepted'||final.errorCode!==null||final.provider!==artifact.provider||final.model!==artifact.model)throw new Fault('INVALID_GENERATION_METADATA');
     const extended:BrowserChecks={};

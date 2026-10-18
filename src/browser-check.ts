@@ -7,6 +7,7 @@ import { PROJECT_ROOT } from './store.ts';
 import { summarizeSession } from './orchestrator/gameplay-check.ts';
 import { checkFullHtml } from './full-html-check.ts';
 import type { BrowserEvidence } from './contracts.ts';
+import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
 const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
@@ -48,9 +49,9 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
     // Existing instrumented games retain their stricter lifecycle checks.
     if(!/data-yaplix-start\b/.test(html))return await checkFullHtml(browser,html,deadline);
     let checks:BrowserEvidence['checks'];
-    for(const width of [320,390]) {
+    for(const {width,height} of BROWSER_VIEWPORTS['startup-input-pause']) {
       if(deadline.aborted)throw new Fault('BROWSER_TIMEOUT',504);
-      const context=await browser.newContext({viewport:{width,height:700},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
+      const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
       phase='render';let phaseBudgetExceeded=false;let profileChecks:BrowserEvidence['checks'];const page=await context.newPage();page.setDefaultTimeout(VALIDATION_BUDGETS.renderMs);const errors:string[]=[];
       let exception='';page.on('pageerror',error=>{errors.push('JAVASCRIPT_EXCEPTION');exception=error.message.slice(0,250);});
       page.on('console',message=>{if(message.type()==='error')errors.push('BROWSER_CONSOLE_ERROR');});
@@ -204,7 +205,7 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
       }catch(error){if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in generated code: '+exception:'A forbidden browser operation or console error occurred.');if(!(error instanceof Fault))throw new BrowserFailure(phaseBudgetExceeded||(error as Error).name==='TimeoutError'?'BROWSER_TIMEOUT_'+phase.toUpperCase():'BROWSER_CHECK_INCONCLUSIVE','NOT_VERIFIED: '+phase+' could not be completed.');throw error;}
       finally{await context.close().catch(()=>{});}
     }
-    return {profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],checks,elapsedMs:Math.round(performance.now()-began)};
+    return {profiles:[...BROWSER_PROFILES['startup-input-pause']],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],checks,elapsedMs:Math.round(performance.now()-began)};
   }catch(error){if(deadline.aborted)throw new Fault(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT_'+phase.toUpperCase(),signal.aborted?499:504);if(error instanceof Fault)throw error;throw new Fault('BROWSER_STARTUP_FAILED',502);}
   finally{deadline.removeEventListener('abort',abort);await browser.close();}
 }

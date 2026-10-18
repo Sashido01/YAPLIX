@@ -101,7 +101,9 @@ export class Store {
   getVersion(id: string): GameVersion {
     const row = this.db.prepare('SELECT html,metadata FROM versions WHERE version_id=?').get(uuid(id));
     if (!row) throw new Fault('VERSION_NOT_FOUND', 404);
-    return { ...JSON.parse(row.metadata as string), html: row.html } as GameVersion;
+    const metadata=JSON.parse(row.metadata as string);
+    const artifact=parseArtifact({html:row.html,method:metadata.method,provider:metadata.provider,model:metadata.model,generationStatus:metadata.generationStatus,validationStatus:metadata.validationStatus,...(metadata.generation?{generation:metadata.generation}:{})},'saved-metadata');
+    return { ...metadata, ...artifact } as GameVersion;
   }
   list() {
     return this.db.prepare("SELECT metadata,(SELECT json_extract(first.metadata,'$.spec.prompt') FROM versions first WHERE first.game_id=versions.game_id ORDER BY first.rowid LIMIT 1) title FROM versions WHERE rowid IN (SELECT MAX(rowid) FROM versions GROUP BY game_id) ORDER BY rowid DESC LIMIT 50").all().map(row => ({...JSON.parse(row.metadata as string),title:String(row.title)}));
