@@ -1,4 +1,10 @@
-# Production game validation — MICRO-023 / MICRO-022
+# Production game validation — текущее поведение
+
+> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+
+Аудит MICRO-036.2: 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`.
+MICRO-023/022 ниже описывают базовые gates; MICRO-030/032 уточняют Full HTML.
+Текущий блокер Save/Ready приведён в конце, production в этом аудите не меняется.
 
 `LLM → prepareDocument → static validation → browserCheck → bounded repair →
 revalidation → transaction Save/Ready`. Один production checker, без нового
@@ -11,6 +17,9 @@ Chromium запускается с OS sandbox и environment без server keys.
 offline в opaque iframe `sandbox="allow-scripts"` с прежней CSP. Generated JS
 не исполняется в Node. Запрещены сеть, popups, dialogs, downloads и service workers.
 После iframe отдельно проверяется standalone HTML с той же CSP.
+
+Следующее описание event/state evidence относится к legacy `startup-input-pause`;
+Full HTML имеет отдельный раздел ниже.
 
 Для legacy HTML с data-yaplix-start на 320/390 px проверяются загрузка/Start, JS syntax/runtime errors и unhandled
 Promise rejection, размеры поля/Canvas, overflow, session event contract,
@@ -78,11 +87,12 @@ Draft без известного origin или без его configured route �
 | Этап | Ограничение |
 | --- | --- |
 | Browser startup | 8 s, входит в общий budget |
-| Initial render / ожидание controls/events | 3.5 s на browser operation |
+| Legacy render / ожидание controls/events | 3.5 s на browser operation |
+| Full HTML browser operation | 1.5 s default timeout; общий deadline остаётся 18 s |
 | Initial critical runtime observation | 100 ms после bridge ready; errors слушаются весь probe |
-| Gameplay / pause / resume | ≤6 s на viewport |
-| Marked restart interaction | ≤2.5 s на viewport |
-| Один browser check / revalidation | ≤18 s целиком, оба viewport |
+| Legacy gameplay / pause / resume | ≤6 s на viewport |
+| Legacy marked restart interaction | ≤2.5 s на viewport |
+| Один browser check / revalidation | ≤18 s целиком, включая startup и все viewport выбранного gate |
 | LLM repair | existing request deadline ≤60 s по умолчанию, внутри engine/job deadline |
 | Generation/job | прежние engine ≤300 s, job default 300 s / 4 calls |
 
@@ -105,8 +115,22 @@ gallery arcade tests — в `tests/arcades.spec.ts`. Это synthetic evidence.
 или универсальных score/health. `browser-check.ts` сохраняет общий browser launch,
 OS sandbox/secret-free env и 18 s deadline; для HTML без data-yaplix-start вызывает
 [full-html-check.ts](../src/full-html-check.ts). Тот проверяет видимый документ,
-320/390 px overflow, runtime errors/Promise rejection, запрещённые операции,
-тапы/клавиши и доступные Start/Restart по accessible name; отдельно offline load.
+320×700/390×700 portrait и 844×390 landscape: visible body/game area,
+horizontal overflow, runtime errors/Promise rejection, запрещённые операции,
+реальные touch taps и доступные Start/Restart по accessible name; отдельно
+standalone offline load. Keyboard fallback здесь не используется: он скрывал бы
+отсутствие touch controls. Legacy gate имеет свои keyboard/touch probes.
+
+MICRO-030/032: active-element hit-test исключает перекрытый overlay canvas;
+обычный tap по доступной кнопке может открыть Start с неизвестным названием.
+После него controls наблюдаются повторно перед landscape comparison.
+`BROWSER_CONTROLS_UNREACHABLE` — подтверждённо активный control, доступный в
+portrait, целиком вне landscape viewport без возможной пользовательской прокрутки.
+Частичная видимость, настоящая root/nested прокрутка, hidden/disabled и ещё не
+наблюдавшиеся будущие controls не являются достаточным основанием отказа.
+Для несемантических div нужен настоящий input listener, проверяемый read-only CDP
+в opaque frame; cursor:pointer сам по себе недостаточен. `scrollIntoView()` не
+используется как доказательство touch-доступности.
 Подтверждённая ошибка блокирует Save/Ready. Неизвестная последовательность controls
 не считается FAILED; input/gameplay/win/loss/restart остаются NOT_VERIFIED,
 html-runs VERIFIED подтверждает только наблюдавшийся технический запуск.
@@ -131,3 +155,26 @@ This creates no accepted game/version, Ready label or gameplay PASS. Continue ca
 revalidate a complete checkpoint locally. OpenRouter cannot auto-repair a failed
 checkpoint after restart. Trace failures degrade diagnostics, not durable jobs.
 [Current LIVE and regression boundaries](micro-027-report.md).
+
+
+## Контракт browser metadata — блокер MICRO-036.2
+
+На проверенном main [checkFullHtml](../src/full-html-check.ts) возвращает
+`profiles:[320,390,844]`. Legacy [browserCheck](../src/browser-check.ts) возвращает
+`[320,390]`. [parseArtifact](../src/contracts.ts) пока принимает только точный
+`[320,390]` для обоих scopes и нормализует metadata к этим двум значениям.
+[GenerationEngine](../src/live.ts) передаёт checker evidence в parseArtifact
+до возврата результата; [Store](../src/store.ts) тоже валидирует artifact.
+
+Изолированная проверка parseArtifact с одинаковым synthetic accepted artifact
+дала ACCEPTED для `[320,390]` и `INVALID_GENERATION_METADATA` для `[320,390,844]`.
+Сеть, LLM и SQLite не использовались. Это доказанная несовместимость границы
+контракта: успешный Full HTML checker не превращается в принятую новую версию
+через этот путь. Не заявляется новый LIVE сетевой сбой или повтор всего E2E.
+Тесты с injected evidence `[320,390]` могут проходить, не покрывая эту границу.
+
+Нужна отдельная production-задача: согласовать metadata для обоих scopes и
+проверить реальный checker → parseArtifact → save, сохранив landscape evidence.
+В этом docs-only PR код, budgets, HTML и исторические verdict не изменяются.
+`MOBILE_VERIFIED` — техническая browser-emulation метка, не физический PASS и
+не подтверждение правил/win/loss. [Отчёт и воспроизведение](micro-036-2-docs-audit.md).

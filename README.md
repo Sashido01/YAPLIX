@@ -1,5 +1,16 @@
 # YAPLIX — ты придумал, теперь играй
 
+> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](docs/known-errors.md).
+
+Статус на 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`:
+**MVP/demo PARTIAL**. Стабильный QR-порт 52604 включён; подключение Android/Brave,
+запуск «Волк ловит яйца», refresh/re-entry и revoke подтверждены владельцем,
+без независимого наблюдения агента. LLM provenance этой игры не установлено.
+Аудит выявил несовместимость metadata Full HTML checker с parseArtifact,
+блокирующую принятие новых Full HTML результатов; production в docs-аудите не менялся.
+[Текущий статус](docs/SESSION_HANDOFF.md), [аудит и пробелы](docs/micro-036-2-docs-audit.md),
+[демо 3–5 минут и соответствие 8+7 требованиям](docs/demo-readiness.md).
+
 ## Запуск за 60 секунд
 
 Нужны установленный Node **24.18+ (24.x)** с npm и папка клона YAPLIX.
@@ -270,7 +281,11 @@ Legacy `npm run lan` остаётся инструментом разработ�
 MICRO-028N: после согласованных Private profile и узкого Firewall rule владелец
 подтвердил Android / Brave: запуск, touch, прогресс, restart, поворот, reopen и
 отказ после отзыва доступа. MICRO-036.1 сохраняет порт при новом QR;
-старый токен отзывается. Широкое разрешение Node не создаётся. iOS NOT_TESTED.
+старый токен отзывается. MICRO-036.2: владелец подтвердил Android/Brave,
+запуск «Волк ловит яйца», refresh QR с повторным входом и прекращение доступа
+после отключения. Это owner-confirmed scope, не independently observed;
+происхождение игры от LLM не установлено. Широкое разрешение Node не создаётся.
+iOS NOT_TESTED. [Физический scope и оставшиеся проверки](docs/micro-036-stable-phone-port.md).
 См. [диагностику и восстановление](docs/micro-028n-phone-connectivity.md).
 
 Собственный бот — [@YaplixBot](https://t.me/YaplixBot). Добавьте локально

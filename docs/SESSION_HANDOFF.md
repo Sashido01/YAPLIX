@@ -1,3 +1,37 @@
+# Текущий статус — MICRO-036.2
+
+> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+
+18 октября 2026 (Europe/Moscow). Проверенный main/база:
+`942387eb1fc06792767bddf2ae766cd0ed4676ff` — merge PR #44, MICRO-036.1.
+При старте отслеживаемые файлы чистые; только untracked PDF владельца, не читался.
+Это snapshot на указанном SHA, не самоссылочный HEAD нового docs commit.
+
+- Phone QR: постоянный default 52604, override `YAPLIX_PHONE_PORT`, без random
+  fallback. Android/Brave: подключение, «Волк ловит яйца», refresh/re-entry и
+  отключение доступа подтверждены владельцем; independently observed не заявлен.
+  Version ID/LLM provenance игры неизвестны; restart YAPLIX и другие физические
+  сценарии не добавлены к PASS. [Точные границы](micro-036-stable-phone-port.md).
+- MVP/demo **PARTIAL**. Блокер свежего Full HTML Save/Ready: checker profiles
+  `[320,390,844]` несовместимы с parseArtifact `[320,390]`; synthetic probe
+  воспроизвёл `INVALID_GENERATION_METADATA`, без LLM/SQLite. Код не меняется.
+- Исторические LLM successes — [MICRO-027](micro-027-report.md), [TASK-010](task-010-report.md).
+  Новый LIVE в MICRO-036.2 не запускался, inference/repair POST **0**.
+- [Демонстрация 4:30 и матрица 8+7](demo-readiness.md): saved LLM fallback должен
+  быть проверен до выступления; выбранного подтверждённого резерва в этом аудите нет.
+- PR [#34](https://github.com/Sashido01/YAPLIX/pull/34) и
+  [#37](https://github.com/Sashido01/YAPLIX/pull/37) — OPEN Draft, не изменялись.
+  Actions read-only GET `enabled:false`; отсутствие hosted checks не PASS.
+- NEXT: review отдельного docs-only PR без merge; затем отдельная задача на
+  metadata contract и разрешённая проверка provenance/репетиция. Production,
+  Firewall не менялся; `.env`, пользовательские SQLite/HTML и ignored research
+  не читались и не изменялись.
+
+[Противоречия, исправления и оставшиеся пробелы](micro-036-2-docs-audit.md).
+Ниже — исторические handoff, их HEAD/вердикты относятся к датам соответствующих задач.
+
+---
+
 # MICRO-027 — reliability, diagnostics and LIVE delivery
 
 2026-10-17. Baseline main `ff1a952`; [current report](micro-027-report.md).
