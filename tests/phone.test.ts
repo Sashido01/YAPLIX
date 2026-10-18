@@ -2,11 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { NetworkInterfaceInfo } from 'node:os';
 import { phoneAddresses, lanAddresses } from '../src/network.ts';
-import { PhoneConnection, PHONE_TTL } from '../src/phone.ts';
+import { PhoneConnection, PHONE_TTL, phonePort } from '../src/phone.ts';
 import { createApp } from '../src/api.ts';
 import { Store } from '../src/store.ts';
 import { artifact, spec } from './helpers.ts';
 import { connectionQr } from '../src/qr.ts';
+import { createServer } from 'node:net';
 import { request } from 'node:http';
 import { networkPolicy } from '../src/access.ts';
 
@@ -24,13 +25,13 @@ test('phone QR requires an exact private URL, bounded token fragment and no quer
   for(const bad of [url.replace('/phone','/admin'),url.replace('192.168.0.3','8.8.8.8'),url.replace('#','?token='),url+'x',url.replace('http:','https:'),url.replace('192.168.0.3','secret@192.168.0.3')])assert.throws(()=>connectionQr(bad,false,true));
 });
 test('phone startup fails closed for no network, multiple networks, unknown version and unavailable bind',async()=>{
-  const store=new Store(':memory:'),version=store.save(spec,artifact),none=new PhoneConnection(store,async()=>[]),many=new PhoneConnection(store,async()=>[{name:'WiFi',address:'192.168.0.1'},{name:'Ethernet',address:'10.0.0.1'}]);
+  const store=new Store(':memory:'),version=store.save(spec,artifact),none=new PhoneConnection(store,async()=>[],Date.now,undefined,0),many=new PhoneConnection(store,async()=>[{name:'WiFi',address:'192.168.0.1'},{name:'Ethernet',address:'10.0.0.1'}],Date.now,undefined,0);
   try{
     await assert.rejects(none.enable(version.versionId),/PHONE_NO_NETWORK/);
     await assert.rejects(many.enable(version.versionId),/PHONE_CHOOSE_NETWORK/);
     await assert.rejects(many.enable(version.versionId,'10.1.0.1'),/HOST_NOT_AVAILABLE/);
     await assert.rejects(many.enable('00000000-0000-4000-8000-000000000000'),/VERSION_NOT_FOUND/);
-    const absent=new PhoneConnection(store,async()=>[{name:'WiFi',address:'192.168.255.254'}]);
+    const absent=new PhoneConnection(store,async()=>[{name:'WiFi',address:'192.168.255.254'}],Date.now,undefined,0);
     await assert.rejects(absent.enable(version.versionId),/HOST_NOT_AVAILABLE|SERVER_LISTEN_FAILED|PHONE_SERVER_UNREACHABLE/);
     assert.deepEqual(absent.status(),{enabled:false});assert.throws(()=>absent.qr(),/PHONE_ACCESS_EXPIRED/);
   }finally{await none.close();await many.close();store.close();}
@@ -38,7 +39,7 @@ test('phone startup fails closed for no network, multiple networks, unknown vers
 test('real private-IP listener shares exact game bytes, denies owner APIs, expires, refreshes and revokes without writes',async t=>{
   const host=lanAddresses()[0]?.address;if(!host){t.skip('No private IPv4 available');return;}
   const store=new Store(':memory:'),version=store.save(spec,artifact),other=store.save({...spec,prompt:'Other private game'},artifact);let now=Date.now();
-  const phone=new PhoneConnection(store,async()=>[{name:'test-client',address:host}],()=>now),owner=createApp(store,undefined,undefined,undefined,undefined,undefined,undefined,phone);
+  const phone=new PhoneConnection(store,async()=>[{name:'test-client',address:host}],()=>now,undefined,0),owner=createApp(store,undefined,undefined,undefined,undefined,undefined,undefined,phone);
   const headers={'Content-Type':'application/json'},before=store.list();
   try{
     assert.equal((await owner.request('/api/phone',{method:'POST',headers:{...headers,Origin:'null'},body:JSON.stringify({versionId:version.versionId})})).status,403);
@@ -78,8 +79,8 @@ test('saved LIVE evidence is separate from catalogue health and contains no sour
 test('failed HTTP probe closes a bound listener and exposes no QR; busy and shutdown cannot leave a late listener',async t=>{
   const host=lanAddresses()[0]?.address;if(!host){t.skip('No private IPv4');return;}
   const store=new Store(':memory:'),v=store.save(spec,artifact);let origin='';
-  const phone=new PhoneConnection(store,async()=>[{name:'WiFi',address:host}],Date.now,async value=>{origin=value;return false;});
-  let release!:()=>void;const held=new Promise<void>(done=>release=done),busy=new PhoneConnection(store,async()=>{await held;return[{name:'WiFi',address:host}];});
+  const phone=new PhoneConnection(store,async()=>[{name:'WiFi',address:host}],Date.now,async value=>{origin=value;return false;},0);
+  let release!:()=>void;const held=new Promise<void>(done=>release=done),busy=new PhoneConnection(store,async()=>{await held;return[{name:'WiFi',address:host}];},Date.now,undefined,0);
   try{
     await assert.rejects(phone.enable(v.versionId),/PHONE_SERVER_UNREACHABLE/);assert.deepEqual(phone.status(),{enabled:false});assert.throws(()=>phone.qr());await assert.rejects(fetch(origin+'/phone'));
     const pending=busy.enable(v.versionId);await assert.rejects(busy.enable(v.versionId),/PHONE_BUSY/);await assert.rejects(busy.disable(),/PHONE_BUSY/);
@@ -88,7 +89,7 @@ test('failed HTTP probe closes a bound listener and exposes no QR; busy and shut
   }finally{release();await phone.close();await busy.close();store.close();}
 });
 test('full LAN/HTTPS owner sessions cannot manage local phone sharing',async()=>{
-  const store=new Store(':memory:'),phone=new PhoneConnection(store,async()=>[]),key='s'.repeat(43);
+  const store=new Store(':memory:'),phone=new PhoneConnection(store,async()=>[],Date.now,undefined,0),key='s'.repeat(43);
   try{for(const mode of ['lan','https']){
     const policy=networkPolicy(mode==='lan'?{YAPLIX_MODE:mode,YAPLIX_HOST:'192.168.1.2',YAPLIX_ACCESS_KEY:key}:{YAPLIX_MODE:mode,PUBLIC_URL:'https://owner.invalid',YAPLIX_ACCESS_KEY:key});
     const app=createApp(store,undefined,undefined,policy,undefined,undefined,undefined,phone),base=policy.origin!;const proxy:Record<string,string>=mode==='https'?{'X-Forwarded-Proto':'https'}:{};
@@ -96,4 +97,59 @@ test('full LAN/HTTPS owner sessions cannot manage local phone sharing',async()=>
     const cookie=login.headers.get('set-cookie')!;
     for(const [path,method] of [['/api/phone','GET'],['/api/phone','POST'],['/api/phone','DELETE'],['/api/phone/qr.svg','GET']])assert.equal((await app.request(base+path,{method,headers:{...proxy,Cookie:cookie,'Content-Type':'application/json'},...(method==='GET'?{}:{body:'{}'})})).status,403);
   }}finally{await phone.close();store.close();}
+});
+
+
+test('production phone port defaults to 52604 and accepts only explicit fixed TCP ports',()=>{
+  assert.equal(phonePort({}),52604);
+  assert.equal(phonePort({YAPLIX_PHONE_PORT:'53000'}),53000);
+  for(const value of ['', '0', '-1', '65536', '1.5', 'abc', ' 52604', '5e4'])
+    assert.throws(()=>phonePort({YAPLIX_PHONE_PORT:value}),/PHONE_PORT_INVALID/);
+});
+
+
+test('fixed listener port survives QR rotation, disable/re-enable and a new connection instance',async()=>{
+  const store=new Store(':memory:'),version=store.save(spec,artifact);
+  const addresses=async()=>[{name:'isolated test',address:'127.0.0.1'}];
+  const reservation=createServer();
+  await new Promise<void>(r=>reservation.listen(0,'127.0.0.1',r));
+  const port=(reservation.address() as {port:number}).port;
+  await new Promise<void>(r=>reservation.close(()=>r()));
+  // Allocated by the OS, never the shared production 52604.
+  const phone=new PhoneConnection(store,addresses,Date.now,undefined,port);
+  const restarted=new PhoneConnection(store,addresses,Date.now,undefined,port);
+  const token=(url:URL)=>fetch(url.origin+'/phone/access',{method:'POST',headers:{Origin:url.origin},body:url.hash.slice(1)});
+  try{
+    const first=new URL((await phone.enable(version.versionId) as {url:string}).url);
+    assert.equal(Number(first.port),port);
+    const access=await token(first),cookie=access.headers.get('set-cookie')!.split(';')[0];
+    assert.equal(access.status,200);
+    const fresh=new URL((await phone.enable(version.versionId) as {url:string}).url);
+    assert.equal(fresh.origin,first.origin);assert.notEqual(fresh.hash,first.hash);
+    assert.equal((await token(first)).status,401);
+    assert.equal((await fetch(fresh.origin+'/phone/version',{headers:{Cookie:cookie}})).status,401);
+    const newAccess=await token(fresh),newCookie=newAccess.headers.get('set-cookie')!.split(';')[0];
+    assert.equal((await(await fetch(fresh.origin+'/phone/version',{headers:{Cookie:newCookie}})).json()).versionId,version.versionId);
+    await phone.disable();await assert.rejects(fetch(first.origin+'/phone'));
+    const again=new URL((await phone.enable(version.versionId) as {url:string}).url);
+    assert.equal(again.port,first.port);assert.notEqual(again.hash,fresh.hash);
+    await phone.shutdown();
+    const afterRestart=new URL((await restarted.enable(version.versionId) as {url:string}).url);
+    assert.equal(afterRestart.port,first.port);assert.notEqual(afterRestart.hash,again.hash);
+  }finally{await phone.close();await restarted.close();store.close();}
+});
+
+
+test('occupied fixed port reports PORT_IN_USE, exposes no QR and never falls back',async()=>{
+  const store=new Store(':memory:'),version=store.save(spec,artifact),blocker=createServer();
+  await new Promise<void>(r=>blocker.listen(0,'127.0.0.1',r));
+  const port=(blocker.address() as {port:number}).port;
+  const phone=new PhoneConnection(store,async()=>[{name:'isolated test',address:'127.0.0.1'}],Date.now,undefined,port);
+  try{
+    await assert.rejects(phone.enable(version.versionId),/PORT_IN_USE/);
+    assert.deepEqual(phone.status(),{enabled:false});assert.throws(()=>phone.qr(),/PHONE_ACCESS_EXPIRED/);
+    assert.equal(blocker.listening,true);
+    await new Promise<void>(r=>blocker.close(()=>r()));
+    assert.equal(new URL((await phone.enable(version.versionId) as {url:string}).url).port,String(port));
+  }finally{await phone.close();if(blocker.listening)await new Promise<void>(r=>blocker.close(()=>r()));store.close();}
 });

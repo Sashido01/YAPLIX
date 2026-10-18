@@ -10,6 +10,13 @@ import { connectionQr } from './qr.ts';
 
 const hash = (value: string) => createHash('sha256').update(value).digest();
 export const PHONE_TTL = 30 * 60_000;
+/** Persist overrides in the existing ignored .env, loaded by the normal launcher. */
+export function phonePort(env: NodeJS.ProcessEnv = process.env) {
+  const value = env.YAPLIX_PHONE_PORT;
+  if (value === undefined) return 52604;
+  if (!/^[0-9]{1,5}$/.test(value) || Number(value) < 1 || Number(value) > 65535) throw new Fault('PHONE_PORT_INVALID', 400);
+  return Number(value);
+}
 const CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 async function probePage(origin: string) {
   const response = await fetch(origin + '/phone', { redirect: 'error', signal: AbortSignal.timeout(3000) });
@@ -27,7 +34,8 @@ export class PhoneConnection {
   private addresses: typeof activePhoneAddresses;
   private now: () => number;
   private probe: typeof probePage;
-  constructor(store: Store, addresses = activePhoneAddresses, now = Date.now, probe = probePage) { this.store = store; this.addresses = addresses; this.now = now; this.probe = probe; }
+  private port: number;
+  constructor(store: Store, addresses = activePhoneAddresses, now = Date.now, probe = probePage, port = phonePort()) { this.port = port; this.store = store; this.addresses = addresses; this.now = now; this.probe = probe; }
   networks() { return this.addresses(); }
   status() {
     const a = this.active;
@@ -54,11 +62,12 @@ export class PhoneConnection {
       const token = randomBytes(32).toString('base64url');
       const app = this.mobileApp();
       this.server = await new Promise<Server>((done, fail) => {
-        const server = serve({ fetch: app.fetch, hostname: host, port: 0 }, () => done(server as Server));
+        const server = serve({ fetch: app.fetch, hostname: host, port: this.port }, () => done(server as Server));
         server.once('error', fail);
       });
       if (this.stopped) throw new Fault('PHONE_SERVER_STOPPED', 503);
       const port = (this.server.address() as { port: number }).port;
+      this.port = port; // Keep an injected ephemeral test port stable for this instance too.
       this.server.maxConnections = 32; this.server.requestTimeout = 5000; this.server.headersTimeout = 5000; this.server.keepAliveTimeout = 1000;
       const origin = `http://${host}:${port}`;
       this.active = { origin, url: origin + '/phone#' + token, versionId, expiresAt: this.now() + PHONE_TTL, token: hash(token) };

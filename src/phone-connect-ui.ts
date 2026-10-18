@@ -3,6 +3,7 @@ const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElem
 let image: string | undefined, pending = false, initialized = false, expiry: ReturnType<typeof setTimeout> | undefined;
 let lastDesktopVersion: string | undefined;
 const errors: Record<string,string> = {
+  PORT_IN_USE:'Порт подключения телефона занят. Закройте другой listener или один раз настройте YAPLIX_PHONE_PORT и перезапустите YAPLIX. Случайный порт не используется.',
   PHONE_NO_NETWORK:'Активная сеть Wi-Fi/Ethernet не найдена. Подключите компьютер к маршрутизатору и повторите.',
   PHONE_NETWORK_CHECK_FAILED:'Не удалось определить активную сеть. Проверьте подключение Wi-Fi/Ethernet и повторите.',
   PHONE_CHOOSE_NETWORK:'Выберите сеть, к которой подключён телефон.',
