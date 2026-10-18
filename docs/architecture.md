@@ -1,5 +1,8 @@
 # Архитектура YAPLIX
 
+Аудит MICRO-036.2: 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`.
+Текущее ограничение Save/Ready: [несовместимость browser metadata](game-validation.md#контракт-browser-metadata--блокер-micro-0362).
+
 Один Node 24.18+ (24.x) процесс: Hono API, лёгкий frontend, собственный generator,
 SQLite и sandbox. TypeScript/esbuild; Node/Chromium/модели устанавливаются только
 на сервере, телефон использует браузер. Нет внешнего локального проекта-источника.
@@ -25,7 +28,7 @@ flowchart LR
 LLM stages для компонентов. [GAME_GENERATION_CONTRACT](../src/generation.ts)
 требует полный самостоятельный HTML5 со встроенными CSS/JS, механиками идеи,
 рабочим desktop/touch управлением, целью, уместными win/loss, restart и оформлением.
-Canvas/DOM выбирает модель. Нет genre classifier, line cap, обязательного движка,
+Canvas/DOM выбирает модель. Нет обязательного genre classifier, line cap, движка,
 фиксированных mechanic IDs, Visual Kit/GameDNA/achievements/telemetry.
 
 Редактирование отправляет current version HTML целиком, исходную идею и новое
@@ -73,10 +76,23 @@ offline, runtime/Promise errors, startup/restart probes и bounded recovery.
 resume, events и marked restart reset. Доступные generic controls проверяются
 реальными действиями, но без известного read-only state их mechanics/restart
 остаются NOT_VERIFIED. UI сообщает технический результат отдельно от gameplay.
-Оба gate ограничены 18 s и профилями 320/390, не доказывают physical devices.
+Оба gate имеют общий deadline 18 s. Legacy gate использует 320×700/390×700;
+Full HTML — 320×700, 390×700 и 844×390. Это browser emulation, не physical devices.
+Full HTML проверяет touch без keyboard fallback; hit-test избегает canvas под
+стартовым overlay, после реального tap повторно наблюдаются открывшиеся controls.
+Landscape отклоняет лишь доказанно недоступные ранее наблюдавшиеся controls без
+реальной прокрутки (`BROWSER_CONTROLS_UNREACHABLE`), не все неизвестные состояния.
+Возврат этих трёх профилей сейчас несовместим с `parseArtifact`, который принимает
+только `[320,390]`: технический checker PASS ещё не гарантирует Save/Ready.
+[Точное ограничение и proof](micro-036-2-docs-audit.md#блокер-контракта-full-html).
 LLM repair production default off, максимум один после отдельного разрешения.
 `repairUsed` durable; Continue/restart не снимают cap. Только два deterministic
 format fixes: whole JSON string и missing doctype, с повторным gate.
+
+Локальный `game-intent.ts` используется при opt-in `LLM_PROMPT_STYLE=intent`:
+консервативные EXPLICIT/INFERRED/DEFAULT/UNKNOWN hints и compact envelope, без
+дополнительного LLM вызова. Code default — direct; сохранность механик и
+адаптация произвольного ответа не следуют из разбора текста.
 
 Analytics доступна только играм с добровольным event bridge; базовая генерация
 его не требует. Авторские gallery HTML сохраняются authored/unverified и не
@@ -211,6 +227,16 @@ Local loopback; LAN выбранный private IPv4 + key/cookie. HTTPS loopback
 точные Host/Origin/forwarded scheme, Secure cookie. Generation: 6/min на principal,
 12/min globally, один активный запрос. Общая библиотека без ownership/ролей;
 публичный Telegram ограничен одним владельцем, несколько ID блокируют HTTPS startup.
+
+## Ограниченный доступ телефона (MICRO-036.1/036.2)
+
+`PhoneConnection` внутри того же процесса/Store слушает только выбранный физический
+LAN IPv4. Default TCP 52604, override `YAPLIX_PHONE_PORT` из локального `.env`;
+фиксированный порт переживает refresh/restart, конфликт даёт `PORT_IN_USE` без
+random fallback. Owner API на этом listener отсутствует. TTL 30 минут, fragment
+→ bounded POST → HttpOnly/SameSite cookie; refresh отзывает старый token/cookie,
+disable/shutdown закрывают listener. Firewall автоматически не меняется.
+[Owner-confirmed Android/Brave scope и пределы provenance](micro-036-stable-phone-port.md#micro-0362--физическая-приёмка-подтверждение-владельца).
 
 ## Telegram и shares
 
