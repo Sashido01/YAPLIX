@@ -134,3 +134,15 @@ initData или необработанные журналы. [Запуск и о
 - Критерий MICRO-030, sandbox/CSP и таймауты сохранены. Авторские минимальные
   регрессии проверяют overlay с разными подписями и безопасную компоновку отдельно
   от полностью обрезанных controls. Эти проверки не доказывают gameplay/win/loss.
+
+## MICRO-029: изолированная подготовка SIWC
+
+- `SIWC_PLAN_PERMISSION_REQUIRED` / `SIWC_ID_TOKEN_INVALID`: identity sign-in
+  не даёт автоматически ChatGPT plan usage. Проверяются granted scopes,
+  криптографическая подпись и issuer/audience/expiry/nonce; обходов и inference нет.
+- Windows path guard должен сравнивать нормализованный `resolve` root:
+  trailing separator из `fileURLToPath` иначе не совпадает с `dirname`.
+  Реальные loopback offline-тесты проходят после нормализации, без роста timeout.
+- CLI `--prepare` не обращается к сети; `--authorize` — только ручной вход.
+  Токены живут в памяти и забываются; persistent vault/refresh не реализованы.
+  Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](micro-029-chatgpt-feasibility.md).
