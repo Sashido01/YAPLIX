@@ -172,6 +172,61 @@ initData или необработанные журналы. [Запуск и о
   регрессии проверяют overlay с разными подписями и безопасную компоновку отдельно
   от полностью обрезанных controls. Эти проверки не доказывают gameplay/win/loss.
 
+## MICRO-029: изолированная подготовка SIWC
+
+- MICRO-029.2 third-probe preflight: на c440ca0 синтетические ответы без model,
+  с gpt-6-astra и с конфликтующими response.model ошибочно давали PASS.
+  Диагностика теперь читает фактическую модель из SSE response metadata;
+  отсутствие даёт SIWC_MODEL_ACTUAL_NOT_VERIFIED, несовпадение/конфликт —
+  SIWC_MODEL_ACTUAL_MISMATCH. Произвольные значения заменяются OTHER.
+  Регрессии RED до исправления, GREEN после. Это offline proof; прошлые LIVE
+  ответы не пересматриваются. Для третьего probe разрешены только один новый
+  OAuth и один POST с durable reservation в .local/siwc-third-probe; повтор
+  после любого исхода запрещён, отчёт сохраняется только в этом каталоге.
+
+- MICRO-029.3: проверка LocalSiwc.probe сама по себе не покрывает stdout/exit code
+  CLI. Экспортированная runSiwcCli вызывается обычным source entry point и
+  offline-тестами с fake HTTP/browser; 23 проверки, включая пять с loopback
+  HTTP/SSE-сервером, проверяют max POST 1,
+  отсутствие refresh/retry и утечек, включая 401/429/5xx/timeout/expired token.
+  HTTP200 или SSE без completed + text не дают PASS. Реальный probe не запускался.
+  [CLI proof и версия Gitleaks](micro-029-chatgpt-feasibility.md#micro-0293-финальная-offline-подготовка-cli).
+
+- MICRO-032.1: `SIWC_OUTPUT_INVALID` при HTTP200/sseObserved true прежде возникал
+  в completed-ветке при пустом или >8192 тексте, до чтения usage. Offline
+  воспроизведена потеря delta при финальном output []; output_text.done также
+  игнорировался. Теперь части объединяются без повторения снимков, metadata/usage
+  сохраняются до проверки текста; пустой completed имеет отдельный
+  SIWC_COMPLETED_WITHOUT_TEXT. Причина конкретного ответа владельца NOT_VERIFIED.
+  Диагностика содержит только counts/status/codes/length/bytes/usage, без текста.
+  Реальный probe не повторять без нового разрешения. [Разбор](micro-029-chatgpt-feasibility.md#micro-0321-пустой-результат-и-безопасная-диагностика).
+
+- MICRO-029.2 / MICRO-032: владелец сообщил `SIWC_SSE_REQUIRED`, HTTP200,
+  Content-Type UNKNOWN. Прежний header-only guard локально воспроизвёл отказ на
+  корректном SSE без Content-Type. Исправление читает реальные data-кадры;
+  JSON/HTML/оборванный stream не становятся PASS. Отчёт содержит безопасные
+  `responseMediaType`/`sseObserved`. Причина реального HTTP200 не установлена.
+  Только `gpt-6.1-sol` из свежего видимого каталога, reasoning medium; при отсутствии
+  `SIWC_PROBE_MODEL_UNAVAILABLE`, POST 0, без подмены. Повторный LIVE probe требует
+  нового разрешения. [Контракт и границы](micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
+
+- MICRO-032: HTTP 200 или output delta без `response.completed` не доказывают
+  inference. `--probe` возвращает PARTIAL при `SIWC_STREAM_INTERRUPTED`,
+  `SIWC_INFERENCE_INCOMPLETE`, `SIWC_USAGE_LIMIT`/`SIWC_USAGE_UNAVAILABLE` и timeout;
+  автоматического повторного POST нет. Это проверено offline с синтетическим
+  OpenAI HTTP, не реальным аккаунтом. После PARTIAL не перезапускать CLI без
+  нового бюджета. [Ручной probe](micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
+
+- `SIWC_PLAN_PERMISSION_REQUIRED` / `SIWC_ID_TOKEN_INVALID`: identity sign-in
+  не даёт автоматически ChatGPT plan usage. Проверяются granted scopes,
+  криптографическая подпись и issuer/audience/expiry/nonce; обходов и inference нет.
+- Windows path guard должен сравнивать нормализованный `resolve` root:
+  trailing separator из `fileURLToPath` иначе не совпадает с `dirname`.
+  Реальные loopback offline-тесты проходят после нормализации, без роста timeout.
+- CLI `--prepare` не обращается к сети; `--authorize` — только ручной вход.
+  Токены живут в памяти и забываются; persistent vault/refresh не реализованы.
+  Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](micro-029-chatgpt-feasibility.md).
+
 ## MICRO-036.4: post-merge ESM и controlled worker
 
 - На `05b7a59` целевой runtime Chromium desktop прошёл 4/4; controlled worker
