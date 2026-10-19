@@ -7,7 +7,12 @@ let current: GameVersion | null = null, unmount: (() => void) | undefined, busy 
 let telegramToken:string|undefined;let phoneOpening=false;
 const versions = new Map<string, GameVersion>(); // Bounded read cache, at most 3 × 200 KB HTML.
 const errors: Record<string, string> = {
-  INVALID_PROVIDER_MODE:'Выберите Ollama Cloud или OpenRouter Free.',
+  CHATGPT_LOCAL_ONLY:'Личный ChatGPT недоступен в LAN, HTTPS и Telegram.',
+  CHATGPT_AUTH_REQUIRED:'Подключите ChatGPT на этом компьютере.',
+  CHATGPT_NEW_JOB_REQUIRED:'Для новой попытки создайте новое задание вручную. Старый бюджет не возобновляется.',
+  CHATGPT_BUDGET_SPENT:'Единственная попытка ChatGPT уже израсходована.',
+  CHATGPT_BUSY:'Подключение уже выполняется или ChatGPT уже подключён.',
+  INVALID_PROVIDER_MODE:'Выберите Ollama Cloud, OpenRouter Free или ChatGPT.',
   LLM_INPUT_TOO_LARGE:'Текущий HTML слишком велик для выбранного запроса. Исходная версия сохранена.',
   LLM_HTTP_BODY_TOO_LARGE:'Внешний HTTP-сервис отклонил размер запроса (413). Проверьте диагностику провайдера и прокси.',
   LLM_RESPONSE_BODY_TOO_LARGE:'Ответ модели превысил безопасный лимит транспорта. Полная игра не получена; черновик сохранён.',
@@ -64,7 +69,7 @@ const errors: Record<string, string> = {
 async function api(path: string, body?: unknown, token?: string, signal?: AbortSignal) {
   const deadline=new AbortController(),timer=signal?undefined:setTimeout(()=>deadline.abort(),10_000);
   try {
-    const response = await fetch(path, { signal: signal ?? deadline.signal, headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{}),...(telegramToken?{'X-Yaplix-Telegram-Session':telegramToken}:{})},...(body !== undefined ? { method:'POST',body:JSON.stringify(body) } : {}) });
+    const response = await fetch(path, { signal: signal ?? deadline.signal, headers:{...(body!==undefined?{'Content-Type':'application/json','X-Yaplix-ChatGPT':'owner'}:{}),...(token?{Authorization:'Bearer '+token}:{}),...(telegramToken?{'X-Yaplix-Telegram-Session':telegramToken}:{})},...(body !== undefined ? { method:'POST',body:JSON.stringify(body) } : {}) });
     const data = await response.json();
     if (!response.ok) throw new Error(errors[data.error] ?? (String(data.error).startsWith('BROWSER_')?'Игра не прошла браузерную проверку ('+data.error+'). Черновик сохранён.':`Не удалось выполнить действие (${data.error ?? response.status}).`));
     el('connection').hidden = true; return data;
@@ -141,7 +146,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   el('game-title').textContent=title.length>100?title.slice(0,100)+'…':title;
   const bytes=new TextEncoder().encode(version.html).length;
   el('artifact-info').textContent=`HTML: ${(bytes/1024).toFixed(1)} КБ.`+(bytes>100_000?' Большая игра: запуск и расход памяти могут увеличиться.':'');
-  el('provenance').textContent=version.method==='mock'?'Тестовая игра · без LLM':'Игра создана · '+(version.provider==='openrouter'?'OpenRouter Free':'Ollama Cloud');
+  el('provenance').textContent=version.method==='mock'?'Тестовая игра · без LLM':'Игра создана · '+(version.provider==='chatgpt'?'ChatGPT · GPT-6.1 Sol Medium':version.provider==='openrouter'?'OpenRouter Free':'Ollama Cloud');
   if(version.method==='authored')el('provenance').textContent='Авторская офлайн-игра · не LIVE';
   el('share').hidden=location.protocol!=='https:';
   if(version.generation)el('provenance').textContent+=' · техническая проверка пройдена · '+(version.generation.browser.checks?.some(c=>c.aspect==='gameplay-observed'&&c.level==='VERIFIED')?'gameplay проверен частично':'механика не проверена')+'; победа и поражение не подтверждены';
@@ -161,8 +166,20 @@ for(const select of [providerSelect,editProviderSelect])select.addEventListener(
   providerSelect.value=editProviderSelect.value=select.value;
   try{sessionStorage.setItem('yaplix-provider-mode',select.value);}catch{}
 });
+let chatgptConnected=false;
+async function refreshChatGpt(){
+ try{
+  const status=await api('/api/chatgpt/status');chatgptConnected=status.connected===true;
+  el('chatgpt-status').textContent=!status.available?'Личный ChatGPT недоступен в LAN, HTTPS и Telegram.':status.state==='CONNECTING'?'ChatGPT: подключение…':status.state==='EXPIRED'?'ChatGPT: авторизация истекла. Подключитесь заново.':status.state==='ERROR'?'ChatGPT: подключение не выполнено. Повторите вручную.':chatgptConnected?'ChatGPT: подключён':'ChatGPT: не подключён';
+  el('chatgpt-connect').hidden=!status.available||chatgptConnected||status.state==='CONNECTING';
+  el('chatgpt-disconnect').hidden=!status.available||!chatgptConnected&&status.state!=='CONNECTING';
+ }catch{chatgptConnected=false;el('chatgpt-status').textContent='ChatGPT: статус не подтверждён';}
+}
+el('chatgpt-connect').addEventListener('click',()=>void attempt(async()=>{await api('/api/chatgpt/connect',{});await refreshChatGpt();}));
+el('chatgpt-disconnect').addEventListener('click',()=>void attempt(async()=>{await api('/api/chatgpt/disconnect',{});await refreshChatGpt();}));
 const submitting=new Set<string>();
 async function submitJob(buttonId:string,text:string,previousVersionId?:string){
+  if((previousVersionId?editProviderSelect:providerSelect).value==='chatgpt'){await refreshChatGpt();if(!chatgptConnected){message.textContent='Подключите ChatGPT на этом компьютере. Новое задание не создано.';return;}}
   if(submitting.has(buttonId))return;submitting.add(buttonId);const button=el<HTMLButtonElement>(buttonId);button.disabled=true;
   const request={spec:spec(text),mode:'live',providerMode:(previousVersionId?editProviderSelect:providerSelect).value,...(previousVersionId?{previousVersionId}:{}),telegramConsent:Boolean(telegramToken&&el<HTMLInputElement>('telegram-notify').checked)};
   // randomUUID is unavailable on private-IP HTTP LAN; getRandomValues works there.
@@ -197,14 +214,14 @@ function openJob(job:JobSummary){if(job.versionId){el('jobs-panel').hidden=true;
 function renderJobs(jobs:JobSummary[]){
   const count=jobs.filter(j=>['queued','generating','repairing','validating'].includes(j.stage)).length;el('jobs-toggle').textContent='Задания'+(count?' ('+count+')':'');
   const container=el('jobs-list');const expanded=new Set(Array.from(container.querySelectorAll<HTMLElement>('article')).filter(row=>row.querySelector('details')?.open).map(row=>row.dataset.job));container.replaceChildren();if(!jobs.length)container.textContent='Заданий пока нет.';
-  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=(job.providerMode?({auto:'Ollama Cloud (прежний Auto)','ollama-cloud':'Ollama Cloud',openrouter:'OpenRouter Free'}[job.providerMode]+' · '):'')+`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`;row.append(title,status);{const details=document.createElement('details'),summary=document.createElement('summary'),model=document.createElement('p');summary.textContent='Диагностика';details.open=expanded.has(job.jobId);const download=document.createElement('button');download.type='button';download.textContent='Скачать отчёт';download.addEventListener('click',()=>void attempt(async()=>{const response=await fetch('/api/jobs/'+job.jobId+'/diagnostics',{headers:telegramToken?{'X-Yaplix-Telegram-Session':telegramToken}:{}});if(!response.ok)throw new Error('Отчёт недоступен');const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download='yaplix-diagnostics-'+job.jobId+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));model.textContent='Маршрут: '+(job.provider??'не выбран')+'; запрошено: '+(job.requestedModel??'нет')+'; ответ: '+(job.actualModel??'не получен');details.append(summary,model,download);row.append(details);}
+  for(const job of jobs){const row=document.createElement('article');row.dataset.job=job.jobId;const title=document.createElement('strong');title.textContent=job.spec.prompt;const status=document.createElement('p');const duration=job.stage==='queued'?Math.max(0,Date.now()-Date.parse(job.updatedAt)):job.elapsedMs+(['generating','repairing','validating'].includes(job.stage)?Math.max(0,Date.now()-Date.parse(job.updatedAt)):0);status.textContent=(job.providerMode?({auto:'Ollama Cloud (прежний Auto)','ollama-cloud':'Ollama Cloud',openrouter:'OpenRouter Free',chatgpt:'ChatGPT · GPT-6.1 Sol Medium'}[job.providerMode]+' · '):'')+`${stageNames[job.recoveryState??job.stage]} · ${Math.round(duration/1000)} с · попыток ${job.attempts}`;row.append(title,status);{const details=document.createElement('details'),summary=document.createElement('summary'),model=document.createElement('p');summary.textContent='Диагностика';details.open=expanded.has(job.jobId);const download=document.createElement('button');download.type='button';download.textContent='Скачать отчёт';download.addEventListener('click',()=>void attempt(async()=>{const response=await fetch('/api/jobs/'+job.jobId+'/diagnostics',{headers:telegramToken?{'X-Yaplix-Telegram-Session':telegramToken}:{}});if(!response.ok)throw new Error('Отчёт недоступен');const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download='yaplix-diagnostics-'+job.jobId+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));model.textContent='Маршрут: '+(job.provider??'не выбран')+'; запрошено: '+(job.requestedModel??'нет')+'; ответ: '+(job.actualModel??'не получен');details.append(summary,model,download);row.append(details);}
     if(job.diagnosticsUnavailable){const warning=document.createElement('p');warning.textContent='Подробный trace недоступен. Этап и код ошибки сохранены в отчёте.';row.append(warning);}
     if(job.validation){const validation=document.createElement('p');validation.textContent=job.validation.level==='FAILED'?'Обнаружена ошибка при проверке игры.':job.validation.level==='VERIFIED'?'Техническая проверка пройдена; полная механика не подтверждена.':'Проверка не завершена.';row.append(validation);}
     const failures=job.history.filter(attempt=>attempt.errorCode).slice(-3);if(failures.length){const reasons=document.createElement('p');reasons.className='muted';reasons.textContent='Предыдущие попытки: '+failures.map(attempt=>`${attempt.provider} / ${attempt.model??attempt.requestedModel}: ${errors[attempt.errorCode!]??attempt.errorCode}`).join(' · ');const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Диагностика попыток';details.append(summary,reasons);row.append(details);}
     if(job.errorCode){const error=document.createElement('p');error.textContent=(errors[job.errorCode]??`Черновик сохранён (${job.errorCode}).`)+(job.retryAt?' Повтор после '+new Date(job.retryAt).toLocaleTimeString()+'.':'');row.append(error);}
     const actions=document.createElement('div');actions.className='actions';const add=(label:string,work:()=>Promise<unknown>|void)=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>{button.disabled=true;void Promise.resolve().then(work).then(()=>pollJobs()).catch(error=>{message.textContent=error.message;button.disabled=false;});});actions.append(button);return button;};
       if(job.stage==='completed'){add('Играть',()=>openJob(job));add('Изменить',async()=>{await openJob(job);el('iterate').scrollIntoView({block:'center'});el('change').focus();});add('На телефон',()=>phoneFor(job.versionId!));const download=document.createElement('a');download.textContent='Скачать HTML';download.href='/api/versions/'+job.versionId+'/export';download.download='game.html';actions.append(download);}
-    else if(['needs_attention','failed','cancelled'].includes(job.stage)){const button=add('Продолжить генерацию',()=>api('/api/jobs/'+job.jobId+'/continue',{}));button.disabled=job.attempts>=12||Boolean(job.retryAt&&Date.now()<job.retryAt);}
+    else if(['needs_attention','failed','cancelled'].includes(job.stage)){const button=add('Продолжить генерацию',()=>api('/api/jobs/'+job.jobId+'/continue',{}));button.disabled=job.providerMode==='chatgpt'&&(!job.checkpointOrigin||!job.checkpointBytes)||job.attempts>=12||Boolean(job.retryAt&&Date.now()<job.retryAt);}
     else add('Отменить задание',()=>api('/api/jobs/'+job.jobId+'/cancel',{}));
     if(job.validation?.level==='NOT_VERIFIED'&&job.validation.code==='BROWSER_CHECK_INCONCLUSIVE'&&job.stage==='needs_attention'){const preview=document.createElement('a');preview.textContent='Предпросмотр · NOT_VERIFIED';preview.href='/api/jobs/'+job.jobId+'/preview';preview.target='_blank';preview.rel='noopener noreferrer';actions.append(preview);}
     if(job.checkpointBytes)add('Скачать черновик',async()=>{const draft=await api('/api/jobs/'+job.jobId);const url=URL.createObjectURL(new Blob([draft.checkpoint],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='yaplix-draft-'+job.jobId+'.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
@@ -213,7 +230,7 @@ function renderJobs(jobs:JobSummary[]){
 }
 async function pollJobs(){
   if(polling||closed||document.hidden)return;polling=true;
-  try{const{jobs}=await api('/api/jobs') as {jobs:JobSummary[]};renderJobs(jobs);if(!toast){for(const job of jobs){if(job.stage==='completed'&&!job.notificationClaimed){const claim=await api('/api/jobs/'+job.jobId+'/notification',{});if(claim.claimed){toast=job;el('job-toast-text').textContent='Игра сохранена. Можно играть.';el('job-toast-open').hidden=false;el('job-toast-dismiss').hidden=false;await list();break;}}}}}
+  try{await refreshChatGpt();const{jobs}=await api('/api/jobs') as {jobs:JobSummary[]};renderJobs(jobs);if(!toast){for(const job of jobs){if(job.stage==='completed'&&!job.notificationClaimed){const claim=await api('/api/jobs/'+job.jobId+'/notification',{});if(claim.claimed){toast=job;el('job-toast-text').textContent='Игра сохранена. Можно играть.';el('job-toast-open').hidden=false;el('job-toast-dismiss').hidden=false;await list();break;}}}}}
   catch{/* The next bounded poll restores server state; keep the active game. */}
   finally{polling=false;clearTimeout(pollTimer);if(!closed)pollTimer=setTimeout(()=>void pollJobs(),2000);}
 }

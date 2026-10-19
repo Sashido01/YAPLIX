@@ -285,3 +285,20 @@ initData или необработанные журналы. [Запуск и о
   Permission failure и hardlink по-прежнему отклоняются, чужой HTML сохраняется.
 - Пользовательские журналы не очищать ради PASS и assertion не ослаблять.
   Метаданные диагностического запуска находятся только в ignored `.local`.
+
+## MICRO-029 Stage A1: личный ChatGPT
+
+- В offline regression 401/403 очищали SIWC-сессию и отменяли активный
+  controller, после чего catch маскировал отказ как SIWC_REQUEST_CANCELLED.
+  Теперь проверенный SiwcError сохраняется до классификации внешней отмены;
+  HTTP 401/403 дают SIWC_AUTH_REQUIRED, повторного POST нет.
+- Нельзя использовать CLI OAuth как серверный login: токены только в памяти
+  одного процесса. Нужен явный connect в local UI. Status не выполняет OAuth,
+  refresh, catalog GET или inference. После restart требуется новый вход.
+- Sandbox browser-запуск A1 остановлен после отсутствия прогресса первого
+  теста. В окружении владельца targeted UI create/edit/reopen с настоящей
+  browser validation прошёл 3/3: desktop, Chromium 320, WebKit 390.
+  Промежуточная ошибка нового теста была race: reload до завершения show();
+  ожидание выбранной версии исправляет тест без изменения production UI.
+  Синтетические Responses и подписанный fake OAuth не доказывают LIVE.
+- [Подключение, бюджет, ошибки и ограничения](chatgpt-setup.md).

@@ -17,7 +17,7 @@ test('MICRO-023 create, edit with Ollama, old version, reopen and export (mocked
   await page.goto('/');await page.getByRole('button',{name:'Создать',exact:true}).click();await expect(page.locator('#provider-mode')).toHaveValue('ollama-cloud');await expect(page.locator('#mode')).toHaveCount(0);
   await createAndOpen(page,'Создать игру',false);const first=store.getVersion(store.list()[0].versionId);await expect(page.locator('#provenance')).toContainText('механика не проверена');await expect(page.locator('#provenance')).not.toContainText('gameplay проверен частично');
   await expect(page.locator('#edit-provider-mode')).toHaveValue('ollama-cloud');
-  expect(await page.locator('#edit-provider-mode option').evaluateAll(nodes=>nodes.map(n=>(n as HTMLOptionElement).value))).toEqual(['ollama-cloud','openrouter']);
+  expect(await page.locator('#edit-provider-mode option').evaluateAll(nodes=>nodes.map(n=>(n as HTMLOptionElement).value))).toEqual(['ollama-cloud','openrouter','chatgpt']);
   await page.locator('#change').fill('Add enemies and preserve existing controls');await createAndOpen(page,'Создать следующую версию',false);
   expect(messages).toHaveLength(2);expect(messages[1][1].content).toContain(first.html);expect(messages[1][1].content).toContain('Add enemies');
   const history=store.history(first.gameId);expect(history).toHaveLength(2);const second=history[1];
@@ -34,7 +34,7 @@ test('MICRO-023 create, edit with Ollama, old version, reopen and export (mocked
 test('Full HTML UI exposes two manual provider modes and restores the selected mode and idea',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'Создать',exact:true}).click();
 
-  await expect(page.locator('#mode')).toHaveCount(0);expect(await page.locator('#provider-mode option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value))).toEqual(['ollama-cloud','openrouter']);
+  await expect(page.locator('#mode')).toHaveCount(0);expect(await page.locator('#provider-mode option').evaluateAll(options=>options.map(o=>(o as HTMLOptionElement).value))).toEqual(['ollama-cloud','openrouter','chatgpt']);
   await page.locator('#provider-mode').selectOption('openrouter');await page.locator('#prompt').fill('Собери игру три в ряд');
   await page.reload();await page.getByRole('button',{name:'Создать',exact:true}).click();
   await expect(page.locator('#provider-mode')).toHaveValue('openrouter');await expect(page.locator('#prompt')).toHaveValue('Собери игру три в ряд');
@@ -75,4 +75,28 @@ test('explicit private version URL opens requested old version on mobile, reject
   const first=await(await page.request.post('/api/games',{data:{mode:'demo',spec}})).json();const next=await(await page.request.post('/api/games/'+first.gameId+'/versions',{data:{mode:'demo',spec:{...spec,prompt:'5 грузов'},previousVersionId:first.versionId}})).json();
   await page.goto('/?game='+first.gameId+'&version='+first.versionId);await expect(page.locator('#export')).toHaveAttribute('href','/api/versions/'+first.versionId+'/export');await expect(page.locator('#versions')).toHaveValue(first.versionId);
   const other=await(await page.request.post('/api/games',{data:{mode:'demo',spec}})).json();await page.goto('/?game='+other.gameId+'&version='+next.versionId);await expect(page.locator('#message')).toContainText('Версия отсутствует в этой игре');await expect(page.locator('iframe')).toHaveCount(0);
+});
+
+
+import {ChatGptTransport} from '../src/chatgpt.ts';
+import {offlineChatGpt,localPolicy,completed,sse} from './chatgpt-helper.ts';
+
+test('ChatGPT A1 UI -> API -> durable job -> mock SSE -> real browser validation -> SQLite -> reopen',async({page,context,baseURL})=>{
+ test.setTimeout(60000);
+ let posts=0;const bodies:any[]=[];
+ const {session}=offlineChatGpt(async(_input,init)=>{posts++;bodies.push(JSON.parse(String(init?.body)));return sse([completed(posts===1?html:html.replaceAll('Synthetic test game','Edited game'))]);});
+ const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{allowLlmRepair:true}),jobs=new GenerationJobs(store,engine);
+ const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
+ await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+ try{
+  await page.goto('/?view=create');await expect(page.locator('#provider-mode')).toHaveValue('ollama-cloud');
+  await page.locator('#provider-mode').selectOption('chatgpt');await page.getByRole('button',{name:'Создать игру',exact:true}).click();await expect(page.locator('#message')).toContainText('Подключите ChatGPT');expect(posts).toBe(0);expect(jobs.list('owner')).toHaveLength(0);
+  await page.getByRole('button',{name:'Подключить ChatGPT',exact:true}).click();await expect(page.locator('#chatgpt-status')).toHaveText('ChatGPT: подключён');expect(posts).toBe(0);
+  await createAndOpen(page,'Создать игру',false);const first=store.getVersion(store.list()[0].versionId);expect(first.provider).toBe('chatgpt');await expect(page.locator('#provenance')).toContainText('ChatGPT');expect(posts).toBe(1);
+  await page.locator('#edit-provider-mode').selectOption('chatgpt');await page.locator('#change').fill('Add enemies and preserve existing controls');await createAndOpen(page,'Создать следующую версию',false);
+  expect(posts).toBe(2);expect(bodies[1].input[1].content).toContain(first.html);expect(store.history(first.gameId)).toHaveLength(2);
+  const latest=store.history(first.gameId).at(-1)!;await expect(page.locator('#versions')).toHaveValue(latest.versionId);await page.reload();await expect(page.locator('#provenance')).toContainText('ChatGPT');await expect(page.locator('#versions')).toHaveValue(latest.versionId);
+  await page.getByRole('button',{name:'Создать',exact:true}).click();await page.getByRole('button',{name:'Отключить ChatGPT',exact:true}).click();await expect(page.locator('#chatgpt-status')).toHaveText('ChatGPT: не подключён');expect(posts).toBe(2);
+  await page.screenshot({path:'.local/chatgpt-'+(await page.viewportSize())?.width+'.png',fullPage:true});
+ }finally{session.disconnect();await jobs.close();store.close();}
 });

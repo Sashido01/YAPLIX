@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './api.ts';
+import {ChatGptSession,ChatGptTransport} from './chatgpt.ts';
 import { configuredGenerator } from './live.ts';
 import { Store } from './store.ts';
 import { networkPolicy } from './access.ts';
@@ -18,7 +19,8 @@ try{await checkPort(policy);}catch(error){console.error(error instanceof Error?e
 if (missingProductionFiles().length) { console.error('RUNTIME_BUILD_REQUIRED: npm run build'); process.exit(1); }
 const store = new Store(process.env.YAPLIX_DB);
 const phone = new PhoneConnection(store);
-const adapter = configuredGenerator();
+const chatgpt=new ChatGptSession(policy);
+const adapter = configuredGenerator(process.env,new ChatGptTransport(chatgpt));
 const telegram = new TelegramSessions();
 const control = new RuntimeControl(policy, runtimeKey(), () => telegram.singleOwner());
 control.onShutdown = () => stop();
@@ -29,7 +31,7 @@ const app = createApp(store, adapter, async () => {
   const missingAssets = missingProductionFiles();
   const live = await liveReadiness(adapter);
   return { demoReady: store.integrity() && missingAssets.length === 0, missingAssets, mode: policy.mode, address: policy.host, port, connectionUrl: policy.mode !== 'local' ? policy.origin + '/' : null, accessRequired: Boolean(policy.key), ...live, lastSavedGeneration: store.lastSavedGeneration(live.provider), nodeVersion: process.version };
-}, policy, telegram, control,jobs,phone);
+}, policy, telegram, control,jobs,phone,chatgpt);
 const server = serve({ fetch: app.fetch, hostname: policy.host, port }, () => {
   try{jobs.start();}catch{console.error('JOB_WORKER_BUSY: эта база уже используется другим backend; он сохранён.');process.exitCode=1;void stop();return;}
   console.log(`YAPLIX ${policy.origin ?? `http://127.0.0.1:${port}`}/ (${policy.mode})`);
@@ -39,7 +41,7 @@ const server = serve({ fetch: app.fetch, hostname: policy.host, port }, () => {
   }
 });
 server.on('error', (error: NodeJS.ErrnoException) => {
-  adapter?.close?.(); void jobs.close().then(()=>store.close());
+  chatgpt.disconnect();adapter?.close?.(); void jobs.close().then(()=>store.close());
   console.error(`${portError(error)}: ${policy.host}:${port}. Проверьте адрес; для занятого порта выберите другой PORT/--port.`);
   process.exitCode = 1;
 });
@@ -50,7 +52,7 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   await phone.shutdown();
-  adapter?.close?.();
+  chatgpt.disconnect();adapter?.close?.();
   await jobs.close();
   await bot?.close();await botStartup;
   const deadline = setTimeout(() => { if ('closeAllConnections' in server) server.closeAllConnections(); }, 5000);

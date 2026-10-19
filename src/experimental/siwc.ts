@@ -59,7 +59,7 @@ export class LocalSiwc {
  #directory:string;#request:typeof fetch;#open:(url:string)=>Promise<void>;#timeout:number;
  #host:string|null=null;#registration:Registration|null=null;#tokens:{access:string;refresh:string;id:string;expiresAt:number}|null=null;
  #active:AbortController|null=null;
- #probeUsed=false;
+ #probeUsed=false;#requests=new Set<AbortController>();
  constructor(options:{directory?:string;request?:typeof fetch;openBrowser:(url:string)=>Promise<void>;timeoutMs?:number}){
   this.#directory=resolve(options.directory??resolve(root,'.local/siwc-feasibility'));
   this.#request=options.request??fetch;this.#open=options.openBrowser;this.#timeout=options.timeoutMs??180000;
@@ -75,7 +75,25 @@ export class LocalSiwc {
   this.#registration=registration;return{hostId:this.#host!,registered:Boolean(registration)};
  }
  status():Status{const connected=Boolean(this.#tokens&&this.#tokens.expiresAt>Date.now());return{connected,planPermissionGranted:connected,registered:Boolean(this.#registration)};}
- dispose(){this.#active?.abort();this.#tokens=null;}
+ dispose(){this.#active?.abort();for(const request of this.#requests)request.abort();this.#tokens=null;}
+ async respond(messages:{role:'system'|'user'|'assistant';content:string}[],signal:AbortSignal,beforePost:()=>void,maxTextBytes:number){
+  if(process.env.NODE_TLS_REJECT_UNAUTHORIZED==='0')fail('SIWC_INSECURE_TLS');
+  if(!this.status().connected)fail('SIWC_PLAN_PERMISSION_REQUIRED');
+  const tokens=this.#tokens!,controller=new AbortController();this.#requests.add(controller);
+  const combined=AbortSignal.any([signal,controller.signal]);
+  try{
+   combined.throwIfAborted();
+   const body=JSON.stringify({model:PROBE_MODEL,input:messages,reasoning:{effort:'medium'},store:false,stream:true});
+   // The worker must durably claim its one POST immediately before this boundary.
+   beforePost();
+   const response=await this.#request('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',signal:combined,headers:{Authorization:'Bearer '+tokens.access,Accept:'text/event-stream','Content-Type':'application/json'},body});
+   if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)this.dispose();fail(response.status===401||response.status===403?'SIWC_AUTH_REQUIRED':response.status===429?'SIWC_RATE_LIMIT':'SIWC_INFERENCE_HTTP');}
+   const report=newStreamReport(),code=await readSiwcStream(response,combined,report,maxTextBytes);
+   if([tokens.access,tokens.refresh,tokens.id].some(secret=>code.includes(secret)))fail('SIWC_OUTPUT_REJECTED');
+   return{code,model:PROBE_MODEL,...(report.usage?.output_tokens===undefined?{}:{outputTokens:report.usage.output_tokens})};
+  }catch(error){if(error instanceof SiwcError)throw error;if(combined.aborted)fail('SIWC_REQUEST_CANCELLED');fail('SIWC_NETWORK');}
+  finally{this.#requests.delete(controller);controller.abort();}
+ }
  async probe(options:{signal?:AbortSignal;timeoutMs?:number}={}):Promise<SiwcProbeReport>{
   if(process.env.NODE_TLS_REJECT_UNAUTHORIZED==='0')fail('SIWC_INSECURE_TLS');
   if(this.#active)fail('SIWC_BUSY');
@@ -89,7 +107,7 @@ export class LocalSiwc {
   const tokens=this.#tokens!;
   // Do not expose provider text or metadata that might echo a credential.
   const safe=(value:string)=>[tokens.access,tokens.refresh,tokens.id].reduce((text,secret)=>text.split(secret).join('[REDACTED]'),value).replace(/[\u0000-\u001f\u007f]/g,'');
-  const report:SiwcProbeReport={requestedModel:PROBE_MODEL,actualModel:null,result:'PARTIAL',authorization:'VERIFIED',planPermissionGranted:true,models:[],selectedModel:null,inference:'NOT_RUN',textReceived:false,exactMatch:false,usage:null,diagnostics:{eventCounts:{},lastEventType:null,responseStatus:null,apiErrorCode:null,incompleteReason:null,textPresent:false,textLength:0,receivedBytes:0},providerCalls:{modelsGet:0,inferencePost:0},tokensPersisted:false,error:null,httpStatus:null,responseMediaType:null,sseObserved:false,requestedReasoningEffort:'medium'};
+  const report=newStreamReport();
   const request=async(url:string,body?:object)=>{
    signal.throwIfAborted();
    if(!this.status().planPermissionGranted)fail('SIWC_PLAN_PERMISSION_REQUIRED');
@@ -129,99 +147,7 @@ export class LocalSiwc {
    if(!selected)fail('SIWC_PROBE_MODEL_UNAVAILABLE');
    report.selectedModel={...selected,slug:safe(selected.slug),display_name:safe(selected.display_name)};
    const response=await request('https://api.openai.com/v1/responses',{model:selected.slug,input:[{role:'user',content:'Ответь точно: YAPLIX READY'}],store:false,stream:true,reasoning:{effort:'medium'}});
-   const mediaType=response.headers.get('content-type')?.split(';',1)[0].trim().toLowerCase();
-   report.responseMediaType=!mediaType?'missing':mediaType==='text/event-stream'?'event-stream':mediaType==='application/json'?'json':'other';
-   // Parse the actual wire frames; a missing/mislabelled media type alone is
-   // neither success nor evidence that the body is not SSE. JSON cannot pass.
-   let pending='',frame='',text='',nonSsePrefix='',completed=false;
-   const parts=new Map<string,{output:number;content:number;delta:string;done?:string;final?:string}>();
-   const part=(output:unknown,content:unknown)=>{
-    const index=(value:unknown)=>{if(value===undefined)return 0;if(!Number.isSafeInteger(value)||Number(value)<0||Number(value)>10000)fail('SIWC_SSE_INVALID');return Number(value);};
-    const o=index(output),c=index(content),key=o+':'+c;
-    if(!parts.has(key)){if(parts.size>=128)fail('SIWC_RESPONSE_TOO_LARGE');parts.set(key,{output:o,content:c,delta:''});}
-    return parts.get(key)!;
-   };
-   const updateText=()=>{
-    text=[...parts.values()].sort((a,b)=>a.output-b.output||a.content-b.content).map(p=>p.final||p.done||p.delta).join('');
-    report.textReceived=text.length>0;report.diagnostics.textPresent=report.textReceived;report.diagnostics.textLength=text.length;
-    report.exactMatch=text==='YAPLIX READY';if(text.length>8192)fail('SIWC_OUTPUT_TOO_LARGE');
-   };
-   const metadata=(value:any)=>{
-    const result=value?.response;
-    if(result&&typeof result==='object'){
-     if(Object.hasOwn(result,'model')&&result.model!==undefined){
-      // Fixed labels only: arbitrary provider metadata may contain identity or credentials.
-      const model=safeCode(result.model,[PROBE_MODEL,'gpt-6-astra'])??'OTHER';
-      report.actualModel=report.actualModel===null||report.actualModel===model?model:'CONFLICT';
-     }
-     report.diagnostics.responseStatus=safeCode(result.status,['completed','failed','incomplete','in_progress','queued','cancelled']);
-     report.diagnostics.incompleteReason=safeCode(result.incomplete_details?.reason,['max_output_tokens','content_filter']);
-    }
-    const code=result?.error?.code??value?.error?.code??(value?.type==='error'?value.code:undefined);
-    if(code!==undefined)report.diagnostics.apiErrorCode=safeCode(code,API_CODES);
-    const usage=result?.usage??value?.usage;
-    if(usage&&typeof usage==='object'){
-     const counts:Record<string,number>={};
-     for(const key of ['input_tokens','output_tokens','total_tokens'])if(Number.isSafeInteger(usage[key])&&usage[key]>=0)counts[key]=usage[key];
-     if(Object.keys(counts).length)report.usage=counts;
-    }
-   };
-   const responseError=(code:unknown)=>fail(code==='subscription_sharing_usage_limit_exceeded'?'SIWC_USAGE_LIMIT':code==='subscription_sharing_usage_unavailable'?'SIWC_USAGE_UNAVAILABLE':'SIWC_INFERENCE_FAILED');
-   const event=(frame:string)=>{
-    const data=frame.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).replace(/^ /,'')).join('\n');
-    if(!data||data==='[DONE]')return false;
-    let value:any;try{value=JSON.parse(data);}catch{fail('SIWC_SSE_INVALID');}
-    if(typeof value?.type!=='string'||(!value.type.startsWith('response.')&&value.type!=='error'))fail('SIWC_SSE_INVALID');
-    const known=STREAM_EVENTS.find(type=>type===value.type)??'unknown';
-    report.diagnostics.eventCounts[known]=(report.diagnostics.eventCounts[known]??0)+1;
-    report.diagnostics.lastEventType=known;metadata(value);
-    report.sseObserved=true;nonSsePrefix='';
-    if(value.type==='response.failed'||value.type==='response.incomplete'||value.type==='error'){
-     const code=value.response?.error?.code??value.error?.code??value.code;
-     report.inference=value.type==='response.failed'?'FAILED':value.type==='response.incomplete'?'INCOMPLETE':'ERROR';
-     if(value.type==='response.incomplete')fail('SIWC_INFERENCE_INCOMPLETE');
-     responseError(code);
-    }
-    if(value.type==='response.output_text.delta'||value.type==='response.output_text.done'){
-     const chunk=value.type==='response.output_text.delta'?value.delta:value.text;if(typeof chunk!=='string')fail('SIWC_SSE_INVALID');
-     const target=part(value.output_index,value.content_index);
-     if(value.type==='response.output_text.done')target.done=chunk;else target.delta+=chunk;
-     updateText();
-    }
-    if(value.type!=='response.completed')return false;
-    const result=value.response;if(result?.status!=='completed'||result.error)fail('SIWC_SSE_INVALID');
-    report.inference='COMPLETED';
-    if(Array.isArray(result.output))for(const [output,item] of result.output.entries()){
-     if(item?.type!=='message'||item.role!=='assistant'||!Array.isArray(item.content))continue;
-     for(const [content,piece] of item.content.entries())if(piece?.type==='output_text'&&typeof piece.text==='string'&&piece.text)part(output,content).final=piece.text;
-    }
-    updateText();
-    if(!text){report.inference='COMPLETED_EMPTY';fail('SIWC_COMPLETED_WITHOUT_TEXT');}
-    completed=true;return true;
-   };
-   await read(response,(text,done)=>{
-    if(!report.sseObserved)nonSsePrefix=(nonSsePrefix+text).slice(0,65536);
-    pending+=text;let newline:RegExpExecArray|null;
-    while((newline=/\r\n|\r|\n/.exec(pending))){
-     // Wait for the LF half of a CRLF split across network chunks.
-     if(newline[0]==='\r'&&newline.index===pending.length-1&&!done)break;
-     const line=pending.slice(0,newline.index);pending=pending.slice(newline.index+newline[0].length);
-     if(line){frame+=line+'\n';if(frame.length>65536)fail('SIWC_RESPONSE_TOO_LARGE');}
-     else{const finished=frame;frame='';if(event(finished))return true;}
-    }
-    if(frame.length+pending.length>65536)fail('SIWC_RESPONSE_TOO_LARGE');return false;
-   },true);
-   if(!report.sseObserved){
-    // Distinguish a structured upstream error from a stream-format failure,
-    // without exposing its message, body or arbitrary provider codes.
-    let json:any;try{json=JSON.parse(nonSsePrefix);}catch{}
-    if(json?.error){metadata(json);report.inference='ERROR';responseError(json.error.code);}
-    fail('SIWC_SSE_REQUIRED');
-   }
-   if(!completed){report.inference='INTERRUPTED';fail('SIWC_STREAM_INTERRUPTED');}
-   report.inference='COMPLETED';
-   if(report.actualModel===null)fail('SIWC_MODEL_ACTUAL_NOT_VERIFIED');
-   if(report.actualModel!==PROBE_MODEL)fail('SIWC_MODEL_ACTUAL_MISMATCH');
+   await readSiwcStream(response,signal,report);
    if(report.exactMatch)report.result='PASS';else report.error='SIWC_OUTPUT_UNEXPECTED';
   }catch(error){
    report.error=signal.aborted?'SIWC_PROBE_CANCELLED':error instanceof SiwcError?error.message:'SIWC_PROBE_INVALID_OR_NETWORK';
@@ -308,3 +234,120 @@ export class LocalSiwc {
   }
  }
 }
+
+async function readSiwcStream(response:Response,signal:AbortSignal,report:SiwcProbeReport,maxTextBytes=8192){
+ const maxFrameBytes=Math.max(65536,maxTextBytes*8),maxWireBytes=Math.max(1000000,maxTextBytes*32);
+  const read=async(response:Response,consume:(text:string,done:boolean)=>boolean,inference=false)=>{
+   const reader=response.body?.getReader();if(!reader)fail('SIWC_RESPONSE_INVALID');
+   const decoder=new TextDecoder('utf-8',{fatal:true});let size=0;
+   const abort=()=>{void reader.cancel().catch(()=>{});};signal.addEventListener('abort',abort,{once:true});
+   try{
+    for(;;){signal.throwIfAborted();const next=await reader.read();signal.throwIfAborted();
+     if(next.done){let tail:string;try{tail=decoder.decode();}catch{fail(inference?'SIWC_SSE_INVALID':'SIWC_MODELS_INVALID');}consume(tail,true);break;}
+     size+=next.value.byteLength;if(inference)report.diagnostics.receivedBytes=size;
+     if(size>maxWireBytes)fail('SIWC_RESPONSE_TOO_LARGE');
+     let decoded:string;try{decoded=decoder.decode(next.value,{stream:true});}catch{fail(inference?'SIWC_SSE_INVALID':'SIWC_MODELS_INVALID');}
+     if(consume(decoded,false))break;
+    }
+   }catch(error){if(inference&&!(error instanceof SiwcError)&&!signal.aborted)fail('SIWC_STREAM_INTERRUPTED');throw error;}
+   finally{signal.removeEventListener('abort',abort);await reader.cancel().catch(()=>{});}
+  };
+   const mediaType=response.headers.get('content-type')?.split(';',1)[0].trim().toLowerCase();
+   report.responseMediaType=!mediaType?'missing':mediaType==='text/event-stream'?'event-stream':mediaType==='application/json'?'json':'other';
+   // Parse the actual wire frames; a missing/mislabelled media type alone is
+   // neither success nor evidence that the body is not SSE. JSON cannot pass.
+   let pending='',frame='',text='',nonSsePrefix='',completed=false;
+   const parts=new Map<string,{output:number;content:number;delta:string;done?:string;final?:string}>();
+   const part=(output:unknown,content:unknown)=>{
+    const index=(value:unknown)=>{if(value===undefined)return 0;if(!Number.isSafeInteger(value)||Number(value)<0||Number(value)>10000)fail('SIWC_SSE_INVALID');return Number(value);};
+    const o=index(output),c=index(content),key=o+':'+c;
+    if(!parts.has(key)){if(parts.size>=128)fail('SIWC_RESPONSE_TOO_LARGE');parts.set(key,{output:o,content:c,delta:''});}
+    return parts.get(key)!;
+   };
+   const updateText=()=>{
+    text=[...parts.values()].sort((a,b)=>a.output-b.output||a.content-b.content).map(p=>p.final||p.done||p.delta).join('');
+    report.textReceived=text.length>0;report.diagnostics.textPresent=report.textReceived;report.diagnostics.textLength=text.length;
+    report.exactMatch=text==='YAPLIX READY';if(Buffer.byteLength(text)>maxTextBytes)fail('SIWC_OUTPUT_TOO_LARGE');
+   };
+   const metadata=(value:any)=>{
+    const result=value?.response;
+    if(result&&typeof result==='object'){
+     if(Object.hasOwn(result,'model')&&result.model!==undefined){
+      // Fixed labels only: arbitrary provider metadata may contain identity or credentials.
+      const model=safeCode(result.model,[PROBE_MODEL,'gpt-6-astra'])??'OTHER';
+      report.actualModel=report.actualModel===null||report.actualModel===model?model:'CONFLICT';
+     }
+     report.diagnostics.responseStatus=safeCode(result.status,['completed','failed','incomplete','in_progress','queued','cancelled']);
+     report.diagnostics.incompleteReason=safeCode(result.incomplete_details?.reason,['max_output_tokens','content_filter']);
+    }
+    const code=result?.error?.code??value?.error?.code??(value?.type==='error'?value.code:undefined);
+    if(code!==undefined)report.diagnostics.apiErrorCode=safeCode(code,API_CODES);
+    const usage=result?.usage??value?.usage;
+    if(usage&&typeof usage==='object'){
+     const counts:Record<string,number>={};
+     for(const key of ['input_tokens','output_tokens','total_tokens'])if(Number.isSafeInteger(usage[key])&&usage[key]>=0)counts[key]=usage[key];
+     if(Object.keys(counts).length)report.usage=counts;
+    }
+   };
+   const responseError=(code:unknown)=>fail(code==='subscription_sharing_usage_limit_exceeded'?'SIWC_USAGE_LIMIT':code==='subscription_sharing_usage_unavailable'?'SIWC_USAGE_UNAVAILABLE':'SIWC_INFERENCE_FAILED');
+   const event=(frame:string)=>{
+    const data=frame.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).replace(/^ /,'')).join('\n');
+    if(!data||data==='[DONE]')return false;
+    let value:any;try{value=JSON.parse(data);}catch{fail('SIWC_SSE_INVALID');}
+    if(typeof value?.type!=='string'||(!value.type.startsWith('response.')&&value.type!=='error'))fail('SIWC_SSE_INVALID');
+    const known=STREAM_EVENTS.find(type=>type===value.type)??'unknown';
+    report.diagnostics.eventCounts[known]=(report.diagnostics.eventCounts[known]??0)+1;
+    report.diagnostics.lastEventType=known;metadata(value);
+    report.sseObserved=true;nonSsePrefix='';
+    if(value.type==='response.refusal.delta'||value.type==='response.refusal.done')fail('SIWC_REFUSAL');
+    if(value.type==='response.failed'||value.type==='response.incomplete'||value.type==='error'){
+     const code=value.response?.error?.code??value.error?.code??value.code;
+     report.inference=value.type==='response.failed'?'FAILED':value.type==='response.incomplete'?'INCOMPLETE':'ERROR';
+     if(value.type==='response.incomplete')fail('SIWC_INFERENCE_INCOMPLETE');
+     responseError(code);
+    }
+    if(value.type==='response.output_text.delta'||value.type==='response.output_text.done'){
+     const chunk=value.type==='response.output_text.delta'?value.delta:value.text;if(typeof chunk!=='string')fail('SIWC_SSE_INVALID');
+     const target=part(value.output_index,value.content_index);
+     if(value.type==='response.output_text.done')target.done=chunk;else target.delta+=chunk;
+     updateText();
+    }
+    if(value.type!=='response.completed')return false;
+    const result=value.response;if(result?.status!=='completed'||result.error)fail('SIWC_SSE_INVALID');
+    report.inference='COMPLETED';
+    if(Array.isArray(result.output))for(const [output,item] of result.output.entries()){
+     if(item?.type!=='message'||item.role!=='assistant'||!Array.isArray(item.content))continue;
+     for(const piece of item.content)if(piece?.type==='refusal')fail('SIWC_REFUSAL');
+     for(const [content,piece] of item.content.entries())if(piece?.type==='output_text'&&typeof piece.text==='string'&&piece.text)part(output,content).final=piece.text;
+    }
+    updateText();
+    if(!text){report.inference='COMPLETED_EMPTY';fail('SIWC_COMPLETED_WITHOUT_TEXT');}
+    completed=true;return true;
+   };
+   await read(response,(text,done)=>{
+    if(!report.sseObserved)nonSsePrefix=(nonSsePrefix+text).slice(0,65536);
+    pending+=text;let newline:RegExpExecArray|null;
+    while((newline=/\r\n|\r|\n/.exec(pending))){
+     // Wait for the LF half of a CRLF split across network chunks.
+     if(newline[0]==='\r'&&newline.index===pending.length-1&&!done)break;
+     const line=pending.slice(0,newline.index);pending=pending.slice(newline.index+newline[0].length);
+     if(line){frame+=line+'\n';if(frame.length>maxFrameBytes)fail('SIWC_RESPONSE_TOO_LARGE');}
+     else{const finished=frame;frame='';if(event(finished))return true;}
+    }
+    if(frame.length+pending.length>maxFrameBytes)fail('SIWC_RESPONSE_TOO_LARGE');return false;
+   },true);
+   if(!report.sseObserved){
+    // Distinguish a structured upstream error from a stream-format failure,
+    // without exposing its message, body or arbitrary provider codes.
+    let json:any;try{json=JSON.parse(nonSsePrefix);}catch{}
+    if(json?.error){metadata(json);report.inference='ERROR';responseError(json.error.code);}
+    fail('SIWC_SSE_REQUIRED');
+   }
+   if(!completed){report.inference='INTERRUPTED';fail('SIWC_STREAM_INTERRUPTED');}
+   report.inference='COMPLETED';
+   if(report.actualModel===null)fail('SIWC_MODEL_ACTUAL_NOT_VERIFIED');
+   if(report.actualModel!==PROBE_MODEL)fail('SIWC_MODEL_ACTUAL_MISMATCH');
+ return text;
+}
+
+const newStreamReport=():SiwcProbeReport=>({requestedModel:PROBE_MODEL,actualModel:null,result:'PARTIAL',authorization:'VERIFIED',planPermissionGranted:true,models:[],selectedModel:null,inference:'NOT_RUN',textReceived:false,exactMatch:false,usage:null,diagnostics:{eventCounts:{},lastEventType:null,responseStatus:null,apiErrorCode:null,incompleteReason:null,textPresent:false,textLength:0,receivedBytes:0},providerCalls:{modelsGet:0,inferencePost:0},tokensPersisted:false,error:null,httpStatus:null,responseMediaType:null,sseObserved:false,requestedReasoningEffort:'medium'});
