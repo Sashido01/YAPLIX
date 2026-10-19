@@ -171,3 +171,33 @@ initData или необработанные журналы. [Запуск и о
 - Критерий MICRO-030, sandbox/CSP и таймауты сохранены. Авторские минимальные
   регрессии проверяют overlay с разными подписями и безопасную компоновку отдельно
   от полностью обрезанных controls. Эти проверки не доказывают gameplay/win/loss.
+
+## MICRO-036.4: post-merge ESM и controlled worker
+
+- На `05b7a59` целевой runtime Chromium desktop прошёл 4/4; controlled worker
+  на Chromium 320 / WebKit 390 упал 2/2. На `7d945502` запросы
+  `/runtime/runtime.js`, `/runtime/contracts.js`, `/runtime/browser-profiles.js`
+  вернули соответственно 200, 200, 404. Новый import в contracts остановил
+  выполнение ESM до присваивания `window.testSession`. Исправление: добавить
+  только `browser-profiles` в существующий точный allowlist `build/src`.
+  Неизвестные модули, исходники и encoded traversal по-прежнему возвращают 404.
+- В первоначальных trace controlled worker POST `/api/jobs` получил 503
+  `LLM_NOT_CONFIGURED`; GET списка вернул 200 и `{"jobs":[]}`, UI показал
+  «Заданий пока нет». `GenerationJobs.create` проверяет routes до INSERT,
+  поэтому задание не создавалось. Причина: synthetic provider в fixture
+  несовместим с явным UI mode `ollama-cloud`. Fixture теперь использует имя
+  `ollama.com` с прежним локальным mock complete, без внешнего запроса.
+  Assertions проверяют POST 202, наличие задания в manager/API, UI и завершение.
+  Изменение MICRO-023 в PR #46 касается другой fixture и не вызвало этот отказ.
+- Regression API обходит реальный ESM graph от runtime через contracts до
+  browser-profiles; браузерная проверка загружает `/host`, получает game_ready,
+  создаёт сессию и подтверждает game_started через analytics. RED воспроизведён
+  до исправления. Таймауты, retries, sandbox/CSP и production provider rules
+  не изменены. Все проверки synthetic/offline, реальные OAuth/inference POST: 0.
+
+### Обязательный локальный gate
+
+Изменения `contracts.ts`, browser runtime, ESM-зависимостей или allowlist
+статических модулей требуют полного `npm run check` **до merge**.
+GitHub Actions в текущем приватном репозитории недоступны в период MICRO-019,
+поэтому этот локальный gate обязателен; его результат не является hosted CI PASS.
