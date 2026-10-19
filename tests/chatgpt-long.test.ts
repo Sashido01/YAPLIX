@@ -26,50 +26,51 @@ function route(provider='chatgpt',delay=20*minute):CodeTransport{return{
  })
 };}
 
-test('A1.5 ChatGPT waits beyond 60 seconds and leaves browser validation time after minute 44',async t=>{
+test('A1.7 ChatGPT waits beyond 60 seconds and leaves browser validation time after minute 29',async t=>{
  t.mock.timers.enable({apis:['setTimeout']});
  let checking=false,finished=false;
- const engine=new GenerationEngine([route('chatgpt',44*minute)],{check:async()=>{checking=true;await new Promise(r=>setTimeout(r,5*minute));return evidence();}});
+ const engine=new GenerationEngine([route('chatgpt',29*minute)],{check:async()=>{checking=true;await new Promise(r=>setTimeout(r,5*minute));return evidence();}});
  const ctx=context();const work=engine.generate(spec,undefined,'llm_code',undefined,ctx.value).then(value=>{finished=true;return value;});
  // Attach rejection immediately so RED does not generate an unhandled rejection.
  const result=work.then(value=>({value}),error=>({error}));
  t.mock.timers.tick(61_000);await setImmediate();assert.equal(finished,false);
- t.mock.timers.tick(44*minute-61_000);await setImmediate();assert.equal(checking,true);
+ t.mock.timers.tick(29*minute-61_000);await setImmediate();assert.equal(checking,true);
  t.mock.timers.tick(5*minute);await setImmediate();
  const outcome=await result;assert.ok('value' in outcome,JSON.stringify(outcome));assert.equal(ctx.calls,1);
  // No stale inference/engine timer may abort a later successful result.
  t.mock.timers.tick(60*minute);assert.equal(finished,true);
 });
 
-test('A1.5 inference deadline aborts at 45 minutes with one dispatch',async t=>{
- t.mock.timers.enable({apis:['setTimeout']});const ctx=context();
- const engine=new GenerationEngine([route('chatgpt',46*minute)],{check:evidence});
+for(const [mode,provider] of [['ollama-cloud','ollama.com'],['openrouter','openrouter'],['chatgpt','chatgpt']] as const)
+test('A1.7 inference deadline aborts at 30 minutes with one dispatch: '+mode,async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const ctx=context(mode);
+ const engine=new GenerationEngine([route(provider,31*minute)],{check:evidence});
  let ended=false;const result=engine.generate(spec,undefined,'llm_code',undefined,ctx.value).catch(error=>{ended=true;return error;});
- t.mock.timers.tick(45*minute-1);await setImmediate();assert.equal(ended,false);
- t.mock.timers.tick(1);const error=await result;assert.equal(error.code,'LLM_TIMEOUT');assert.equal(ctx.calls,1);
+ t.mock.timers.tick(30*minute-1);await setImmediate();assert.equal(ended,false);
+ t.mock.timers.tick(1);await setImmediate();assert.equal(ended,true);const error=await result;assert.equal(error.code,'LLM_TIMEOUT');assert.equal(ctx.calls,1);
 });
 
-for(const [mode,provider,durable] of [['ollama-cloud','ollama.com',true],['openrouter','openrouter',true],['chatgpt','chatgpt',false]] as const)
-test('A1.5 ordinary inference limit remains 60 seconds: '+mode+' durable='+durable,async t=>{
+for(const [mode,provider,durable] of [['ollama-cloud','ollama.com',true],['openrouter','openrouter',true],['chatgpt','chatgpt',true]] as const)
+test('A1.7 all providers wait 29 minutes: '+mode+' durable='+durable,async t=>{
  t.mock.timers.enable({apis:['setTimeout']});const ctx=context(mode,durable);
- const engine=new GenerationEngine([route(provider,61_000)],{check:evidence,repairs:0});
+ const engine=new GenerationEngine([route(provider,29*minute)],{check:evidence,repairs:0});
  const result=engine.generate(spec,undefined,'llm_code',undefined,ctx.value).catch(error=>error);
- t.mock.timers.tick(60_000);assert.equal((await result).code,'LLM_TIMEOUT');assert.equal(ctx.calls,1);
+ t.mock.timers.tick(29*minute);assert.equal((await result).provider,provider);assert.equal(ctx.calls,1);
 });
 
-test('A1.5 durable deadline is 60 minutes only for explicit live ChatGPT',async()=>{
+test('A1.7 durable deadline is 35 minutes for every live provider',async()=>{
  const store=new Store(':memory:'),jobs=new GenerationJobs(store,new GenerationEngine([route(),route('ollama.com'),route('openrouter')],{check:evidence}));
  try{
   for(const mode of ['chatgpt','ollama-cloud','openrouter'] as const){
    const before=Date.now(),job=jobs.create('owner','deadline-'+mode,{spec,mode:'live',providerMode:mode,telegramConsent:false});
-   const expected=mode==='chatgpt'?60*minute:5*minute;
+   const expected=35*minute;
    assert.ok(job.deadlineAt!>=before+expected&&job.deadlineAt!<=Date.now()+expected);
    jobs.cancel('owner',job.jobId);
   }
  }finally{await jobs.close();store.close();}
 });
 
-for(const phase of ['headers','silent SSE'] as const)test('A1.5 signed synthetic transport supports long '+phase+' and releases dispatcher',async t=>{
+for(const phase of ['headers','silent SSE'] as const)test('A1.7 signed synthetic transport supports long '+phase+' and releases dispatcher',async t=>{
  let posts=0,cancelled=0;let dispatcher:Agent|ProxyAgent|undefined;
  const {session}=offlineChatGpt(async(_url,init)=>{
   posts++;dispatcher=(init as RequestInit&{dispatcher:Agent}).dispatcher;
@@ -90,14 +91,14 @@ for(const phase of ['headers','silent SSE'] as const)test('A1.5 signed synthetic
  }finally{session.disconnect();}
 });
 
-for(const reason of ['deadline','manual cancel'] as const)test('A1.5 stalled SSE stops on '+reason+'; spent job cannot resend after restart',async t=>{
+for(const reason of ['deadline','manual cancel'] as const)test('A1.7 stalled SSE stops on '+reason+'; spent job cannot resend after restart',async t=>{
  let posts=0,cancelled=0;let dispatcher:Agent|undefined;
  const {session}=offlineChatGpt(async(_url,init)=>{posts++;dispatcher=(init as RequestInit&{dispatcher:Agent}).dispatcher;return new Response(new ReadableStream({cancel(){cancelled++;}}));});
  await connected(session);t.mock.timers.enable({apis:['setTimeout']});
  const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:evidence});let jobs=new GenerationJobs(store,engine);
  try{
   const created=jobs.create('owner','stall-'+reason.replace(' ','-'),{spec,mode:'live',providerMode:'chatgpt',telegramConsent:false});await setImmediate();assert.equal(posts,1);
-  if(reason==='deadline')t.mock.timers.tick(45*minute);else jobs.cancel('owner',created.jobId);
+  if(reason==='deadline')t.mock.timers.tick(30*minute);else jobs.cancel('owner',created.jobId);
   await setImmediate();const done=jobs.get('owner',created.jobId);
   assert.equal(done.stage,reason==='deadline'?'needs_attention':'cancelled');assert.equal(done.attempts,1);
   if(reason==='deadline')assert.equal(done.errorCode,'LLM_TIMEOUT');
@@ -107,31 +108,31 @@ for(const reason of ['deadline','manual cancel'] as const)test('A1.5 stalled SSE
  }finally{session.disconnect();await jobs.close();store.close();}
 });
 
-test('A1.5 total engine deadline is finite at 60 minutes including validation',async t=>{
+test('A1.7 total engine deadline is finite at 35 minutes including validation',async t=>{
  t.mock.timers.enable({apis:['setTimeout']});let validationSignal:AbortSignal|undefined;
- const engine=new GenerationEngine([route('chatgpt',44*minute)],{check:async(_html,signal)=>{
+ const engine=new GenerationEngine([route('chatgpt',29*minute)],{check:async(_html,signal)=>{
   validationSignal=signal;await new Promise<void>((_yes,no)=>signal!.addEventListener('abort',()=>no(Error('cancelled')),{once:true}));return evidence();
  }});
  const result=engine.generate(spec,undefined,'llm_code',undefined,context().value).catch(error=>error);
- t.mock.timers.tick(44*minute);await setImmediate();assert.equal(validationSignal?.aborted,false);
- t.mock.timers.tick(16*minute);assert.equal((await result).code,'LLM_TIMEOUT');assert.equal(validationSignal?.aborted,true);
+ t.mock.timers.tick(29*minute);await setImmediate();assert.equal(validationSignal?.aborted,false);
+ t.mock.timers.tick(6*minute);assert.equal((await result).code,'LLM_TIMEOUT');assert.equal(validationSignal?.aborted,true);
 });
 
-test('A1.5 HTTP header/body budgets are finite and connection budget stays short',()=>{
- assert.equal(CHATGPT_HTTP_OPTIONS.headersTimeout,45*minute);assert.equal(CHATGPT_HTTP_OPTIONS.bodyTimeout,45*minute);assert.equal(CHATGPT_HTTP_OPTIONS.connect.timeout,10_000);
+test('A1.7 HTTP header/body budgets are finite and connection budget stays short',()=>{
+ assert.equal(CHATGPT_HTTP_OPTIONS.headersTimeout,30*minute);assert.equal(CHATGPT_HTTP_OPTIONS.bodyTimeout,30*minute);assert.equal(CHATGPT_HTTP_OPTIONS.connect.timeout,10_000);
 });
 
-test('A1.5 HTTP own absolute deadline bounds a silent response independently of engine',async t=>{
+test('A1.7 HTTP own absolute deadline bounds a silent response independently of engine',async t=>{
  t.mock.timers.enable({apis:['setTimeout']});let cancelled=0;let signal:AbortSignal|undefined;
  const work=chatGptRequest(async(_url,init)=>{signal=init?.signal??undefined;return new Response(new ReadableStream({cancel(){cancelled++;}}));},'https://api.openai.com/v1/responses',{},async(response,combined)=>{
   const reader=response.body!.getReader();const abort=()=>void reader.cancel();combined.addEventListener('abort',abort,{once:true});
   try{await reader.read();combined.throwIfAborted();}finally{combined.removeEventListener('abort',abort);}
  }).catch(error=>error);
- await setImmediate();t.mock.timers.tick(45*minute-1);assert.equal(signal?.aborted,false);
+ await setImmediate();t.mock.timers.tick(30*minute-1);assert.equal(signal?.aborted,false);
  t.mock.timers.tick(1);assert.equal((await work).name,'AbortError');assert.equal(cancelled,1);
 });
 
-test('A1.5 durable wall-clock deadline cancels at 60 minutes and survives restart',async t=>{
+test('A1.7 durable wall-clock deadline cancels at 35 minutes and survives restart',async t=>{
  t.mock.timers.enable({apis:['setTimeout','setInterval','Date'],now:Date.now()});
  const store=new Store(':memory:');let calls=0,aborted=false;
  const generator={generate:async(_spec:unknown,_previous:unknown,_method:unknown,signal?:AbortSignal,ctx?:GenerationContext)=>{
@@ -142,7 +143,7 @@ test('A1.5 durable wall-clock deadline cancels at 60 minutes and survives restar
  let jobs=new GenerationJobs(store,generator);
  try{
   const created=jobs.create('owner','wall-clock-deadline',{spec,mode:'live',providerMode:'chatgpt',telegramConsent:false});await setImmediate();
-  for(let i=0;i<119;i++){t.mock.timers.tick(30_000);await setImmediate();}
+  for(let i=0;i<69;i++){t.mock.timers.tick(30_000);await setImmediate();}
   assert.equal(aborted,false);assert.equal(jobs.get('owner',created.jobId).stage,'generating');
   t.mock.timers.tick(30_000);await setImmediate();
   const done=jobs.get('owner',created.jobId);assert.equal(aborted,true);assert.equal(done.errorCode,'JOB_DURATION_LIMIT');assert.equal(done.attempts,1);

@@ -139,3 +139,23 @@ test('ChatGPT A1.2 Continue follows server eligibility and revalidates offline w
   expect(posts).toBe(2);expect(jobs.get('owner',full.jobId).attempts).toBe(1);expect(jobs.get('owner',partial.jobId).stage).toBe('needs_attention');
  }finally{session.disconnect();await jobs.close();store.close();}
 });
+
+
+test('A1.7 provider statuses, shared budgets and selection survive create/edit/reload without external requests',async({page,context,baseURL})=>{
+ const store=new Store(':memory:');const engine=new GenerationEngine([{route:'primary',provider:'openrouter',model:'openrouter/free',readiness:async()=>'ready',complete:async()=>({code:html,model:'synthetic-free'})}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html'})});
+ const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
+ await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+ try{
+  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');await page.getByRole('button',{name:'Создать',exact:true}).click();
+  await expect(page.locator('#provider-mode option[value="ollama-cloud"]')).toHaveText('Ollama Cloud · Не настроен');
+  await expect(page.locator('#provider-mode option[value="openrouter"]')).toContainText('Требуется проверка подключения');
+  await expect(page.locator('#mode-help')).toContainText('Лимит ответа: 30 мин; всё задание, включая очередь и сохранение: 35 мин');
+  await page.locator('#provider-mode').selectOption('openrouter');await createAndOpen(page,'Создать игру',false);
+  await expect(page.locator('#edit-provider-mode')).toHaveValue('openrouter');
+  await page.locator('#change').fill('Keep the controls and add stars');await createAndOpen(page,'Создать следующую версию',false);
+  await page.reload();await expect(page.locator('body')).toHaveAttribute('data-ready','true');await expect(page.locator('#provider-mode')).toHaveValue('openrouter');await expect(page.locator('#edit-provider-mode')).toHaveValue('openrouter');
+  expect(store.list()).toHaveLength(1);expect(store.history(store.list()[0].gameId)).toHaveLength(2);
+  // Selection is stored separately from memory-only personal authorization.
+  await page.getByRole('button',{name:'Создать',exact:true}).click();await page.locator('#provider-mode').selectOption('chatgpt');await page.reload();await expect(page.locator('body')).toHaveAttribute('data-ready','true');await expect(page.locator('#provider-mode')).toHaveValue('chatgpt');
+ }finally{await jobs.close();store.close();}
+});

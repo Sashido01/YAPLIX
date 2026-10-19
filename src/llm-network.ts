@@ -1,6 +1,7 @@
 import { Agent, ProxyAgent } from 'undici';
 import type { Dispatcher } from 'undici';
 import { Fault } from './contracts.ts';
+import {generationTimeouts} from './generation-timeouts.ts';
 
 export type NetworkRoute = 'direct' | 'http-proxy' | 'https-proxy';
 export type NetworkDiagnostic = {
@@ -75,12 +76,15 @@ export async function networkRequest<T>(url: URL, init: RequestInit, provider: s
   const began = performance.now();
   const diagnostic: NetworkDiagnostic = { provider, route: 'configuration', stage: 'configuration', durationMs: 0, category: 'ok' };
   let dispatcher: Dispatcher | undefined;
+  const responseMs=generationTimeouts(env).responseMs;
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(new DOMException('Response deadline','TimeoutError')),responseMs);
+  init={...init,signal:AbortSignal.any([controller.signal,...(init.signal?[init.signal]:[])])};
   try {
     if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0' || env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new Fault('INSECURE_TLS_CONFIGURATION', 503);
     const selected = networkRoute(url, env); diagnostic.route = selected.route;
     const timeout = Number(env.LLM_CONNECT_TIMEOUT_MS ?? 10000);
     if (!Number.isSafeInteger(timeout) || timeout < 100 || timeout > 30000) throw new Fault('LLM_NETWORK_CONFIGURATION');
-    const options = { connections: 1, pipelining: 1, connect: { timeout }, headersTimeout: 0, bodyTimeout: 0 };
+    const options = { connections: 1, pipelining: 1, connect: { timeout }, headersTimeout: responseMs, bodyTimeout: responseMs };
     if (selected.proxy) {
       const proxy = new URL(selected.proxy);
       const token = proxy.username || proxy.password ? 'Basic ' + Buffer.from(decodeURIComponent(proxy.username) + ':' + decodeURIComponent(proxy.password)).toString('base64') : undefined;
@@ -104,6 +108,7 @@ export async function networkRequest<T>(url: URL, init: RequestInit, provider: s
     if (code === 'LLM_PROXY_AUTH') diagnostic.httpStatus = 407;
     throw new NetworkFailure(code, { ...diagnostic });
   } finally {
+    clearTimeout(timer);controller.abort();
     diagnostic.durationMs = Math.round(performance.now() - began);
     await dispatcher?.destroy().catch(() => {});
   }

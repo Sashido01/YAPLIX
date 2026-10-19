@@ -6,7 +6,7 @@ import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { generationMessages, validateDocument } from './generation.ts';
 import type { PromptStyle } from './generation.ts';
 import { prepareDocument } from './validation.ts';
-import {longChatGpt,CHATGPT_REQUEST_TIMEOUT_MS,CHATGPT_JOB_TIMEOUT_MS} from './chatgpt-timeouts.ts';
+import {generationTimeouts,LIVE_RESPONSE_TIMEOUT_MS,LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
 
 export class GenerationFailure extends Fault {
   readonly attempts: GenerationAttempt[];
@@ -20,12 +20,12 @@ export class GenerationEngine implements Generator {
   private defaultMode:ProviderMode;
   private allowLlmRepair:boolean;
   constructor(routes: CodeTransport[],options:{timeoutMs?:number;requestTimeoutMs?:number;repairs?:number;allowLlmRepair?:boolean;check?:typeof browserCheck;promptStyle?:PromptStyle;defaultMode?:ProviderMode}={}){
-    this.defaultMode=options.defaultMode??'auto';this.routes=routes;this.timeout=options.timeoutMs??180000;this.repairs=options.repairs??1;this.check=options.check??browserCheck;
-    if(!routes.length||routes.length>3||!Number.isSafeInteger(this.timeout)||this.timeout<1000||this.timeout>300000||!Number.isSafeInteger(this.repairs)||this.repairs<0||this.repairs>2)throw new Fault('INVALID_LLM_CONFIGURATION');
-    this.requestTimeout=options.requestTimeoutMs??Math.min(this.timeout,60000);
+    this.defaultMode=options.defaultMode??'auto';this.routes=routes;this.timeout=options.timeoutMs??LIVE_JOB_TIMEOUT_MS;this.repairs=options.repairs??1;this.check=options.check??browserCheck;
+    if(!routes.length||routes.length>3||!Number.isSafeInteger(this.timeout)||this.timeout<1000||this.timeout>LIVE_JOB_TIMEOUT_MS||!Number.isSafeInteger(this.repairs)||this.repairs<0||this.repairs>2)throw new Fault('INVALID_LLM_CONFIGURATION');
+    this.requestTimeout=options.requestTimeoutMs??Math.min(this.timeout,LIVE_RESPONSE_TIMEOUT_MS);
     this.allowLlmRepair=options.allowLlmRepair??!routes.some(r=>r instanceof CloudTransport);
     this.promptStyle=options.promptStyle??'direct';if(!['spec','direct','intent'].includes(this.promptStyle))throw new Fault('INVALID_LLM_CONFIGURATION');
-    if(!Number.isSafeInteger(this.requestTimeout)||this.requestTimeout<1000||this.requestTimeout>this.timeout)throw new Fault('INVALID_LLM_CONFIGURATION');
+    if(!Number.isSafeInteger(this.requestTimeout)||this.requestTimeout<1000||this.requestTimeout>this.timeout||this.requestTimeout>LIVE_RESPONSE_TIMEOUT_MS)throw new Fault('INVALID_LLM_CONFIGURATION');
   }
   routesFor(mode:ProviderMode=this.defaultMode){
     if(!['auto','ollama-cloud','openrouter','chatgpt'].includes(mode))throw new Fault('INVALID_PROVIDER_MODE');
@@ -33,9 +33,10 @@ export class GenerationEngine implements Generator {
     const routes=this.routes.filter(r=>r.provider===(mode==='chatgpt'?'chatgpt':mode==='openrouter'?'openrouter':'ollama.com')||!['ollama.com','openrouter','chatgpt'].includes(r.provider)&&mode==='auto');
     if(!routes.length)throw new Fault('LLM_NOT_CONFIGURED',503);return routes;
   }
+  get timeouts(){return{responseMs:this.requestTimeout,jobMs:this.timeout};}
   close(){this.active?.abort();}
   async readiness(){
-    let routes:CodeTransport[];try{routes=this.routesFor();}catch{return{liveConfigured:true,liveReady:false,llmState:'not_configured',provider:null,model:null,browserReady:checkerReady(),fallbackConfigured:false};}
+    let routes:CodeTransport[];try{routes=this.routesFor();}catch{return{liveConfigured:false,liveReady:false,llmState:'not_configured',provider:null,model:null,browserReady:checkerReady(),fallbackConfigured:false};}
     const diagnostic=routes[0] instanceof CloudTransport?await routes[0].diagnose(AbortSignal.timeout(3000)):undefined;
     const state=diagnostic?.state??await routes[0].readiness(AbortSignal.timeout(3000));return{readinessSource:diagnostic?'models-api-get':'adapter-readiness',readinessCheckedAt:new Date().toISOString(),...(diagnostic?{network:diagnostic.network,inferenceVerified:false}:{}),liveConfigured:true,liveReady:state==='ready'&&checkerReady(),llmState:state==='ready'&&!checkerReady()?'browser_missing':state,provider:routes[0].provider,model:routes[0].model,browserReady:checkerReady(),fallbackConfigured:routes.length>1};
   }
@@ -45,7 +46,7 @@ export class GenerationEngine implements Generator {
     if(this.check===browserCheck&&!checkerReady())throw new Fault('BROWSER_INSTALL_REQUIRED',503);
     if(this.active)throw new Fault('LLM_BUSY',409);
     const routes=this.routesFor(context?.providerMode);
-    const controller=new AbortController();this.active=controller;const timer=setTimeout(()=>controller.abort(),longChatGpt(context)?CHATGPT_JOB_TIMEOUT_MS:this.timeout),cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();
+    const controller=new AbortController();this.active=controller;const timer=setTimeout(()=>controller.abort(),this.timeout),cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();
     const attempts:GenerationAttempt[]=[];const started=performance.now();
     try{
       const priorRepairUsed=context?.repairUsed??false;
@@ -114,7 +115,7 @@ export class GenerationEngine implements Generator {
         for(let repair=0;repair<=Math.min(1,this.repairs);repair++){
           if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure(attempts.at(-1)?.errorCode??'JOB_ATTEMPT_LIMIT',attempts,409);
           const begin=performance.now();let actual:string|null=null,code='',requestMs=0,validationMs=0;let tokens:TokenUsage={};
-          const requestController=new AbortController(),requestTimer=setTimeout(()=>requestController.abort(),longChatGpt(context)?CHATGPT_REQUEST_TIMEOUT_MS:this.requestTimeout);
+          const requestController=new AbortController(),requestTimer=setTimeout(()=>requestController.abort(),this.requestTimeout);
           const requestSignal=AbortSignal.any([controller.signal,requestController.signal]);
           try{
             context?.stage(repair||repairUsed?'repairing':'generating');if(!route.observesDispatch)context?.dispatch(route);
@@ -166,12 +167,13 @@ export function configuredGenerator(env:NodeJS.ProcessEnv=process.env,chatgpt?:C
   // Old model/fallback values cannot dispatch arbitrary routes. Keys stay local;
   // the only production models and endpoints are fixed by MICRO-019.
   const selected=selection==='cloud'?'openrouter':selection==='ollama'?'auto':selection;
-  if(!['auto','ollama-cloud','openrouter'].includes(selected))throw new Fault('INVALID_LIVE_PROVIDER');
+  if(!['auto','ollama-cloud','openrouter','chatgpt'].includes(selected))throw new Fault('INVALID_LIVE_PROVIDER');
   if(env.CLOUD_BASE_URL&&env.CLOUD_BASE_URL!=='https://openrouter.ai/api/v1')throw new Fault('FREE_MODEL_REQUIRED');
   const routes:CodeTransport[]=[];
-  if(env.OLLAMA_CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://ollama.com/v1',key:env.OLLAMA_CLOUD_API_KEY,model:'gemma4:31b',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
-  if(env.CLOUD_API_KEY)routes.push(new CloudTransport({networkEnv:()=>env,base:'https://openrouter.ai/api/v1',key:env.CLOUD_API_KEY,model:'openrouter/free',route:routes.length?'secondary':'primary',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
+  if(env.OLLAMA_CLOUD_API_KEY?.trim())routes.push(new CloudTransport({networkEnv:()=>env,base:'https://ollama.com/v1',key:env.OLLAMA_CLOUD_API_KEY,model:'gemma4:31b',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
+  if(env.CLOUD_API_KEY?.trim())routes.push(new CloudTransport({networkEnv:()=>env,base:'https://openrouter.ai/api/v1',key:env.CLOUD_API_KEY,model:'openrouter/free',route:routes.length?'secondary':'primary',maxTokens:Number(env.LLM_MAX_TOKENS??12000),temperature:env.LLM_TEMPERATURE?Number(env.LLM_TEMPERATURE):undefined,tokenField:(env.LLM_TOKEN_FIELD??'max_tokens') as 'max_tokens'|'max_completion_tokens'}));
   if(chatgpt)routes.push(chatgpt);
   if(!routes.length)return;
-  return new GenerationEngine(routes,{allowLlmRepair:env.LLM_AUTO_REPAIR==='1',defaultMode:selected as ProviderMode,timeoutMs:Number(env.LLM_TIMEOUT_MS??180000),requestTimeoutMs:Number(env.LLM_REQUEST_TIMEOUT_MS??Math.min(Number(env.LLM_TIMEOUT_MS??180000),60000)),repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'direct') as PromptStyle});
+  const budgets=generationTimeouts(env);
+  return new GenerationEngine(routes,{allowLlmRepair:env.LLM_AUTO_REPAIR==='1',defaultMode:selected as ProviderMode,timeoutMs:budgets.jobMs,requestTimeoutMs:budgets.responseMs,repairs:Number(env.LLM_REPAIRS??1),promptStyle:(env.LLM_PROMPT_STYLE??'direct') as PromptStyle});
 }

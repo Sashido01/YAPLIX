@@ -1,4 +1,3 @@
-import {longChatGpt} from './chatgpt-timeouts.ts';
 import {spawn} from 'node:child_process';
 import {LocalSiwc,SiwcError} from './experimental/siwc.ts';
 import {Fault,MAX_HTML_BYTES} from './contracts.ts';
@@ -48,7 +47,7 @@ export class ChatGptTransport implements CodeTransport {
  async complete(messages:Message[],signal:AbortSignal,context?:GenerationContext){
   // Legacy synchronous endpoints cannot spend a personal-account budget.
   if(!context?.durableJob)throw new Fault('CHATGPT_JOB_REQUIRED',409);
-  try{return await this.#session.respond(messages,signal,()=>context.dispatch(this),longChatGpt(context));}
+  try{return await this.#session.respond(messages,signal,()=>context.dispatch(this),true);}
   catch(error){throw error instanceof Fault?error:new ProviderFailure(error instanceof SiwcError?error.message:'SIWC_NETWORK');}
  }
 }

@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
 import { boundedText, requiredMethod, providerMode } from './transport.ts';
 import type { Generator } from './transport.ts';
-import { GenerationFailure } from './live.ts';
+import { GenerationFailure,GenerationEngine } from './live.ts';
+import {generationTimeouts} from './generation-timeouts.ts';
 import { demoArtifact } from './demo.ts';
 import type { Store } from './store.ts';
 import { AccessSessions } from './access.ts';
@@ -102,6 +103,10 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return artifact;
   }
   app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 2 }));
+  app.get('/api/providers', c => c.json({timeouts:adapter instanceof GenerationEngine?adapter.timeouts:generationTimeouts(),providers:(['ollama-cloud','openrouter','chatgpt'] as const).map(mode=>{
+    let configured=false;try{configured=adapter instanceof GenerationEngine&&Boolean(adapter.routesFor(mode).length);}catch{/* Missing route is configuration, not a network failure. */}
+    return{mode,configured,state:configured?'needs_verification':'not_configured'};
+  })}));
   app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 2, ...(await diagnostics() as object) }));
   const chatgptOwner=(c:{req:{url:string;header(name:string):string|undefined}},sensitive=true)=>{
     const url=new URL(c.req.url);

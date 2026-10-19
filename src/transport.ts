@@ -36,6 +36,7 @@ export interface GenerationContext {
 }
 
 export interface Generator {
+  readonly timeouts?:{responseMs:number;jobMs:number};
   generate(spec: GameSpec, previous?: GameVersion, method?: 'llm_code', signal?: AbortSignal, context?:GenerationContext): Promise<Artifact>;
   close?(): void;
 }

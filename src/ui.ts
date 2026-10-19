@@ -1,3 +1,4 @@
+import {LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
 import { mountGame } from './runtime.ts';
 import type { GameVersion, GameSpec, GameEvent } from './contracts.ts';
 import type { JobSummary } from './job-contracts.ts';
@@ -92,7 +93,7 @@ function lock(value: boolean) {
 }
 async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false) {
   if (busy) return; lock(true); action=new AbortController(); const controller=action;
-  const timeout=setTimeout(()=>controller.abort('timeout'), generating ? 330_000 : 15_000), began=performance.now();
+  const timeout=setTimeout(()=>controller.abort('timeout'), generating ? LIVE_JOB_TIMEOUT_MS : 15_000), began=performance.now();
   const progress=generating?setInterval(()=>{if(!controller.signal.aborted)message.textContent=`Модель создаёт игру… ${Math.floor((performance.now()-began)/1000)} с. Можно отменить ожидание.`;},1000):undefined;
   try { await work(controller.signal); }
   catch (error) { message.textContent=controller.signal.aborted ? controller.signal.reason==='timeout'?'Ожидание истекло. Повторите действие.':'Ожидание отменено. Проверьте список сохранённых игр.' : (error as Error).message; }
@@ -160,12 +161,22 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   view('play');mount(version,session);await Promise.all([stats(version),list(signal)]);
 }
 const providerSelect=el<HTMLSelectElement>('provider-mode'),editProviderSelect=el<HTMLSelectElement>('edit-provider-mode');
-try{const saved=sessionStorage.getItem('yaplix-provider-mode');if(saved&&['ollama-cloud','openrouter'].includes(saved))providerSelect.value=saved;}catch{}
+try{const saved=sessionStorage.getItem('yaplix-provider-mode');if(saved&&['ollama-cloud','openrouter','chatgpt'].includes(saved))providerSelect.value=saved;}catch{}
 editProviderSelect.value=providerSelect.value;
 for(const select of [providerSelect,editProviderSelect])select.addEventListener('change',()=>{
   providerSelect.value=editProviderSelect.value=select.value;
   try{sessionStorage.setItem('yaplix-provider-mode',select.value);}catch{}
 });
+async function refreshProviderConfiguration(){
+ try{const data=await api('/api/providers');
+  for(const select of [providerSelect,editProviderSelect])for(const option of select.options){
+   const state=data.providers.find((p:{mode:string})=>p.mode===option.value);
+   const name=option.value==='chatgpt'?'ChatGPT · GPT-6.1 Sol Medium':option.value==='openrouter'?'OpenRouter Free · экспериментальный':'Ollama Cloud';
+   option.textContent=name+' · '+(state?.configured?'Требуется проверка подключения':'Не настроен');
+  }
+  el('mode-help').textContent+=' Лимит ответа: '+data.timeouts.responseMs/60000+' мин; всё задание, включая очередь и сохранение: '+data.timeouts.jobMs/60000+' мин. Закрытие вкладки не отменяет задание.';
+ }catch{/* Configuration remains unknown; explicit submission reports its own failure. */}
+}
 let chatgptConnected=false;
 async function refreshChatGpt(){
  try{
@@ -241,6 +252,6 @@ document.addEventListener('visibilitychange',()=>{clearTimeout(pollTimer);if(!do
 window.addEventListener('pagehide',()=>{closed=true;clearTimeout(pollTimer);unmount?.();unmount=undefined;});window.addEventListener('pageshow',()=>{if(closed){closed=false;void pollJobs();}});
 async function boot(){
   if(document.body.dataset.entry==='telegram'){const path='/runtime/telegram-ui.js';telegramToken=await (await import(path) as typeof import('./telegram-ui.ts')).initializeTelegram();el('telegram-notify-label').hidden=false;}
-  await list();void pollJobs();const params=new URL(location.href).searchParams,selected=params.get('game');if(params.get('view')==='create')view('create');if(selected&&/^[0-9a-f-]{36}$/.test(selected))await attempt(async signal=>{const history=await api('/api/games/'+selected,undefined,undefined,signal);const requested=params.get('version');const latest=requested?history.versions.find((v:GameVersion)=>v.versionId===requested):history.versions.at(-1);if(!latest)throw new Error('Версия отсутствует в этой игре.');await show(await readVersion(latest.versionId,signal),signal);},false);
+  await refreshProviderConfiguration();await list();void pollJobs();const params=new URL(location.href).searchParams,selected=params.get('game');if(params.get('view')==='create')view('create');if(selected&&/^[0-9a-f-]{36}$/.test(selected))await attempt(async signal=>{const history=await api('/api/games/'+selected,undefined,undefined,signal);const requested=params.get('version');const latest=requested?history.versions.find((v:GameVersion)=>v.versionId===requested):history.versions.at(-1);if(!latest)throw new Error('Версия отсутствует в этой игре.');await show(await readVersion(latest.versionId,signal),signal);},false);
 }
 void boot().then(()=>{document.body.dataset.ready='true';}).catch(error=>{message.textContent=error.message;document.body.dataset.ready='true';});

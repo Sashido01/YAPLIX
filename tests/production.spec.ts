@@ -66,12 +66,12 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
   });
   await new Promise<void>(done=>mock.listen(0,'127.0.0.1',done));const port=(mock.address() as {port:number}).port;
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
-  const server=await productionServer('127.0.0.1',{...synthetic(`http://127.0.0.1:${port}`),LLM_MAX_ATTEMPTS:scenario==='repair'||scenario==='unsafe'?'2':'1',LLM_AUTO_REPAIR:'1',LLM_REPAIRS:'1',LLM_TIMEOUT_MS:scenario==='timeout'?'1000':'180000',LLM_REQUEST_TIMEOUT_MS:scenario==='timeout'?'1000':'60000'});
+  const server=await productionServer('127.0.0.1',{...synthetic(`http://127.0.0.1:${port}`),LLM_MAX_ATTEMPTS:scenario==='repair'||scenario==='unsafe'?'2':'1',LLM_AUTO_REPAIR:'1',LLM_REPAIRS:'1',LLM_MAX_DURATION_MS:'180000',LLM_REQUEST_TIMEOUT_MS:scenario==='timeout'?'1000':'60000'});
   try {
     await page.goto(server.url);await page.getByRole('button',{name:'Создать',exact:true}).click();if(scenario==='success'||scenario==='repair')await createAndOpen(page,'Создать игру',false);else {await page.locator('#generate').click();await page.locator('#jobs-toggle').click();}
     if(scenario==='success'||scenario==='repair'){
-      // The real server-side checker is included in the 15-second generation
-      // deadline above. Wait for that contract, rather than a five-second poll.
+      // The real server-side checker is included in the synthetic job
+      // budget above. Keep the browser assertion bounded separately.
       await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('Ollama Cloud');
       const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
       expect(calls).toBe(scenario==='repair'?2:1);

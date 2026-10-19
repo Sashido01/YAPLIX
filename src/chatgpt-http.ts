@@ -1,13 +1,13 @@
 import {Agent,ProxyAgent} from 'undici';
 import type {Dispatcher} from 'undici';
 import {networkRoute} from './llm-network.ts';
-import {CHATGPT_REQUEST_TIMEOUT_MS} from './chatgpt-timeouts.ts';
+import {LIVE_RESPONSE_TIMEOUT_MS} from './generation-timeouts.ts';
 
-export const CHATGPT_HTTP_OPTIONS=Object.freeze({connections:1,pipelining:1,connect:Object.freeze({timeout:10_000}),headersTimeout:CHATGPT_REQUEST_TIMEOUT_MS,bodyTimeout:CHATGPT_REQUEST_TIMEOUT_MS});
+export const CHATGPT_HTTP_OPTIONS=Object.freeze({connections:1,pipelining:1,connect:Object.freeze({timeout:10_000}),headersTimeout:LIVE_RESPONSE_TIMEOUT_MS,bodyTimeout:LIVE_RESPONSE_TIMEOUT_MS});
 // Per-request dispatcher: includes delayed headers and silent SSE bodies. The
 // absolute deadline also bounds keepalive bytes; connection/TLS stays at 10 s.
 export async function chatGptRequest<T>(request:typeof fetch,url:string,init:RequestInit,consume:(response:Response,signal:AbortSignal)=>Promise<T>){
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),CHATGPT_REQUEST_TIMEOUT_MS);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),LIVE_RESPONSE_TIMEOUT_MS);
  const signal=AbortSignal.any([controller.signal,...(init.signal?[init.signal]:[])]);
  let dispatcher:Dispatcher|undefined;
  try{

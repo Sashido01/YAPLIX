@@ -23,40 +23,73 @@ Auto на ChatGPT. `LIVE_PROVIDER` не меняется; `LIVE_PROVIDER=none` �
 генератор. Сохранённый выбор ChatGPT не восстанавливается после reload:
 нужен новый ручной выбор, без автоматического создания заданий.
 
-## Длительная генерация — Stage A1.5
+## Длительная генерация — Stage A1.7
 
-Только явно выбранный `providerMode=chatgpt` в durable live job получает
-**45 минут на один inference response** и **60 минут на всё задание**.
-Остаток после ответа доступен для локальной browser validation и сохранения;
-сама browser validation сохраняет собственные короткие лимиты. Экспорт готовой
-версии выполняется отдельно. Очередь входит в durable deadline. Restart сохраняет
-исходный deadline, а не выдаёт новый час; уже созданные задания не продлеваются.
-Continue выдаёт новый локальный бюджет только подтверждённому полному checkpoint,
-без нового inference POST.
+Все LIVE-провайдеры используют одну политику: по умолчанию **30 минут на
+response** и **35 минут на всё задание**, включая очередь, browser validation
+и запись SQLite. Browser validation сохраняет собственные короткие лимиты.
+Ответ на 29-й минуте оставляет до 6 минут до job deadline; очередь и предыдущие
+попытки уменьшают остаток. Retry не выдаёт новый job budget.
 
-Общие `LLM_TIMEOUT_MS`, `LLM_REQUEST_TIMEOUT_MS`, `LLM_MAX_DURATION_MS` продолжают
-управлять обычными маршрутами и сохраняют прежние ограничения конфигурации.
-Фиксированные бюджеты ChatGPT от них отделены. `src/server.ts` передаёт обычную
-конфигурацию без увеличения; worker и engine выбирают специальный бюджет по job.
-Синхронные endpoints по-прежнему не могут вызывать ChatGPT. Входящие HTTP
-headers/request timeouts сервера ограничивают загрузку API-запроса, а не время
-фонового задания: создание job возвращает ответ сразу.
+Источник конфигурации — `src/generation-timeouts.ts`:
+`LLM_REQUEST_TIMEOUT_MS` (1000..1800000) и `LLM_MAX_DURATION_MS`
+(1000..2100000), response не больше job. Отсутствующие значения дают 30/35 минут;
+явные меньшие значения ограничивают все три провайдера одинаково. Удалите старые
+60 s / 180 s / 300 s значения из своей конфигурации, если нужны новые defaults.
+`LLM_TIMEOUT_MS` — только legacy alias job duration, когда
+`LLM_MAX_DURATION_MS` не задан; отдельного engine timeout больше нет.
+Проверьте эффективные значения через `npm run doctor:providers` без сети,
+OAuth, models GET, inference и открытия SQLite. Изменение конфигурации требует
+штатного перезапуска владельцем; уже работающий сервер не меняется.
 
-Один HTTP-диспетчер обслуживает только ChatGPT inference, включая body/SSE.
-Ожидание заголовков и пауза между байтами ограничены 45 минутами; абсолютный
-таймер ограничивает весь ответ теми же 45 минутами даже при keepalive-байтах.
-Подключение/TLS остаётся ограничено 10 секундами. Применяется существующий
-выбор direct/proxy через `YAPLIX_LLM_NETWORK`, `YAPLIX_LLM_PROXY`, proxy/NO_PROXY
-переменные; автоматического direct fallback нет. Глобальные dispatcher и TLS
-не изменяются. После успеха, ошибки или отмены таймер и dispatcher освобождаются.
-OAuth, standalone probe, models GET и их короткие лимиты не расширяются.
+Worker сохраняет исходный durable deadline при restart и Continue.
+Существующие jobs не продлеваются. ChatGPT по-прежнему получает максимум один
+POST, с durable reservation до отправки, без retry/fallback/LLM repair.
+Полный совместимый checkpoint может пройти повторную локальную проверку без
+POST, только в оставшемся исходном бюджете. Синхронные endpoints не вызывают
+ChatGPT. Demo сохраняет прежний default job budget 5 минут.
+
+HTTP headers/body/SSE ограничены конечным response budget и абсолютным
+AbortSignal, включая keepalive-байты. Подключение/TLS остаётся коротким:
+ChatGPT 10 секунд, облака `LLM_CONNECT_TIMEOUT_MS` (по умолчанию 10 секунд).
+Применяется существующий direct/proxy без автоматического direct fallback;
+глобальные dispatcher и TLS не изменяются. После успеха, ошибки и отмены
+таймер и dispatcher освобождаются. OAuth, standalone probe, models GET и их
+короткие лимиты не расширяются. Входящие server headers/request timeouts
+ограничивают загрузку API-запроса; durable job creation возвращает ответ сразу.
+
+## Конфигурация Ollama / OpenRouter без сетевых проб
+
+`npm run doctor:providers` показывает только наличие эффективных ключей
+(`present`, `empty`, `absent`) и бюджеты; значений ключей в отчёте нет.
+Переменные родительского процесса имеют приоритет над `.env`, включая пустые.
+Если ранее в PowerShell выставлялись пустые ключи, перед новым запуском удалите
+только эти overrides через `Remove-Item Env:OLLAMA_CLOUD_API_KEY` и
+`Remove-Item Env:CLOUD_API_KEY` (при наличии), затем повторите конфигурационную
+проверку. Не копируйте ключи в командную строку и не заменяйте `.env`.
+
+Пустой/whitespace ключ не создаёт route. Без ключа это «Не настроен», а не
+сетевая ошибка. Настроенный route отображается «Требуется проверка подключения»:
+наличие ключа не доказывает авторизацию, модель, квоту или inference. Статусы
+выбора берутся из локального `GET /api/providers`, без внешних запросов;
+ChatGPT отдельно показывает состояние memory-only авторизации. «Готов» для
+inference не выводится только на основании конфигурации или models GET.
+
+`auto` и `ollama-cloud` используют только Ollama `gemma4:31b`;
+`openrouter` вручную выбирает `openrouter/free`; `chatgpt` вручную
+выбирает `gpt-6.1-sol` Medium в loopback. Выбор сохраняется между созданием,
+редактированием и reload; сохранение выбора ChatGPT не сохраняет OAuth.
+Endpoints и правила повторов Ollama/OpenRouter не изменены. Auth/model/quota/
+network отказы проверяются offline; причину прежнего LIVE отказа без отдельного
+разрешённого наблюдения считать NOT_VERIFIED. Сообщённые владельцем успешные
+ChatGPT generation/edit, gameplay и телефон — HUMAN_REPORTED.
 
 Панель заданий показывает фактическое прошедшее время в минутах и секундах,
 без процента готовности. Закрытие вкладки прекращает UI polling, но сохраняет
 работу durable job на запущенном сервере. Кнопка отмены и отключение ChatGPT
 прерывают ожидание; потраченная попытка не восстанавливается.
 
-Offline-регрессии: `node --test tests/chatgpt-long.test.ts tests/chatgpt.test.ts`.
+Offline-регрессии: `node --test tests/provider-policy.test.ts tests/chatgpt-long.test.ts tests/chatgpt.test.ts`.
 Они используют управляемые часы и синтетический Responses/SSE. Подтверждение
 45-минутного реального upstream ожидания требует отдельного разрешённого LIVE-теста.
 

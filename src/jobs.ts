@@ -1,4 +1,4 @@
-import {CHATGPT_JOB_TIMEOUT_MS} from './chatgpt-timeouts.ts';
+import {LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
 import { GenerationTraces, safeTrace } from './generation-trace.ts';
 import { prepareDocument } from './validation.ts';
 import { validateDocument } from './generation.ts';
@@ -33,8 +33,8 @@ export class GenerationJobs {
   private wake?:ReturnType<typeof setTimeout>; private maxCalls:number;private duration:number;private retryMs:number;
   constructor(store:Store,generator?:Generator,notify?:GenerationJobs['notify'],autoStart=true,policy:{maxCalls?:number;durationMs?:number;retryMs?:number}={}) {
     this.store=store;this.generator=generator;this.notify=notify;
-    this.maxCalls=policy.maxCalls??4;this.duration=policy.durationMs??300000;this.retryMs=policy.retryMs??2000;
-    if(!Number.isSafeInteger(this.maxCalls)||this.maxCalls<1||this.maxCalls>12||!Number.isSafeInteger(this.duration)||this.duration<1000||this.duration>1800000||!Number.isSafeInteger(this.retryMs)||this.retryMs<10||this.retryMs>60000)throw new Fault('INVALID_JOB_POLICY');
+    this.maxCalls=policy.maxCalls??4;this.duration=policy.durationMs??generator?.timeouts?.jobMs??LIVE_JOB_TIMEOUT_MS;this.retryMs=policy.retryMs??2000;
+    if(!Number.isSafeInteger(this.maxCalls)||this.maxCalls<1||this.maxCalls>12||!Number.isSafeInteger(this.duration)||this.duration<1000||this.duration>LIVE_JOB_TIMEOUT_MS||!Number.isSafeInteger(this.retryMs)||this.retryMs<10||this.retryMs>60000)throw new Fault('INVALID_JOB_POLICY');
     if(autoStart)this.start();
   }
   start(){
@@ -49,7 +49,7 @@ export class GenerationJobs {
     // policy. Cancelled jobs and configuration/quota refusals remain untouched.
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='needs_attention' AND json_extract(metadata,'$.automaticLimit') IS NULL").all()){
       const job=this.get(String(row.owner_id),String(row.job_id));if(job.providerMode==='chatgpt'||job.provider==='openrouter'||!['LLM_DNS','LLM_TCP_CONNECTION','LLM_PROXY_CONNECTION','LLM_NETWORK_UNAVAILABLE','LLM_RESPONSE_TIMEOUT','LLM_TIMEOUT','LLM_OUTPUT_TRUNCATED','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_RATE_LIMIT','JOB_RESTART_UNCERTAIN'].includes(job.errorCode??'')||job.attempts>=12)continue;
-      job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.jobDuration(job);
+      job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt??=Date.now()+this.jobDuration(job);
       if(job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
       job.stage='queued';job.recoveryState='retry_scheduled';job.retryAt=Math.max(job.retryAt??0,Date.now()+this.retryMs);this.write(job);
     }
@@ -122,15 +122,16 @@ export class GenerationJobs {
   private continuationError(job:GenerationJob){
     if(job.providerMode==='chatgpt'&&!chatgptCheckpoint(job))return 'CHATGPT_NEW_JOB_REQUIRED';
     if(!['needs_attention','failed','cancelled'].includes(job.stage))return 'JOB_STATE';
+    if(job.mode==='live'&&job.deadlineAt!==undefined&&Date.now()>=job.deadlineAt)return 'JOB_DURATION_LIMIT';
     if(job.attempts>=12)return 'JOB_ATTEMPT_LIMIT';
     if(job.retryAt&&Date.now()<job.retryAt)return 'JOB_RETRY_AFTER';
     const pending=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE status IN ('queued','generating','validating','repairing')").get()?.n);
     const owned=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(job.ownerId)?.n);
     return pending>=20||owned>=3?'JOB_QUEUE_FULL':null;
   }
-  continue(owner:string,id:string){const job=this.get(owner,id),error=this.continuationError(job);if(error)throw new Fault(error,['JOB_RETRY_AFTER','JOB_QUEUE_FULL'].includes(error)?429:409);job.stage='queued';job.manualContinuation=true;job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=job.providerMode==='chatgpt'?1:Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.jobDuration(job);this.write(job);this.kick();return this.summary(job);}
+  continue(owner:string,id:string){const job=this.get(owner,id),error=this.continuationError(job);if(error)throw new Fault(error,['JOB_RETRY_AFTER','JOB_QUEUE_FULL'].includes(error)?429:409);job.stage='queued';job.manualContinuation=true;job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=job.providerMode==='chatgpt'?1:Math.min(12,job.attempts+this.maxCalls);if(job.mode==='demo')job.deadlineAt=Date.now()+this.jobDuration(job);else job.deadlineAt??=Date.now()+this.jobDuration(job);this.write(job);this.kick();return this.summary(job);}
   claim(owner:string,id:string){this.get(owner,id);return this.store.db.prepare("UPDATE generation_jobs SET notified=1 WHERE job_id=? AND owner_id=? AND status='completed' AND notified=0").run(id,owner).changes===1;}
-  private jobDuration(job:{providerMode?:string;mode?:string}){return job.providerMode==='chatgpt'&&job.mode==='live'?CHATGPT_JOB_TIMEOUT_MS:this.duration;}
+  private jobDuration(job:{providerMode?:string;mode?:string}){return job.mode==='demo'?Math.min(this.duration,300000):this.duration;}
   private canRetry(job:GenerationJob){return(job.attempts<(job.automaticLimit??this.maxCalls)||Boolean(job.checkpointOrigin&&/<\/html>\s*$/i.test(job.checkpoint)))&&(job.automaticRuns??0)<4&&Date.now()<(job.deadlineAt??0);}
   private kick(){
     if(this.stopping||!this.started||this.active)return;this.assertWorker();clearTimeout(this.wake);
