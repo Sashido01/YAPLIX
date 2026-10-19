@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {GenerationEngine} from '../src/live.ts';
 import {providerMode} from '../src/transport.ts';
 import type {CodeTransport} from '../src/transport.ts';
+import type {GenerationContext} from '../src/transport.ts';
+import {Fault} from '../src/contracts.ts';
+import {SiwcError} from '../src/experimental/siwc.ts';
 
 test('ChatGPT requires manual selection and cannot enter Auto or other provider routes',()=>{
  const routes=['ollama.com','openrouter','chatgpt'].map(provider=>({provider,model:'synthetic',route:'primary',readiness:async()=>'ready',complete:async()=>{throw Error('not sent');}} as CodeTransport));
@@ -210,4 +213,96 @@ test('abrupt server termination during OAuth permits explicit reconnect and pres
   try{await connected(session);assert.equal(session.status().connected,true);assert.equal(posts,0);assert.equal(readFileSync(cliLock,'utf8'),'pending\n');}
   finally{session.disconnect();}
  }finally{child.kill();}
+});
+
+for(const [code,status] of [['JOB_STORAGE_QUOTA',507],['JOB_WORKER_BUSY',409],['CHATGPT_BUDGET_SPENT',409]] as const)
+test('A1.2 pre-dispatch Fault retains its code without HTTP or private fields: '+code,async()=>{
+ let posts=0,fallback=0;const {session}=offlineChatGpt(async()=>{posts++;return sse([completed(html)]);});await connected(session);
+ const transport=new ChatGptTransport(session),engine=engineFor(session);
+ engine.routes.push({provider:'ollama.com',model:'gemma4:31b',route:'primary',readiness:async()=>'ready',complete:async()=>{fallback++;return{code:html,model:'gemma4:31b'};}});
+ const failure=Object.assign(new Fault(code,status),{privatePayload:'offline-access-credential SQL private details'});
+ const context:GenerationContext={durableJob:true,providerMode:'chatgpt',stage:()=>{},partial:()=>{},attempt:()=>{},dispatch:()=>{throw failure;}};
+ try{
+  await assert.rejects(()=>transport.complete(generationMessages(spec),new AbortController().signal,context),(error:unknown)=>{
+   assert.ok(error instanceof Fault);assert.equal(error.code,code);assert.equal(error.status,status);
+   assert.ok(!JSON.stringify(error).includes('privatePayload'));return true;
+  });
+  await assert.rejects(()=>engine.generate(spec,undefined,'llm_code',undefined,context),(error:any)=>{
+   assert.equal(error.code,code);assert.equal(error.attempts.length,1);assert.equal(error.attempts[0].errorCode,code);
+   assert.ok(!JSON.stringify(error).includes('credential'));assert.ok(!JSON.stringify(error).includes('private details'));return true;
+  });
+  assert.equal(posts,0);assert.equal(fallback,0);
+ }finally{session.disconnect();}
+});
+
+test('A1.2 SQLite reservation failure preserves the unspent job and safe diagnostics without retry',async()=>{
+ let posts=0;const {session}=offlineChatGpt(async()=>{posts++;return sse([completed(html)]);});await connected(session);
+ const store=new Store(':memory:'),jobs=new GenerationJobs(store,engineFor(session),undefined,true,{retryMs:10});
+ store.db.exec("CREATE TEMP TRIGGER reject_reservation BEFORE UPDATE OF attempts ON generation_jobs WHEN NEW.attempts>OLD.attempts BEGIN SELECT RAISE(ABORT,'offline-access-credential private SQLite details'); END");
+ try{
+  const done=await settled(jobs,jobs.create('owner','sqlite-reservation',request).jobId);
+  assert.equal(done.stage,'needs_attention');assert.equal(done.attempts,0);assert.equal(done.errorCode,'SIWC_DISPATCH_FAILED');assert.equal(posts,0);
+  assert.throws(()=>jobs.continue('owner',done.jobId),/CHATGPT_NEW_JOB_REQUIRED/);
+  assert.ok(!JSON.stringify(jobs.report('owner',done.jobId)).includes('credential'));
+  assert.ok(!JSON.stringify(jobs.summary(done)).includes('private SQLite details'));
+ }finally{session.disconnect();await jobs.close();store.close();}
+});
+
+test('A1.2 pre-dispatch SiwcError retains its safe code',async()=>{
+ let posts=0;const {session}=offlineChatGpt(async()=>{posts++;return sse([completed(html)]);});await connected(session);
+ try{
+  const context:GenerationContext={durableJob:true,providerMode:'chatgpt',stage:()=>{},partial:()=>{},attempt:()=>{},dispatch:()=>{throw new SiwcError('SIWC_PLAN_PERMISSION_REQUIRED');}};
+  await assert.rejects(()=>new ChatGptTransport(session).complete(generationMessages(spec),new AbortController().signal,context),/SIWC_PLAN_PERMISSION_REQUIRED/);assert.equal(posts,0);
+ }finally{session.disconnect();}
+});
+
+test('A1.2 network failure after successful reservation spends one POST across Continue and restart',async()=>{
+ let posts=0;const {session}=offlineChatGpt(async()=>{posts++;throw Error('offline-access-credential private network details');});await connected(session);
+ const store=new Store(':memory:'),engine=engineFor(session);let jobs=new GenerationJobs(store,engine,undefined,true,{retryMs:10});
+ try{
+  const done=await settled(jobs,jobs.create('owner','network-reservation',request).jobId);
+  assert.equal(done.stage,'needs_attention');assert.equal(done.attempts,1);assert.equal(done.errorCode,'SIWC_NETWORK');assert.equal(posts,1);
+  assert.throws(()=>jobs.continue('owner',done.jobId),/CHATGPT_NEW_JOB_REQUIRED/);
+  await jobs.close();jobs=new GenerationJobs(store,engine);assert.equal(jobs.get('owner',done.jobId).attempts,1);assert.equal(jobs.get('owner',done.jobId).stage,'needs_attention');assert.equal(posts,1);
+  assert.ok(!JSON.stringify(jobs.report('owner',done.jobId)).includes('credential'));assert.ok(!JSON.stringify(jobs.list('owner')).includes('private network details'));
+ }finally{session.disconnect();await jobs.close();store.close();}
+});
+
+for(const [label,checkpoint,origin,allowed] of [
+ ['empty','',undefined,false],
+ ['partial','<!DOCTYPE html><html><body>',{provider:'chatgpt',requestedModel:'gpt-6.1-sol',model:'gpt-6.1-sol'},false],
+ ['unknown model',html,undefined,false],
+ ['wrong model',html,{provider:'chatgpt',requestedModel:'gpt-6.1-sol',model:'other'},false],
+ ['wrong provider',html,{provider:'ollama.com',requestedModel:'gpt-6.1-sol',model:'gpt-6.1-sol'},false],
+ ['wrong requested model',html,{provider:'chatgpt',requestedModel:'other',model:'gpt-6.1-sol'},false],
+ ['confirmed full HTML',html,{provider:'chatgpt',requestedModel:'gpt-6.1-sol',model:'gpt-6.1-sol'},true],
+] as const)test('A1.2 Continue summary agrees with server after restart and OAuth disconnect: '+label,async()=>{
+ let posts=0;const {session}=offlineChatGpt(async()=>{posts++;return sse([completed(html)]);});await connected(session);
+ const store=new Store(':memory:'),engine=engineFor(session);let jobs=new GenerationJobs(store,engine);
+ try{
+  const created=jobs.create('owner','continue-policy',request);await jobs.close();session.disconnect();
+  const saved=jobs.get('owner',created.jobId);
+  // Durable recovery fixtures describe a spent POST and preserved source.
+  store.db.prepare('UPDATE generation_jobs SET status=?,attempts=1,checkpoint=?,metadata=? WHERE job_id=?').run('needs_attention',checkpoint,JSON.stringify({...saved,provider:'chatgpt',requestedModel:'gpt-6.1-sol',actualModel:origin?.model??null,checkpointOrigin:origin,attempts:undefined,checkpoint:undefined,stage:undefined}),created.jobId);
+  jobs=new GenerationJobs(store,engine);
+  const summary=jobs.list('owner')[0];assert.equal(summary.canContinue,allowed);assert.ok(!Object.hasOwn(summary,'checkpoint'));
+  const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
+  const response=await app.request('http://127.0.0.1:3210/api/jobs/'+created.jobId+'/continue',{method:'POST',headers:{'Content-Type':'application/json',Origin:'http://127.0.0.1:3210','X-Yaplix-ChatGPT':'owner'},body:'{}'});
+  assert.equal(response.status,allowed?200:409);
+  if(allowed){const done=await settled(jobs,created.jobId);assert.equal(done.stage,'completed');assert.equal(done.attempts,1);assert.equal(jobs.summary(done).canContinue,false);}
+  else assert.equal((await response.json()).error,'CHATGPT_NEW_JOB_REQUIRED');
+  assert.equal(posts,0);
+ }finally{session.disconnect();await jobs.close();store.close();}
+});
+
+for(const mode of ['ollama-cloud','openrouter'] as const)test('A1.2 Continue keeps existing queue refusal status for '+mode,async()=>{
+ const store=new Store(':memory:'),jobs=new GenerationJobs(store);
+ try{
+  const demo={spec,mode:'demo' as const,providerMode:mode,telegramConsent:false};
+  const first=jobs.create('owner','existing-continue',demo);jobs.cancel('owner',first.jobId);
+  assert.equal(jobs.list('owner')[0].canContinue,true);
+  for(let i=0;i<3;i++)jobs.create('owner','fill-queue-'+i,demo);
+  assert.equal(jobs.summary(jobs.get('owner',first.jobId)).canContinue,false);
+  assert.throws(()=>jobs.continue('owner',first.jobId),(error:unknown)=>{assert.ok(error instanceof Fault);assert.equal(error.code,'JOB_QUEUE_FULL');assert.equal(error.status,429);return true;});
+ }finally{await jobs.close();store.close();}
 });

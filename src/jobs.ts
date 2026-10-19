@@ -13,6 +13,7 @@ import { RateLimit } from './rate-limit.ts';
 type Request = Pick<GenerationJob,'spec'|'mode'|'previousVersionId'|'telegramConsent'|'providerMode'>;
 const terminal=new Set(['completed','cancelled','failed','needs_attention']);
 const now=()=>new Date().toISOString();
+const chatgptCheckpoint=(job:GenerationJob)=>job.checkpointOrigin?.provider==='chatgpt'&&job.checkpointOrigin.requestedModel==='gpt-6.1-sol'&&job.checkpointOrigin.model==='gpt-6.1-sol'&&/<\/html>\s*$/i.test(job.checkpoint);
 function processAlive(pid:number){if(!Number.isSafeInteger(pid)||pid<=0)return true;try{process.kill(pid,0);return true;}catch(error){return(error as NodeJS.ErrnoException).code!=='ESRCH';}}
 export class GenerationJobs {
   private traces?:GenerationTraces;private traceWarning=false;
@@ -61,7 +62,7 @@ export class GenerationJobs {
     // Old automatic router retries must not dispatch after an upgrade. A manual
     // Continue resets automaticRuns to zero; complete drafts can revalidate locally.
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='queued' AND attempts>0 AND json_extract(metadata,'$.provider')='openrouter' AND COALESCE(json_extract(metadata,'$.automaticRuns'),1)>0").all()){const job=this.get(String(row.owner_id),String(row.job_id));if(!/<\/html>\s*$/i.test(job.checkpoint)){job.stage='needs_attention';job.recoveryState='failed_permanent';job.errorCode??='JOB_RESTART_UNCERTAIN';this.write(job);this.trace(job,'job.failed',{errorCode:job.errorCode,next:'needs_attention'});}}
-    for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='queued' AND json_extract(metadata,'$.providerMode')='chatgpt' AND attempts>0").all()){const job=this.get(String(row.owner_id),String(row.job_id));if(!job.checkpointOrigin||job.checkpointOrigin.model!=='gpt-6.1-sol'||!/<\/html>\s*$/i.test(job.checkpoint)){job.stage='needs_attention';job.errorCode='CHATGPT_BUDGET_SPENT';job.recoveryState='failed_permanent';this.write(job);}}
+    for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='queued' AND json_extract(metadata,'$.providerMode')='chatgpt' AND attempts>0").all()){const job=this.get(String(row.owner_id),String(row.job_id));if(!chatgptCheckpoint(job)){job.stage='needs_attention';job.errorCode='CHATGPT_BUDGET_SPENT';job.recoveryState='failed_permanent';this.write(job);}}
     if(this.notify){this.notificationTimer=setInterval(()=>void this.notifications().catch(()=>{}),5000);this.notificationTimer.unref();}
     this.kick();
   }
@@ -73,7 +74,7 @@ export class GenerationJobs {
     return{...request,...metadata,providerMode:providerMode(metadata.providerMode??request.providerMode),jobId:String(row.job_id),ownerId:owner,idempotencyKey:String(row.idempotency_key),stage:row.status,attempts:Number(row.attempts),checkpoint:String(row.checkpoint),createdAt:String(row.created_at),updatedAt:String(row.updated_at),versionId:version?.versionId??null,gameId:version?.gameId??null,notificationClaimed:row.notified===1};
   }
   summary(job:GenerationJob):JobSummary {
-    const {checkpoint,originalCheckpoint:_original,ownerId:_owner,idempotencyKey:_key,...rest}=job;return{...rest,checkpointBytes:Buffer.byteLength(checkpoint)};
+    const {checkpoint,originalCheckpoint:_original,ownerId:_owner,idempotencyKey:_key,...rest}=job;return{...rest,checkpointBytes:Buffer.byteLength(checkpoint),canContinue:this.continuationError(job)===null};
   }
   list(owner:string){
     this.presence.set(owner,Date.now());if(this.presence.size>1000){for(const[key,time]of this.presence)if(Date.now()-time>60000)this.presence.delete(key);}
@@ -117,7 +118,16 @@ export class GenerationJobs {
   }
   private assertWorker(){if(!this.started||!this.store.db.prepare('SELECT 1 FROM generation_worker WHERE slot=1 AND instance=? AND expires_at>?').get(this.instance,Date.now()))throw new Fault('JOB_WORKER_BUSY',409);}
   cancel(owner:string,id:string){const job=this.get(owner,id);if(job.stage==='completed')throw new Fault('JOB_STATE',409);job.stage='cancelled';job.errorCode='REQUEST_CANCELLED';this.write(job);this.trace(job,'job.cancelled',{errorCode:'REQUEST_CANCELLED',next:'cancelled'});if(this.active?.id===id)this.active.controller.abort();return this.summary(job);}
-  continue(owner:string,id:string){const job=this.get(owner,id);if(job.providerMode==='chatgpt'&&(!job.checkpointOrigin||job.checkpointOrigin.model!=='gpt-6.1-sol'||!/<\/html>\s*$/i.test(job.checkpoint)))throw new Fault('CHATGPT_NEW_JOB_REQUIRED',409);if(!['needs_attention','failed','cancelled'].includes(job.stage))throw new Fault('JOB_STATE',409);if(job.attempts>=12)throw new Fault('JOB_ATTEMPT_LIMIT',409);if(job.retryAt&&Date.now()<job.retryAt)throw new Fault('JOB_RETRY_AFTER',429);const pending=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE status IN ('queued','generating','validating','repairing')").get()?.n),owned=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(owner)?.n);if(pending>=20||owned>=3)throw new Fault('JOB_QUEUE_FULL',429);job.stage='queued';job.manualContinuation=true;job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=job.providerMode==='chatgpt'?1:Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;this.write(job);this.kick();return this.summary(job);}
+  private continuationError(job:GenerationJob){
+    if(job.providerMode==='chatgpt'&&!chatgptCheckpoint(job))return 'CHATGPT_NEW_JOB_REQUIRED';
+    if(!['needs_attention','failed','cancelled'].includes(job.stage))return 'JOB_STATE';
+    if(job.attempts>=12)return 'JOB_ATTEMPT_LIMIT';
+    if(job.retryAt&&Date.now()<job.retryAt)return 'JOB_RETRY_AFTER';
+    const pending=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE status IN ('queued','generating','validating','repairing')").get()?.n);
+    const owned=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(job.ownerId)?.n);
+    return pending>=20||owned>=3?'JOB_QUEUE_FULL':null;
+  }
+  continue(owner:string,id:string){const job=this.get(owner,id),error=this.continuationError(job);if(error)throw new Fault(error,['JOB_RETRY_AFTER','JOB_QUEUE_FULL'].includes(error)?429:409);job.stage='queued';job.manualContinuation=true;job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=job.providerMode==='chatgpt'?1:Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;this.write(job);this.kick();return this.summary(job);}
   claim(owner:string,id:string){this.get(owner,id);return this.store.db.prepare("UPDATE generation_jobs SET notified=1 WHERE job_id=? AND owner_id=? AND status='completed' AND notified=0").run(id,owner).changes===1;}
   private canRetry(job:GenerationJob){return(job.attempts<(job.automaticLimit??this.maxCalls)||Boolean(job.checkpointOrigin&&/<\/html>\s*$/i.test(job.checkpoint)))&&(job.automaticRuns??0)<4&&Date.now()<(job.deadlineAt??0);}
   private kick(){

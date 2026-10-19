@@ -308,3 +308,27 @@ initData или необработанные журналы. [Запуск и о
   дисковый lock и прежнее поведение. Offline-тест принудительно завершает
   дочерний сервер во время CONNECTING, затем подтверждает новый ручной вход
   без inference и без изменения существующего CLI lock.
+
+## MICRO-029 Stage A1.2: ошибки до POST и Continue
+
+- `beforePost()` находился внутри network catch в `LocalSiwc.respond()`.
+  Offline RED воспроизвёл подмену `JOB_STORAGE_QUOTA`, `JOB_WORKER_BUSY` и
+  `CHATGPT_BUDGET_SPENT` на `SIWC_NETWORK`. Резервирование теперь имеет отдельную
+  границу: типизированный Fault сохраняет только code/status, SiwcError сохраняет
+  свой код, нетипизированный отказ получает `SIWC_DISPATCH_FAILED` без исходного
+  сообщения и приватных полей. SQLite trigger подтверждает POST 0/attempts 0
+  при отказе записи. Обычный network error после резерва остаётся SIWC_NETWORK,
+  attempts 1/POST 1; Continue и restart повторную отправку не разрешают.
+- UI активировал Continue по checkpointBytes/Origin, даже если HTML был неполон.
+  Browser RED подтвердил активную кнопку. Теперь JobSummary содержит вычисляемый
+  `canContinue` без полного HTML; summary и Continue используют одну серверную
+  проверку состояния, лимитов, ожидания, очереди и checkpoint provenance.
+  Для ChatGPT нужны исходные provider/requestedModel/model и существующий
+  признак завершённости HTML. Это разрешение только на повторную локальную
+  HTML/browser validation, а не сертификат корректности кода или новый POST.
+  Неизвестная/неверная модель, чужой provider и неполный HTML запрещены;
+  полный подтверждённый checkpoint допускается после restart/disconnect OAuth.
+- При выделении общей проверки сохраняются прежние HTTP 429 для JOB_QUEUE_FULL
+  и JOB_RETRY_AFTER. Регрессии отдельно проверяют Ollama и OpenRouter.
+- Все новые reproductions используют synthetic OAuth/Responses и тестовые SQLite;
+  реальные OAuth, models GET и inference не выполняются.

@@ -79,7 +79,8 @@ test('explicit private version URL opens requested old version on mobile, reject
 
 
 import {ChatGptTransport} from '../src/chatgpt.ts';
-import {offlineChatGpt,localPolicy,completed,sse} from './chatgpt-helper.ts';
+import {offlineChatGpt,connected,localPolicy,completed,sse} from './chatgpt-helper.ts';
+import {BrowserFailure} from '../src/browser-check.ts';
 
 test('ChatGPT A1 UI -> API -> durable job -> mock SSE -> real browser validation -> SQLite -> reopen',async({page,context,baseURL})=>{
  test.setTimeout(60000);
@@ -98,5 +99,24 @@ test('ChatGPT A1 UI -> API -> durable job -> mock SSE -> real browser validation
   const latest=store.history(first.gameId).at(-1)!;await expect(page.locator('#versions')).toHaveValue(latest.versionId);await page.reload();await expect(page.locator('#provenance')).toContainText('ChatGPT');await expect(page.locator('#versions')).toHaveValue(latest.versionId);
   await page.getByRole('button',{name:'Создать',exact:true}).click();await page.getByRole('button',{name:'Отключить ChatGPT',exact:true}).click();await expect(page.locator('#chatgpt-status')).toHaveText('ChatGPT: не подключён');expect(posts).toBe(2);
   await page.screenshot({path:'.local/chatgpt-'+(await page.viewportSize())?.width+'.png',fullPage:true});
+ }finally{session.disconnect();await jobs.close();store.close();}
+});
+
+test('ChatGPT A1.2 Continue follows server eligibility and revalidates offline without another POST',async({page,context,baseURL})=>{
+ let posts=0,accept=false;
+ const {session}=offlineChatGpt(async()=>sse([completed(++posts===1?'<!DOCTYPE html><html><body>':html)]));await connected(session);
+ const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:async()=>{if(!accept)throw new BrowserFailure('BROWSER_START_CONTROL','synthetic validation refusal');return{profiles:[320,390,844],offline:true,errors:0,scope:'full-html'};}}),jobs=new GenerationJobs(store,engine);
+ const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
+ const settle=async(id:string)=>{await expect.poll(()=>jobs.get('owner',id).stage).toBe('needs_attention');};
+ await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+ try{
+  const partial=jobs.create('owner','ui-partial-checkpoint',{spec,mode:'live',providerMode:'chatgpt',telegramConsent:false});await settle(partial.jobId);
+  const full=jobs.create('owner','ui-full-checkpoint',{spec,mode:'live',providerMode:'chatgpt',telegramConsent:false});await settle(full.jobId);session.disconnect();accept=true;
+  await page.goto('/');await page.locator('#jobs-toggle').click();
+  const denied=page.locator('[data-job="'+partial.jobId+'"]'),allowed=page.locator('[data-job="'+full.jobId+'"]');
+  await expect(denied.getByRole('button',{name:'Продолжить генерацию'})).toBeDisabled();
+  await expect(allowed.getByRole('button',{name:'Продолжить генерацию'})).toBeEnabled();
+  await allowed.getByRole('button',{name:'Продолжить генерацию'}).click();await expect(allowed).toContainText('Готово');
+  expect(posts).toBe(2);expect(jobs.get('owner',full.jobId).attempts).toBe(1);expect(jobs.get('owner',partial.jobId).stage).toBe('needs_attention');
  }finally{session.disconnect();await jobs.close();store.close();}
 });
