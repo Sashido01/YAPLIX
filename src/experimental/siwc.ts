@@ -59,8 +59,10 @@ export class LocalSiwc {
  #directory:string;#request:typeof fetch;#open:(url:string)=>Promise<void>;#timeout:number;
  #host:string|null=null;#registration:Registration|null=null;#tokens:{access:string;refresh:string;id:string;expiresAt:number}|null=null;
  #active:AbortController|null=null;
+ #authorizationLock:'disk'|'process';
  #probeUsed=false;#requests=new Set<AbortController>();
- constructor(options:{directory?:string;request?:typeof fetch;openBrowser:(url:string)=>Promise<void>;timeoutMs?:number}){
+ constructor(options:{directory?:string;request?:typeof fetch;openBrowser:(url:string)=>Promise<void>;timeoutMs?:number;authorizationLock?:'disk'|'process'}){
+  this.#authorizationLock=options.authorizationLock??'disk';
   this.#directory=resolve(options.directory??resolve(root,'.local/siwc-feasibility'));
   this.#request=options.request??fetch;this.#open=options.openBrowser;this.#timeout=options.timeoutMs??180000;
   if(!Number.isSafeInteger(this.#timeout)||this.#timeout<50||this.#timeout>300000)fail('SIWC_TIMEOUT_INVALID');
@@ -174,8 +176,8 @@ export class LocalSiwc {
  async signIn(signal?:AbortSignal):Promise<Status>{
   if(process.env.NODE_TLS_REJECT_UNAUTHORIZED==='0')fail('SIWC_INSECURE_TLS');
   if(this.#active)fail('SIWC_BUSY');this.prepare();
-  const lock=resolve(this.#directory,'authorization.lock');
-  try{writeFileSync(lock,'pending\n',{flag:'wx',mode:0o600});}catch{fail('SIWC_BUSY');}
+  const lock=this.#authorizationLock==='disk'?resolve(this.#directory,'authorization.lock'):null;
+  try{if(lock)writeFileSync(lock,'pending\n',{flag:'wx',mode:0o600});}catch{fail('SIWC_BUSY');}
   const controller=new AbortController();this.#active=controller;
   const combined=AbortSignal.any([controller.signal,AbortSignal.timeout(this.#timeout),...(signal?[signal]:[])]);
   let state=randomBytes(32).toString('base64url'),nonce=randomBytes(32).toString('base64url'),verifier=randomBytes(48).toString('base64url');
@@ -230,7 +232,7 @@ export class LocalSiwc {
   finally{
    combined.removeEventListener('abort',abort);controller.abort();state='';nonce='';verifier='';
    server.closeAllConnections();await new Promise<void>(done=>server.close(()=>done()));
-   unlinkSync(lock);this.#active=null;
+   if(lock)unlinkSync(lock);this.#active=null;
   }
  }
 }

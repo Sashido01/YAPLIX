@@ -10,8 +10,8 @@ export const completed=(code:string,model:unknown='gpt-6.1-sol')=>({type:'respon
 export const sse=(events:unknown[])=>new Response(events.map(e=>'data: '+JSON.stringify(e)+'\r\n\r\n').join(''));
 // Only the OpenAI HTTP and system-browser boundaries are synthetic. OAuth uses
 // signed JWTs and the actual LocalSiwc loopback callback; no token injection.
-export function offlineChatGpt(request:typeof fetch,policy=localPolicy,expires=3600){
- let authorization!:URL;const directory=mkdtempSync('.local/chatgpt-test-');
+export function offlineChatGpt(request:typeof fetch,policy=localPolicy,expires=3600,directory=mkdtempSync('.local/chatgpt-test-')){
+ let authorization!:URL;
  const session=new ChatGptSession({...policy},{directory,timeoutMs:2000,request:async(input,init)=>{
   const url=String(input);
   if(url===SIWC.discovery)return Response.json({issuer:SIWC.issuer,authorization_endpoint:SIWC.authorize,token_endpoint:SIWC.token,jwks_uri:SIWC.jwks});

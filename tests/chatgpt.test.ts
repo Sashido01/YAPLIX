@@ -25,6 +25,9 @@ import {offlineChatGpt,connected,ready,localPolicy,completed,sse} from './chatgp
 import {spec,html} from './helpers.ts';
 import {readFileSync,readdirSync,mkdtempSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {writeFileSync} from 'node:fs';
 const request={spec,mode:'live' as const,providerMode:'chatgpt' as const,telegramConsent:false};
 const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<300;i++){const job=jobs.get('owner',id);if(['completed','needs_attention','cancelled'].includes(job.stage))return job;await new Promise(r=>setTimeout(r,10));}throw Error('JOB_TIMEOUT');}
@@ -187,4 +190,24 @@ test('OAuth revoked between create and queued dispatch prevents POST',async()=>{
  const store=new Store(':memory:'),jobs=new GenerationJobs(store,engineFor(session));
  try{const job=jobs.create('owner','dispatch-revoked',request);session.disconnect();const done=await settled(jobs,job.jobId);assert.equal(done.attempts,0);assert.equal(posts,0);await connected(session);assert.equal(jobs.get('owner',job.jobId).stage,'needs_attention');}
  finally{session.disconnect();await jobs.close();store.close();}
+});
+
+test('abrupt server termination during OAuth permits explicit reconnect and preserves CLI locks',async()=>{
+ const directory=resolve(mkdtempSync('.local/chatgpt-crash-'));
+ const cliLock=resolve(directory,'authorization.lock');writeFileSync(cliLock,'pending\n');
+ const child=spawn(process.execPath,['--input-type=module','--eval',`
+  import {ChatGptSession} from './src/chatgpt.ts';
+  import {SIWC} from './src/experimental/siwc.ts';
+  const session=new ChatGptSession({mode:'local',host:'127.0.0.1',port:3210},{
+   directory:${JSON.stringify(directory)},request:async()=>Response.json({issuer:SIWC.issuer,authorization_endpoint:SIWC.authorize,token_endpoint:SIWC.token,jwks_uri:SIWC.jwks}),
+   openBrowser:async()=>{process.stdout.write('CONNECTING');await new Promise(()=>{});}
+  });session.connect();
+ `],{stdio:['ignore','pipe','pipe'],windowsHide:true});
+ try{
+  const data=await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw Error('CHILD_EXITED_EARLY');}),new Promise<never>((_,no)=>setTimeout(()=>no(Error('CHILD_TIMEOUT')),5000).unref())]);
+  assert.match(String(data[0]),/CONNECTING/);const exited=once(child,'exit');child.kill();await exited;
+  let posts=0;const {session}=offlineChatGpt(async()=>{posts++;throw Error('must not infer');},localPolicy,3600,directory);
+  try{await connected(session);assert.equal(session.status().connected,true);assert.equal(posts,0);assert.equal(readFileSync(cliLock,'utf8'),'pending\n');}
+  finally{session.disconnect();}
+ }finally{child.kill();}
 });

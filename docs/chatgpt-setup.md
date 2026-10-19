@@ -33,8 +33,10 @@ Worker повторно проверяет режим и действующую 
 `LocalSiwc` сохраняет только существующие несекретные метаданные в
 `.local/siwc-feasibility/host.json` и `registration.json`: host/client ID,
 issuer и проверенный subject. Эти данные не возвращаются status API.
-`authorization.lock` содержит только `pending`; crash lock автоматически
-не удаляется. Не удаляйте чужой активный lock.
+`authorization.lock` относится к standalone CLI, содержит только `pending` и
+не удаляется автоматически после crash. Сервер использует блокировку OAuth
+в памяти процесса: параллельный Connect запрещён, аварийный restart не оставляет
+блокирующего файла. Сервер не читает и не удаляет locks CLI.
 
 Access/refresh/ID tokens, authorization code, PKCE verifier и Authorization
 не записываются в SQLite, trace, backup, экспорт или JSON API. Сырой SSE не

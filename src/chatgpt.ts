@@ -17,7 +17,7 @@ async function openBrowser(url:string){
 export class ChatGptSession {
  #auth:LocalSiwc;#policy:NetworkPolicy;#state:State='DISCONNECTED';#error:string|null=null;#pending?:Promise<void>;#epoch=0;
  constructor(policy:NetworkPolicy,options?:ConstructorParameters<typeof LocalSiwc>[0]){
-  this.#policy=policy;this.#auth=new LocalSiwc(options??{openBrowser});
+  this.#policy=policy;this.#auth=new LocalSiwc({...options,openBrowser:options?.openBrowser??openBrowser,authorizationLock:'process'});
  }
  available(){return this.#policy.mode==='local'&&this.#policy.host==='127.0.0.1';}
  status(){
