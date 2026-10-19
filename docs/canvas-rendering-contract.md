@@ -39,6 +39,9 @@ fulfill-ится как `text/html; charset=utf-8` по случайному doc
 `webgl2`; clear без draw не считается рисованием. Readback использует отдельный
 32×24 probe. WebGL считывается сразу после draw, до очистки drawing buffer.
 Observer и его random-key состояние существуют только в checker, не в экспорте.
+Явные WebGL clear-вызовы обновляют снимок, не считаясь рисованием; сброс ширины
+или высоты backing store сбрасывает прежнее rendering evidence. Это исключает
+приём проверенных случаев draw → clear/reset с пустым конечным изображением.
 
 На 320×700, 390×700, 844×390 нужны видимый, открытый для hit testing Canvas с
 ненулевым backing store, подходящий размер, реальные draw-вызовы и изображение

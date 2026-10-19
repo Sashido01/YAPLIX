@@ -32,12 +32,12 @@ export function observeCanvas(key:string) {
    records.set(this,{context:args[0],draws:0,image:'',meaningful:false});
   return result;
  } as HTMLCanvasElement['getContext'];
- const wrap=(prototype:object,names:string[])=>{
+ const wrap=(prototype:object,names:string[],draw=true)=>{
   for(const name of names){
    const native=(prototype as Record<string,Function>)[name];if(typeof native!=='function')continue;
    Object.defineProperty(prototype,name,{configurable:true,writable:true,value:function(this:{canvas:HTMLCanvasElement},...args:unknown[]){
     const result=Reflect.apply(native,this,args),record=records.get(this.canvas);
-    if(record){record.draws++;if(record.context!=='2d')sample(this.canvas,record);}
+    if(record){if(draw)record.draws++;if(record.context!=='2d')sample(this.canvas,record);}
     return result;
    }});
   }
@@ -45,6 +45,17 @@ export function observeCanvas(key:string) {
  wrap(CanvasRenderingContext2D.prototype,['fillRect','strokeRect','fill','stroke','drawImage','putImageData','fillText','strokeText']);
  wrap(WebGLRenderingContext.prototype,['drawArrays','drawElements']);
  if(typeof WebGL2RenderingContext!=='undefined')wrap(WebGL2RenderingContext.prototype,['drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','drawRangeElements']);
+ // Explicit clears change the presented frame, but do not count as draws.
+ wrap(WebGLRenderingContext.prototype,['clear'],false);
+ if(typeof WebGL2RenderingContext!=='undefined')wrap(WebGL2RenderingContext.prototype,['clear','clearBufferfv','clearBufferiv','clearBufferuiv','clearBufferfi'],false);
+ // Assigning either backing dimension clears pixels even when unchanged.
+ for(const name of ['width','height']){
+  const descriptor=Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype,name)!;
+  Object.defineProperty(HTMLCanvasElement.prototype,name,{...descriptor,set(this:HTMLCanvasElement,value:number){
+   Reflect.apply(descriptor.set!,this,[value]);
+   const record=records.get(this);if(record){record.draws=0;record.image='';record.meaningful=false;}
+  }});
+ }
  const ui='button,input,select,textarea,output,label,nav,header,footer,[role=button],[role=status],[role=menu],[role=dialog],[aria-live]';
  const visible=(el:Element)=>{
   for(let p:Element|null=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility!=='visible'||Number(s.opacity)===0)return false;}

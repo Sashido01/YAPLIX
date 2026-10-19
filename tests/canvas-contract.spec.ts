@@ -87,3 +87,13 @@ for(const [name,source,code] of [
 ] as const)test('A1.8 rejects '+name,async({browser})=>{
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code});
 });
+
+test('A1.8 rejects WebGL frames explicitly cleared after drawing',async({browser})=>{
+ const source=canvasGame('webgl').replace('ctx.drawArrays(ctx.TRIANGLES,0,3);','ctx.drawArrays(ctx.TRIANGLES,0,3);ctx.clear(ctx.COLOR_BUFFER_BIT);');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
+
+test('A1.8 rejects WebGL frames erased by a backing store reset',async({browser})=>{
+ const source=canvasGame('webgl').replace('ctx.drawArrays(ctx.TRIANGLES,0,3);','ctx.drawArrays(ctx.TRIANGLES,0,3);surface.width=surface.width;');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
