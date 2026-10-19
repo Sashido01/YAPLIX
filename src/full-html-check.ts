@@ -3,6 +3,8 @@ import { Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import type { BrowserEvidence } from './browser-check.ts';
 import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
+import {randomUUID} from 'node:crypto';
+import {observeCanvas,canvasSnapshot,requireCanvas} from './canvas-check.ts';
 
 function activeElement(el:Element):boolean {
   if(el.matches(':disabled')||el.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]'))return false;
@@ -16,6 +18,10 @@ function activeElement(el:Element):boolean {
   const y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
   const hit=document.elementFromPoint(x,y);
   return !!hit&&el.contains(hit);
+}
+
+function serviceControl(el:Element):boolean {
+  return el.matches('button,[role="button"]')&&/^(?:pause|resume|continue|restart|replay|пауза|продолжить|перезапуск|заново|повторить)(?:$|\b|\s|\/)/i.test((el.getAttribute('aria-label')??el.textContent??'').trim());
 }
 
 /** Fail only on a wholly offscreen, active control with no scroll route back.
@@ -81,44 +87,74 @@ async function checkControlReachability(frame:Frame,known:Set<string>,landscape:
  * selectors, telemetry, state injection or JavaScript rewriting. */
 export async function checkFullHtml(browser:Browser,html:string,signal:AbortSignal):Promise<BrowserEvidence> {
   const began=performance.now();
+  const renderContexts=new Set<'2d'|'webgl'|'webgl2'>();
   const knownControls=new Set<string>();
   for(const {width,height} of BROWSER_VIEWPORTS['full-html']){
     const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
     let failure='',phase='load';
     try{
+      const canvasKey='__canvas_'+randomUUID().replaceAll('-','');
+      await context.addInitScript(observeCanvas,canvasKey);
       const page=await context.newPage();page.setDefaultTimeout(1500);
       page.on('pageerror',()=>{failure='JAVASCRIPT_EXCEPTION';});
       page.on('console',m=>{if(m.type()==='error')failure||='BROWSER_CONSOLE_ERROR';});
       page.on('dialog',d=>{failure||='NATIVE_DIALOG';void d.dismiss();});
       context.on('page',p=>{if(p!==page){failure||='POPUP';void p.close();}});
-      await context.route('**/*',r=>{failure||='NETWORK_ATTEMPT';return r.abort();});
       const content='<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="'+GAME_CSP+'"><script>'+UUID_COMPAT+'</script>'+html;
+      // Chromium can initialize srcdoc instrumentation after inline game code.
+      // A locally fulfilled document guarantees pre-script observation. This
+      // URL never reaches a network; only these two document loads are allowed.
+      const validationUrl='https://yaplix-check.invalid/'+canvasKey;let loads=0;
+      await context.route('**/*',r=>{
+        if(r.request().url()===validationUrl&&r.request().isNavigationRequest()&&++loads<=2)return r.fulfill({status:200,contentType:'text/html',body:content});
+        failure||='NETWORK_ATTEMPT';return r.abort();
+      });
       await page.setContent('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style><iframe sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>');
-      await page.locator('iframe').evaluate((node,content)=>{(node as HTMLIFrameElement).srcdoc=content;},content);
+      await page.locator('iframe').evaluate((node,url)=>{(node as HTMLIFrameElement).src=url;},validationUrl);
       const frame=await (await page.locator('iframe').elementHandle())!.contentFrame();
       if(!frame)throw new Fault('BROWSER_CHECK_INCONCLUSIVE',502);
-      await frame.waitForURL('about:srcdoc',{waitUntil:'load'});await page.waitForTimeout(100);
+      await frame.waitForURL(validationUrl,{waitUntil:'load'});await page.waitForTimeout(100);
+      const canvasSamples=[await canvasSnapshot(frame,canvasKey)];
       phase='layout';const visible=await frame.evaluate(()=>({width:document.body?.getBoundingClientRect().width??0,height:document.body?.getBoundingClientRect().height??0,overflow:document.documentElement.scrollWidth>innerWidth+2,content:!!document.querySelector('canvas,svg,button,input')||!!document.body?.innerText.trim()}));
       if(!visible.content||visible.width<20||visible.height<20)throw new Fault('BROWSER_GAME_AREA',502);
       if(visible.overflow)throw new Fault('BROWSER_HORIZONTAL_OVERFLOW',502);
       phase='start-control';const start=frame.getByRole('button',{name:/^(start|play|начать(?: игру)?|старт|играть)$/i}).filter({visible:true});
       if(await start.count()===1&&await start.evaluate(activeElement))await start.tap();
       phase='control-reachability';await checkControlReachability(frame,knownControls,width===844);
+      canvasSamples.push(await canvasSnapshot(frame,canvasKey));
       phase='touch-input';const input=frame.locator('canvas:visible,button:visible:enabled,[role="grid"]:visible');
-      for(let i=0,n=Math.min(64,await input.count());i<n;i++)if(await input.nth(i).evaluate(activeElement)){await input.nth(i).tap();break;}
+      for(let i=0,n=Math.min(64,await input.count());i<n;i++)if(await input.nth(i).evaluate(activeElement)&&!await input.nth(i).evaluate(serviceControl)){await input.nth(i).tap();break;}
+      await page.waitForTimeout(100);canvasSamples.push(await canvasSnapshot(frame,canvasKey));
       // An arbitrary start label may be opened by the generic touch probe.
       // Observe its newly exposed controls before comparing landscape geometry.
       phase='control-reachability';await checkControlReachability(frame,knownControls,width===844);
       // This is a phone probe: keyboard input would hide missing touch controls.
       // Probe real visible action controls, but never infer rules from pixels.
       phase='action-controls';const actions=frame.getByRole('button').filter({visible:true});
-      for(let i=0,n=Math.min(3,await actions.count());i<n;i++)if(await actions.nth(i).isVisible()&&await actions.nth(i).isEnabled()&&await actions.nth(i).evaluate(activeElement))await actions.nth(i).tap();
+      let probes=0;
+      for(let i=0,n=Math.min(64,await actions.count());i<n&&probes<3;i++)if(await actions.nth(i).isVisible()&&await actions.nth(i).isEnabled()&&await actions.nth(i).evaluate(activeElement)&&!await actions.nth(i).evaluate(serviceControl)){
+        await actions.nth(i).tap();probes++;
+        // Observe each real action before an opposite direction can undo it.
+        await page.waitForTimeout(50);canvasSamples.push(await canvasSnapshot(frame,canvasKey));
+      }
       await page.waitForTimeout(100);
+      canvasSamples.push(await canvasSnapshot(frame,canvasKey));
       phase='restart';const restart=frame.getByRole('button',{name:/^(restart|replay|перезапуск|заново|начать заново|повторить)$/i}).filter({visible:true});
       if(await restart.count()===1&&await restart.evaluate(activeElement)){await restart.tap();await page.waitForTimeout(100);}
       if(failure)throw new Fault(failure,502);
+      phase='canvas-render';for(const context of requireCanvas(canvasSamples.slice(1)))renderContexts.add(context);
       // An additional standalone offline load checks that parent init is optional.
-      phase='standalone';await page.goto('about:blank');await page.setContent(content);await page.waitForTimeout(100);
+      phase='standalone';await page.goto(validationUrl,{waitUntil:'load'});await page.waitForTimeout(100);
+      if(failure)throw new Fault(failure,502);
+      // Observe a real Start and input in the independent document as well.
+      const offlineStart=page.getByRole('button',{name:/^(start|play|начать(?: игру)?|старт|играть)$/i}).filter({visible:true});
+      if(await offlineStart.count()===1&&await offlineStart.isEnabled())await offlineStart.tap();
+      const offlineInput=page.locator('canvas:visible,button:visible:enabled');
+      for(let i=0,n=Math.min(64,await offlineInput.count());i<n;i++)if(await offlineInput.nth(i).evaluate(activeElement)&&!await offlineInput.nth(i).evaluate(serviceControl)){await offlineInput.nth(i).tap();break;}
+      await page.waitForTimeout(100);
+      if(failure)throw new Fault(failure,502);
+      requireCanvas([await canvasSnapshot(page.mainFrame(),canvasKey)],false);
+      await page.keyboard.press('ArrowRight');await page.waitForTimeout(50);
       if(failure)throw new Fault(failure,502);
       if(signal.aborted)throw new Fault('BROWSER_TIMEOUT',504);
     }catch(error){
@@ -127,7 +163,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       throw Object.assign(new Fault(signal.aborted?'BROWSER_TIMEOUT':'BROWSER_CHECK_INCONCLUSIVE',502),{validationPhase:phase,profileWidth:width,profileHeight:height});
     }finally{await context.close().catch(()=>{});}
   }
-  return {profiles:[...BROWSER_PROFILES['full-html']],offline:true,errors:0,scope:'full-html',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],elapsedMs:Math.round(performance.now()-began),checks:([
+  return {profiles:[...BROWSER_PROFILES['full-html']],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-v1',contexts:[...renderContexts],profiles:[...BROWSER_PROFILES['full-html']]},levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],elapsedMs:Math.round(performance.now()-began),checks:([
     'html-runs','input-works','gameplay-observed','win-reachable','loss-reachable','restart-works'
   ] as const).map(aspect=>({aspect,level:aspect==='html-runs'?'VERIFIED':'NOT_VERIFIED'}))};
 }

@@ -4,7 +4,8 @@ import {validBrowserProfiles,type BrowserScope} from './browser-profiles.ts';
 export interface BrowserChecks { checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number }
 // Historical full-html evidence predates landscape. Preserve its exact profiles;
 // the current checker emits 320/390/844, while startup-input-pause uses 320/390.
-export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offline:true; errors:0; scope:BrowserScope; levels?:string[] }
+export interface RenderingEvidence {contract:'canvas-webgl-v1';contexts:('2d'|'webgl'|'webgl2')[];profiles:number[]}
+export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offline:true; errors:0; scope:BrowserScope; levels?:string[];rendering?:RenderingEvidence }
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_EVENT_BYTES = 4096;
 export const methods = ['llm_code', 'template_config', 'mock', 'fallback','authored'] as const;
@@ -95,7 +96,7 @@ export function parseArtifact(value: unknown, source:'generation'|'saved-metadat
     const timing=(v:unknown)=>{if(!Number.isSafeInteger(v)||(v as number)<0||(v as number)>300000)throw new Fault('INVALID_GENERATION_METADATA');return v as number;};
     if(!Array.isArray(g.attempts)||!g.attempts.length||g.attempts.length>9||typeof g.fallback!=='boolean')throw new Fault('INVALID_GENERATION_METADATA');
     const attempts=g.attempts.map(v=>{const a=object(v,['route','provider','requestedModel','model','outcome','errorCode','elapsedMs','requestMs','validationMs','outputTokens','reasoningTokens']);const tokens:Partial<GenerationAttempt>={};for(const name of ['requestMs','validationMs'] as const){if(a[name]!==undefined)tokens[name]=timing(a[name]);}for(const name of ['outputTokens','reasoningTokens'] as const){if(a[name]!==undefined){if(!Number.isSafeInteger(a[name])||(a[name] as number)<0||(a[name] as number)>1000000)throw new Fault('INVALID_GENERATION_METADATA');tokens[name]=a[name] as number;}}return{route:choice(a.route,['primary','secondary','local'] as const),provider:string(a.provider,128),requestedModel:string(a.requestedModel,128),model:a.model===null?null:string(a.model,128),outcome:choice(a.outcome,['accepted','rejected','failed'] as const),errorCode:a.errorCode===null?null:string(a.errorCode,128),elapsedMs:timing(a.elapsedMs),...tokens};});
-    const b=object(g.browser,['profiles','offline','errors','scope','levels','checks','elapsedMs']);
+    const b=object(g.browser,['profiles','offline','errors','scope','levels','checks','elapsedMs','rendering']);
     const levels=['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'];if(b.levels!==undefined&&JSON.stringify(b.levels)!==JSON.stringify(levels))throw new Fault('INVALID_GENERATION_METADATA');
     const profiles=b.profiles;
     const validProfiles=validBrowserProfiles(profiles,b.scope,source==='saved-metadata');
@@ -108,7 +109,13 @@ export function parseArtifact(value: unknown, source:'generation'|'saved-metadat
       if(!Array.isArray(b.checks)||b.checks.length!==aspects.length)throw new Fault('INVALID_GENERATION_METADATA');
       extended.checks=b.checks.map((value,i)=>{const c=object(value,['aspect','level']);if(c.aspect!==aspects[i])throw new Fault('INVALID_GENERATION_METADATA');const level=choice(c.level,['VERIFIED','FAILED','NOT_VERIFIED'] as const);if(level==='FAILED')throw new Fault('INVALID_GENERATION_METADATA');return{aspect:aspects[i],level};});
     }
-    artifact.generation={attempts,fallback:g.fallback,elapsedMs:timing(g.elapsedMs),browser:{profiles:[...profiles as number[]],offline:true,errors:0,scope:b.scope,...(b.levels?{levels}:{}),...extended}};
+    let rendering:RenderingEvidence|undefined;
+    if(b.rendering!==undefined){
+      const r=object(b.rendering,['contract','contexts','profiles']);
+      if(r.contract!=='canvas-webgl-v1'||!Array.isArray(r.contexts)||!r.contexts.length||r.contexts.length>3||new Set(r.contexts).size!==r.contexts.length||r.contexts.some(c=>!['2d','webgl','webgl2'].includes(c))||!validBrowserProfiles(r.profiles,'full-html',false))throw new Fault('INVALID_GENERATION_METADATA');
+      rendering={contract:'canvas-webgl-v1',contexts:[...r.contexts],profiles:[...r.profiles as number[]]};
+    }
+    artifact.generation={attempts,fallback:g.fallback,elapsedMs:timing(g.elapsedMs),browser:{profiles:[...profiles as number[]],offline:true,errors:0,scope:b.scope,...(b.levels?{levels}:{}),...extended,...(rendering?{rendering}:{})}};
   }
   return artifact;
 }

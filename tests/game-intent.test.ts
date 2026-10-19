@@ -31,7 +31,8 @@ test('MICRO-031 direct and intent prepare concrete layout checks for creation an
       assert.match(system, /do not block scrolling with global touch-action or preventDefault/);
       assert.match(system, /desktop keyboard\/pointer and phone touch/);
       assert.match(system, /touch targets at least 44px/);
-      assert.match(system, /Choose Canvas or DOM to suit the game; no fixed engine or element IDs/);
+      assert.match(system, /Canvas 2D \(preferred\) or WebGL/);
+      assert.match(system, /No fixed engine, genre or element IDs/);
       assert.match(system, /No external resources/);
       assert.ok(!system.includes(request.prompt), 'requirements stay in the user message');
       if (style === 'intent') {
@@ -47,9 +48,9 @@ test('MICRO-031 direct and intent prepare concrete layout checks for creation an
   assert.deepEqual(generationMessages(request), generationMessages(request, undefined, 'direct'));
 });
 
-test('MICRO-031 layout guidance keeps system message growth below 20 percent', () => {
-  // UTF-8 system-message sizes at base c3ce3c2; user requirements/HTML are separate.
-  for (const [style, baseline] of [['direct', 2106], ['intent', 2961]] as const) {
+test('A1.8 rendering contract keeps system message growth below 20 percent', () => {
+  // UTF-8 system-message sizes at d389821 (A1.8 base); requirements/HTML separate.
+  for (const [style, baseline] of [['direct', 2429], ['intent', 3284]] as const) {
     const messages = generationMessages(spec('Аркада'), undefined, style);
     assert.ok(Buffer.byteLength(messages[0].content) <= baseline * 1.2, style);
   }
