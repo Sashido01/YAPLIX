@@ -7,7 +7,7 @@ import {generationMessages,extractDocument,GAME_GENERATION_CONTRACT,validateDocu
 import {Store} from '../src/store.ts';
 import {GenerationJobs} from '../src/jobs.ts';
 import {html,spec} from './helpers.ts';
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'full-html' as const});
+const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
 const source=(provider:string,complete:CodeTransport['complete']):CodeTransport=>({provider,model:provider==='ollama.com'?'gemma4:31b':'openrouter/free',route:'primary',readiness:async()=>'ready',complete});
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<200;i++){const job=jobs.get('owner',id);if(['completed','needs_attention'].includes(job.stage))return job;await new Promise(r=>setTimeout(r,10));}throw Error('JOB_WAIT');}
 

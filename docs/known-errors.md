@@ -8,7 +8,7 @@ initData или необработанные журналы. [Запуск и о
 
 | Ошибка / симптом | Причина и безопасное действие |
 | --- | --- |
-| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). |
+| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
 | NL-004: обе змейки теряют управление при 844×390 | Сохранённые DEV HTML рассчитывают поле без достаточного учёта высоты, body overflow:hidden блокирует прокрутку. Общее требование landscape не обеспечило адаптацию. MICRO-030 отклоняет подтверждённо недоступные controls; MICRO-031 уточняет общий prompt: три размера, все основные состояния, CSS shrink/reflow либо настоящая прокрутка без глобальной блокировки жестов. Offline tests проверяют подготовку сообщений; улучшение новых игр NOT_VERIFIED до отдельного разрешённого A/B. Исходные HTML не исправляются. [Контракт и границы](nl-game-intent.md#micro-031-доступность-управления). |
 | MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](micro-028n-phone-connectivity.md). |
 | MICRO-026: unit `tunnel.test.ts` ждёт TUNNEL_CLOSED, но получает BACKEND_NOT_READY | Один параллельный replay при browser/build нагрузке не успел поднять synthetic backend; полный последовательный `node --test --test-concurrency=1 tests/*.test.ts` прошёл 235/235 без изменения timeouts/production. Это наблюдение локального теста, не доказательство внешнего tunnel отказа. |
@@ -120,6 +120,43 @@ initData или необработанные журналы. [Запуск и о
   проверку. Это не доказательство gameplay/win или физических Android/iOS.
   Детали и границы: [MICRO-030](micro-030-report.md).
 
+## MICRO-036.3: Full HTML прошёл checker, но не сохраняется
+
+- RED на базе `942387e`: настоящий `checkFullHtml` успешно проверил
+  320×700, 390×700 и 844×390, затем `parseArtifact` выбросил
+  `INVALID_GENERATION_METADATA`: парсер принимал только `[320,390]`.
+- BrowserEvidence общий для checker и Artifact. Канонические viewport и profiles
+  обоих checker и парсера находятся в `src/browser-profiles.ts`. Для новой
+  генерации парсер принимает строго `[320,390]` для `startup-input-pause` и
+  `[320,390,844]` для `full-html`.
+  Список копируется без потери профилей; порядок, дубли, неизвестные значения,
+  строковые числа и объекты с поддельным `toJSON` отклоняются.
+- До MICRO-030 (`a0d3f41`) настоящий Full HTML checker выдавал `[320,390]`.
+  Исторические metadata поддерживаются в режиме `saved-metadata`, используемом
+  `Store.getVersion`, без добавления непроверенного landscape. Сохранение новой
+  Full HTML-версии с двумя профилями отклоняется.
+  Read-only inventory основной `.local/data/yaplix.sqlite` нашёл одну версию
+  без browser metadata; это не инвентаризация всех архивов/других баз.
+- GREEN: `tests/generation.spec.ts`, тест MICRO-036.3, наблюдает три настоящих
+  viewport и проходит `checkFullHtml → parseArtifact → Store.save → getVersion`
+  после закрытия/повторного открытия отдельной тестовой SQLite. Предыдущая версия,
+  её ID, SHA, HTML и два профиля остаются неизменны. Checker не подменяется.
+- Дополнительный offline integration проходит штатные `GenerationEngine →
+  GenerationJobs → Store → API`: создание задания, `completed`, библиотека,
+  история, экспорт, повторное открытие, восстановление полного checkpoint.
+  Provider — заглушка HTML, production browser checker настоящий. Всего один
+  dispatch; восстановление checkpoint не вызывает провайдера повторно.
+- Отдельный fault-injection RED обнаружил два dispatch вместо одного при
+  `INVALID_GENERATION_METADATA`. GREEN: ошибка локального контракта останавливает
+  fallback/repair, задание `needs_attention`, `retryAt:null`, исходный ответ и
+  checkpoint сохранены, версий нет. После restart/явной локальной перепроверки
+  checkpoint число dispatch остаётся 1. Подмена evidence используется только
+  в этом отрицательном тесте, не в основном integration.
+- Landscape-регрессии MICRO-030/MICRO-032 по-прежнему отклоняют обрезанные
+  controls с `BROWSER_CONTROLS_UNREACHABLE` при 844×390. Критерии checker неизменны.
+  Проверки offline/synthetic; реальные inference/repair POST: 0. Это не LIVE,
+  не доказательство gameplay/win/loss и не physical-device PASS.
+
 ## MICRO-032.4: стартовый overlay скрывает результат landscape gate
 
 - На сохранённой контрольной змейке 7/7 offline запусков Full HTML checker
@@ -189,3 +226,62 @@ initData или необработанные журналы. [Запуск и о
 - CLI `--prepare` не обращается к сети; `--authorize` — только ручной вход.
   Токены живут в памяти и забываются; persistent vault/refresh не реализованы.
   Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](micro-029-chatgpt-feasibility.md).
+
+## MICRO-036.4: post-merge ESM и controlled worker
+
+- На `05b7a59` целевой runtime Chromium desktop прошёл 4/4; controlled worker
+  на Chromium 320 / WebKit 390 упал 2/2. На `7d945502` запросы
+  `/runtime/runtime.js`, `/runtime/contracts.js`, `/runtime/browser-profiles.js`
+  вернули соответственно 200, 200, 404. Новый import в contracts остановил
+  выполнение ESM до присваивания `window.testSession`. Исправление: добавить
+  только `browser-profiles` в существующий точный allowlist `build/src`.
+  Неизвестные модули, исходники и encoded traversal по-прежнему возвращают 404.
+- В первоначальных trace controlled worker POST `/api/jobs` получил 503
+  `LLM_NOT_CONFIGURED`; GET списка вернул 200 и `{"jobs":[]}`, UI показал
+  «Заданий пока нет». `GenerationJobs.create` проверяет routes до INSERT,
+  поэтому задание не создавалось. Причина: synthetic provider в fixture
+  несовместим с явным UI mode `ollama-cloud`. Fixture теперь использует имя
+  `ollama.com` с прежним локальным mock complete, без внешнего запроса.
+  Assertions проверяют POST 202, наличие задания в manager/API, UI и завершение.
+  Изменение MICRO-023 в PR #46 касается другой fixture и не вызвало этот отказ.
+- Regression API обходит реальный ESM graph от runtime через contracts до
+  browser-profiles; браузерная проверка загружает `/host`, получает game_ready,
+  создаёт сессию и подтверждает game_started через analytics. RED воспроизведён
+  до исправления. Таймауты, retries, sandbox/CSP и production provider rules
+  не изменены. Все проверки synthetic/offline, реальные OAuth/inference POST: 0.
+
+### Обязательный локальный gate перед merge
+
+Любые изменения `src/`, `tests/`, игровых ресурсов, скриптов сборки или
+конфигурации, влияющей на выполнение приложения, требуют полного
+`npm run check` **до merge**.
+
+Проверки выполняются на точном HEAD коммита, который планируется слить.
+Результаты PASS, FAIL и SKIP фиксируются в описании PR.
+
+Изменения исключительно документации, не влияющие на выполнение приложения,
+допускаются без полного браузерного прогона.
+
+Пока GitHub Actions недоступны, локальный PASS обязателен, но не приравнивается
+к hosted CI PASS.
+
+
+## MICRO-036.4a: потеря job.created при параллельном pruning
+
+- Владелец воспроизвёл тот же flaky unit на main `7d945502` до MICRO-036.4:
+  последовательные запуски PASS, параллельные — intermittent FAIL.
+- Один инструментированный параллельный прогон на `37ea5f1` подтвердил 61
+  `unlinkSync: ENOENT` и 14 `statSync: ENOENT` в `GenerationTraces.prune()`.
+  Независимые тестовые процессы используют общий `.local/diagnostics/generation`
+  у лимита 16 MiB. Пока один процесс обходит snapshot, другой уже удаляет файл.
+  Ошибка конструктора предотвращает первую запись `job.created`; повторное
+  создание logger позднее успешно. Отчёт содержал последующие события до
+  `job.completed`, `traceAvailable:true`, `diagnosticsUnavailable:true`.
+- Pruning теперь пропускает только исчезнувшие entries (`ENOENT`) при чтении
+  metadata и удалении. Остальные ошибки не скрываются. Retention 7 дней,
+  общий лимит 16 MiB, rotation, защита ссылок и редактирование секретов сохранены.
+  Детерминированные тесты воспроизводят interleaving двух pruners после readdir
+  и перед unlink: RED — настоящий ENOENT; GREEN — сохранён `job.created`.
+  Permission failure и hardlink по-прежнему отклоняются, чужой HTML сохраняется.
+- Пользовательские журналы не очищать ради PASS и assertion не ослаблять.
+  Метаданные диагностического запуска находятся только в ignored `.local`.

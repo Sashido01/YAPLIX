@@ -1,5 +1,7 @@
 # Production game validation — текущее поведение
 
+> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+
 Аудит MICRO-036.2: 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`.
 MICRO-023/022 ниже описывают базовые gates; MICRO-030/032 уточняют Full HTML.
 Текущий блокер Save/Ready приведён в конце, production в этом аудите не меняется.

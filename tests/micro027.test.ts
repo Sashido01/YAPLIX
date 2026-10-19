@@ -1,5 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {resolve} from 'node:path';
+import {syncBuiltinESMExports} from 'node:module';
 import {mkdtempSync,readFileSync,writeFileSync,utimesSync,existsSync,statSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {GenerationTraces,safeTrace} from '../src/generation-trace.ts';
@@ -12,7 +15,7 @@ import {Fault} from '../src/contracts.ts';
 import {prepareDocument} from '../src/validation.ts';
 import {html,spec} from './helpers.ts';
 const route=()=>new CloudTransport({base:'https://ollama.com/v1',key:'synthetic',model:'gemma4:31b'});
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'full-html' as const});
+const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
 const request={spec,mode:'live' as const,providerMode:'ollama-cloud' as const,telegramConsent:false};
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<200;i++){const j=jobs.get('owner',id);if(['completed','needs_attention'].includes(j.stage))return j;await new Promise(r=>setTimeout(r,10));}throw Error('WAIT');}
 
@@ -30,6 +33,41 @@ test('trace rotates bounded files, expires only owned diagnostic files and survi
  assert.ok(statSync(directory+'/'+id+'.jsonl').size<=131072);assert.ok(statSync(directory+'/'+id+'.jsonl.1').size<=131072);
  assert.equal(readFileSync(directory+'/user-game.html','utf8'),'preserve');const rows=new GenerationTraces(directory).report(id).events;assert.equal(rows.at(-1)!.attempt,649);assert.ok(rows.length>0);
 });
+for(const operation of ['readdirSync','unlinkSync'] as const)test(`concurrent trace pruning after ${operation} preserves job.created`,t=>{
+ const directory=resolve(mkdtempSync('.local/trace-race-')),id=randomUUID(),expired=resolve(directory,randomUUID()+'.jsonl');
+ writeFileSync(expired,'expired');utimesSync(expired,0,0);writeFileSync(directory+'/user-game.html','preserve');
+ const original=fs[operation];let interleaved=false;
+ t.after(()=>{t.mock.restoreAll();syncBuiltinESMExports();});
+ t.mock.method(fs,operation,(...args:any[])=>{
+  const result=operation==='readdirSync'?Reflect.apply(original,fs,args):undefined;
+  if(!interleaved&&(args[0]===directory||args[0]===expired)){
+   interleaved=true;new GenerationTraces(directory);
+  }
+  return operation==='readdirSync'?result:Reflect.apply(original,fs,args);
+ });syncBuiltinESMExports();
+ const traces=new GenerationTraces(directory);traces.emit(id,'job.created');
+ assert.equal(interleaved,true);assert.equal(existsSync(expired),false);
+ assert.deepEqual(traces.report(id).events.map(row=>row.event),['job.created']);
+ assert.equal(readFileSync(directory+'/user-game.html','utf8'),'preserve');
+});
+
+test('trace pruning does not suppress permission failures or bypass linked-file protection',t=>{
+ const directory=resolve(mkdtempSync('.local/trace-guards-')),expired=resolve(directory,randomUUID()+'.jsonl');
+ writeFileSync(expired,'expired');utimesSync(expired,0,0);
+ const original=fs.unlinkSync;
+ t.after(()=>{t.mock.restoreAll();syncBuiltinESMExports();});
+ t.mock.method(fs,'unlinkSync',(path:fs.PathLike)=>{
+  if(path===expired)throw Object.assign(new Error('fixture permission failure'),{code:'EACCES'});
+  return original(path);
+ });syncBuiltinESMExports();
+ assert.throws(()=>new GenerationTraces(directory),{code:'EACCES'});
+ assert.equal(existsSync(expired),true);
+ t.mock.restoreAll();syncBuiltinESMExports();
+ const linked=resolve(directory,randomUUID()+'.jsonl');fs.linkSync(expired,linked);
+ assert.throws(()=>new GenerationTraces(directory),/TRACE_LINK_FORBIDDEN/);
+ assert.equal(existsSync(expired),true);assert.equal(existsSync(linked),true);
+});
+
 test('format fixtures preserve valid and markdown HTML; incomplete, empty and unexplained trailing source are explicit failures',()=>{
  for(const value of [html,'```html\n'+html+'\n```'])assert.equal(prepareDocument(value).html,html.trim());
  for(const value of ['',html.replace('</html>',''),html+' extra explanation','<!doctype html><html>partial'])assert.throws(()=>prepareDocument(value),/LLM_INVALID_HTML/);
@@ -59,7 +97,7 @@ test('durable job report is chronological, authorized, source-free and identifie
  const store=new Store(':memory:'),engine=new GenerationEngine([route()],{check:evidence}),jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
  try{const id=jobs.create('owner','diagnostic-end-to-end',request).jobId;assert.equal((await settled(jobs,id)).stage,'completed');
  const response=await app.request('/api/jobs/'+id+'/diagnostics'),report=await response.json();assert.equal(response.status,200);assert.match(response.headers.get('content-disposition')!,/attachment/);
- const names=report.events.map((e:any)=>e.event);for(const name of ['job.created','prompt.prepared','provider.selected','request.started','response.headers','response.first_byte','response.stream_completed','html.extracted','html.validated','browser.started','browser.validation_completed','version.saved','job.completed'])assert.ok(names.includes(name),name);
+ const names=report.events.map((e:any)=>e.event);for(const name of ['job.created','prompt.prepared','provider.selected','request.started','response.headers','response.first_byte','response.stream_completed','html.extracted','html.validated','browser.started','browser.validation_completed','version.saved','job.completed'])assert.ok(names.includes(name),JSON.stringify({missing:name,events:names,traceAvailable:report.traceAvailable,diagnosticsUnavailable:report.diagnosticsUnavailable}));
  assert.equal(names.at(-1),'job.completed');assert.ok(report.events.every((e:any)=>e.correlationId===id));assert.ok(!JSON.stringify(report).includes(spec.prompt));assert.ok(!JSON.stringify(report).includes(html));assert.throws(()=>jobs.report('other',id),/JOB_NOT_FOUND/);
  }finally{await jobs.close();store.close();}
 });
