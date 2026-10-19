@@ -4,6 +4,10 @@ import {GenerationEngine} from '../src/live.ts';
 import {Store} from '../src/store.ts';
 import {createApp} from '../src/api.ts';
 import {html,spec} from './helpers.ts';
+import {checkFullHtml} from '../src/full-html-check.ts';
+import {parseArtifact,type Artifact} from '../src/contracts.ts';
+import {mkdtempSync} from 'node:fs';
+import {GenerationJobs} from '../src/jobs.ts';
 
 // Authored reductions of NL-004 geometry, not copies or repairs of its games.
 function mobileLayout(kind:'direct'|'intent'|'fit'|'scroll'|'nested'|'states'|'decor'|'future'|'native'|'fixed'){
@@ -77,6 +81,85 @@ test('MICRO-023 arbitrary full HTML runs without telemetry or fixed selectors; c
  await expect(browserCheck(restart,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
 });
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Server-side Chromium checker is independent of the frontend browser profile.'));
+
+test('MICRO-036.3 real Full HTML evidence survives parse, save and reopened version',async({browser})=>{
+ const source=mobileLayout('fit');
+ const viewports=new Map<string,{width:number;height:number}>();
+ // Observe real pages without replacing the checker, browser or context factory.
+ const observe=()=>{for(const context of browser.contexts())for(const page of context.pages()){const size=page.viewportSize();if(size)viewports.set(JSON.stringify(size),size);}};
+ const timer=setInterval(observe,10);
+ let evidence;
+ try{evidence=await checkFullHtml(browser,source,AbortSignal.timeout(18000));}finally{clearInterval(timer);}
+ expect([...viewports.values()]).toEqual([{width:320,height:700},{width:390,height:700},{width:844,height:390}]);
+ expect(evidence.profiles).toEqual([320,390,844]);
+ const candidate:Artifact={html:source,method:'llm_code',provider:'offline-test',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline-test',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:evidence}};
+ const artifact=parseArtifact(candidate);
+ const directory=mkdtempSync('.local/metadata-integration-'),path=directory+'/versions.sqlite';
+ let store=new Store(path);
+ try{
+  const seed=store.save(spec,artifact);
+  // Seed pre-MICRO-030 metadata in the isolated test DB; production saves now
+  // require current evidence, while reading old rows remains compatible.
+  store.db.prepare("UPDATE versions SET metadata=json_set(metadata,'$.generation.browser.profiles',json('[320,390]')) WHERE version_id=?").run(seed.versionId);
+  const old=store.getVersion(seed.versionId);
+  const saved=store.save(spec,artifact,old.versionId);
+  expect(saved.generation!.browser).toEqual(evidence);
+  expect(saved.gameId).toBe(old.gameId);expect(saved.previousVersionId).toBe(old.versionId);expect(saved.versionId).not.toBe(old.versionId);
+  store.close();store=new Store(path);
+  expect(store.getVersion(saved.versionId)).toEqual(saved);
+  expect(store.getVersion(old.versionId)).toEqual(old);
+  expect(store.getVersion(old.versionId).generation!.browser.profiles).toEqual([320,390]);
+  expect(store.history(old.gameId).map(v=>v.versionId)).toEqual([old.versionId,saved.versionId]);
+  expect(saved.html).toBe(source);expect(saved.sha256).toBe(old.sha256);
+  const app=createApp(store);
+  expect(await(await app.request('/api/versions/'+old.versionId)).json()).toEqual(old);
+  const history=await(await app.request('/api/games/'+old.gameId)).json();
+  expect(history.versions[0].generation.browser.profiles).toEqual([320,390]);
+  expect(await(await app.request('/api/versions/'+old.versionId+'/export')).text()).toBe(source);
+ }finally{store.close();}
+});
+
+test('MICRO-036.3 offline production engine job saves, lists, reopens, exports and recovers checkpoint with one dispatch',async()=>{
+ test.setTimeout(60000);
+ const source=mobileLayout('fit');let calls=0;
+ const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async()=>{calls++;return{code:source,model:'gemma4:31b'};}}]);
+ const path=mkdtempSync('.local/metadata-job-')+'/versions.sqlite';
+ let store=new Store(path),jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
+ const settled=async(id:string)=>{await expect.poll(async()=>{const response=await app.request('/api/jobs/'+id);return(await response.json()).stage;},{timeout:25000}).toMatch(/^(completed|needs_attention|failed)$/);return(await(await app.request('/api/jobs/'+id)).json());};
+ try{
+  const response=await app.request('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idempotencyKey:'offline-metadata-chain',spec,mode:'live',providerMode:'ollama-cloud'})});
+  expect(response.status).toBe(202);const created=await response.json(),done=await settled(created.jobId);
+  expect(done.stage).toBe('completed');expect(done.errorCode).toBeNull();expect(done.attempts).toBe(1);expect(calls).toBe(1);
+  expect(done.checkpoint).toBe(source);expect(done.originalCheckpoint).toBe(source);
+  expect(done.checkpointOrigin).toEqual({provider:'ollama.com',requestedModel:'gemma4:31b',model:'gemma4:31b'});
+  const saved=await(await app.request('/api/versions/'+done.versionId)).json();
+  expect(saved.generation.browser).toMatchObject({scope:'full-html',profiles:[320,390,844],offline:true,errors:0});
+  expect(saved.html).toBe(source);
+  expect((await(await app.request('/api/games')).json()).games.map((v:any)=>v.versionId)).toEqual([saved.versionId]);
+  const history=await(await app.request('/api/games/'+saved.gameId)).json();
+  expect(history.versions).toHaveLength(1);expect(history.versions[0].generation).toEqual(saved.generation);
+  expect(await(await app.request('/api/versions/'+saved.versionId+'/export')).text()).toBe(source);
+  await jobs.close();store.close();store=new Store(path);jobs=new GenerationJobs(store,engine);app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
+  expect(await(await app.request('/api/versions/'+saved.versionId)).json()).toEqual(saved);
+  expect((await(await app.request('/api/jobs/'+done.jobId)).json()).originalCheckpoint).toBe(source);
+  expect(calls).toBe(1);
+
+  // A separate durable fixture represents a crash after response/checkpoint,
+  // before saving. Cancel it synchronously so no provider request can start.
+  const recovery=jobs.create('owner','offline-checkpoint-recovery',{spec,mode:'live',providerMode:'ollama-cloud',telegramConsent:false});
+  jobs.cancel('owner',recovery.jobId);await jobs.close();
+  const row=store.db.prepare('SELECT metadata FROM generation_jobs WHERE job_id=?').get(recovery.jobId)!;
+  const metadata={...JSON.parse(String(row.metadata)),provider:done.provider,requestedModel:done.requestedModel,actualModel:done.actualModel,checkpointOrigin:done.checkpointOrigin,originalCheckpoint:source,errorCode:null};
+  store.db.prepare("UPDATE generation_jobs SET status='validating',attempts=1,checkpoint=?,metadata=? WHERE job_id=?").run(source,JSON.stringify(metadata),recovery.jobId);
+  store.close();store=new Store(path);jobs=new GenerationJobs(store,engine,undefined,true,{retryMs:10});app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
+  const recovered=await settled(recovery.jobId);
+  expect(recovered.stage).toBe('completed');expect(recovered.errorCode).toBeNull();expect(calls).toBe(1);expect(recovered.attempts).toBe(1);
+  const restored=await(await app.request('/api/versions/'+recovered.versionId)).json();
+  expect(restored.generation.browser.profiles).toEqual([320,390,844]);expect(restored.html).toBe(source);
+  expect(restored.generation.attempts[0].requestMs).toBe(0);
+  expect(await(await app.request('/api/versions/'+saved.versionId)).json()).toEqual(saved);
+ }finally{await jobs.close();engine.close();store.close();}
+});
 test('real checker accepts authored fixture at 320/390 and offline',async()=>{
  const evidence=await browserCheck(html,AbortSignal.timeout(18000));
  expect(evidence).toMatchObject({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});

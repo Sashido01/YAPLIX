@@ -8,7 +8,7 @@ initData или необработанные журналы. [Запуск и о
 
 | Ошибка / симптом | Причина и безопасное действие |
 | --- | --- |
-| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). |
+| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
 | NL-004: обе змейки теряют управление при 844×390 | Сохранённые DEV HTML рассчитывают поле без достаточного учёта высоты, body overflow:hidden блокирует прокрутку. Общее требование landscape не обеспечило адаптацию. MICRO-030 отклоняет подтверждённо недоступные controls; MICRO-031 уточняет общий prompt: три размера, все основные состояния, CSS shrink/reflow либо настоящая прокрутка без глобальной блокировки жестов. Offline tests проверяют подготовку сообщений; улучшение новых игр NOT_VERIFIED до отдельного разрешённого A/B. Исходные HTML не исправляются. [Контракт и границы](nl-game-intent.md#micro-031-доступность-управления). |
 | MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](micro-028n-phone-connectivity.md). |
 | MICRO-026: unit `tunnel.test.ts` ждёт TUNNEL_CLOSED, но получает BACKEND_NOT_READY | Один параллельный replay при browser/build нагрузке не успел поднять synthetic backend; полный последовательный `node --test --test-concurrency=1 tests/*.test.ts` прошёл 235/235 без изменения timeouts/production. Это наблюдение локального теста, не доказательство внешнего tunnel отказа. |
@@ -119,6 +119,43 @@ initData или необработанные журналы. [Запуск и о
 - Сохранённые игры не исправлялись; булочная по-прежнему проходит техническую
   проверку. Это не доказательство gameplay/win или физических Android/iOS.
   Детали и границы: [MICRO-030](micro-030-report.md).
+
+## MICRO-036.3: Full HTML прошёл checker, но не сохраняется
+
+- RED на базе `942387e`: настоящий `checkFullHtml` успешно проверил
+  320×700, 390×700 и 844×390, затем `parseArtifact` выбросил
+  `INVALID_GENERATION_METADATA`: парсер принимал только `[320,390]`.
+- BrowserEvidence общий для checker и Artifact. Канонические viewport и profiles
+  обоих checker и парсера находятся в `src/browser-profiles.ts`. Для новой
+  генерации парсер принимает строго `[320,390]` для `startup-input-pause` и
+  `[320,390,844]` для `full-html`.
+  Список копируется без потери профилей; порядок, дубли, неизвестные значения,
+  строковые числа и объекты с поддельным `toJSON` отклоняются.
+- До MICRO-030 (`a0d3f41`) настоящий Full HTML checker выдавал `[320,390]`.
+  Исторические metadata поддерживаются в режиме `saved-metadata`, используемом
+  `Store.getVersion`, без добавления непроверенного landscape. Сохранение новой
+  Full HTML-версии с двумя профилями отклоняется.
+  Read-only inventory основной `.local/data/yaplix.sqlite` нашёл одну версию
+  без browser metadata; это не инвентаризация всех архивов/других баз.
+- GREEN: `tests/generation.spec.ts`, тест MICRO-036.3, наблюдает три настоящих
+  viewport и проходит `checkFullHtml → parseArtifact → Store.save → getVersion`
+  после закрытия/повторного открытия отдельной тестовой SQLite. Предыдущая версия,
+  её ID, SHA, HTML и два профиля остаются неизменны. Checker не подменяется.
+- Дополнительный offline integration проходит штатные `GenerationEngine →
+  GenerationJobs → Store → API`: создание задания, `completed`, библиотека,
+  история, экспорт, повторное открытие, восстановление полного checkpoint.
+  Provider — заглушка HTML, production browser checker настоящий. Всего один
+  dispatch; восстановление checkpoint не вызывает провайдера повторно.
+- Отдельный fault-injection RED обнаружил два dispatch вместо одного при
+  `INVALID_GENERATION_METADATA`. GREEN: ошибка локального контракта останавливает
+  fallback/repair, задание `needs_attention`, `retryAt:null`, исходный ответ и
+  checkpoint сохранены, версий нет. После restart/явной локальной перепроверки
+  checkpoint число dispatch остаётся 1. Подмена evidence используется только
+  в этом отрицательном тесте, не в основном integration.
+- Landscape-регрессии MICRO-030/MICRO-032 по-прежнему отклоняют обрезанные
+  controls с `BROWSER_CONTROLS_UNREACHABLE` при 844×390. Критерии checker неизменны.
+  Проверки offline/synthetic; реальные inference/repair POST: 0. Это не LIVE,
+  не доказательство gameplay/win/loss и не physical-device PASS.
 
 ## MICRO-032.4: стартовый overlay скрывает результат landscape gate
 

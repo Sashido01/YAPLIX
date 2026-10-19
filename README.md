@@ -1,5 +1,7 @@
 # YAPLIX — ты придумал, теперь играй
 
+> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](docs/known-errors.md).
+
 Статус на 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`:
 **MVP/demo PARTIAL**. Стабильный QR-порт 52604 включён; подключение Android/Brave,
 запуск «Волк ловит яйца», refresh/re-entry и revoke подтверждены владельцем,

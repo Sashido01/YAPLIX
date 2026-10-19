@@ -190,7 +190,7 @@ test('invalid input, host injection and quoted game signage respect the trust bo
   assert.equal(JSON.parse(messages[1].content).request, attack);
 });
 
-const evidence = async () => ({ profiles: [320, 390], offline: true as const, errors: 0 as const, scope: 'full-html' as const });
+const evidence = async () => ({ profiles: [320, 390, 844], offline: true as const, errors: 0 as const, scope: 'full-html' as const });
 test('engine switch defaults to byte-identical legacy messages and intent adds no interpretation call', async () => {
   const text = 'Змейка для бабушки';
   const captured: Message[][] = [];

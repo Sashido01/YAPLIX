@@ -12,7 +12,7 @@ import {Fault} from '../src/contracts.ts';
 import {prepareDocument} from '../src/validation.ts';
 import {html,spec} from './helpers.ts';
 const route=()=>new CloudTransport({base:'https://ollama.com/v1',key:'synthetic',model:'gemma4:31b'});
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'full-html' as const});
+const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
 const request={spec,mode:'live' as const,providerMode:'ollama-cloud' as const,telegramConsent:false};
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<200;i++){const j=jobs.get('owner',id);if(['completed','needs_attention'].includes(j.stage))return j;await new Promise(r=>setTimeout(r,10));}throw Error('WAIT');}
 
