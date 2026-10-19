@@ -35,9 +35,17 @@ export class GenerationTraces {
   private file(id:string){return resolve(this.directory,uuid(id)+'.jsonl');}
   private regular(path:string){if(existsSync(path)&&(!lstatSync(path).isFile()||lstatSync(path).isSymbolicLink()||statSync(path).nlink!==1))throw Error('TRACE_LINK_FORBIDDEN');}
   private prune(){
-    const files=readdirSync(this.directory).filter(n=>traceName.test(n)).map(n=>{const path=resolve(this.directory,n);this.regular(path);return{path,...statSync(path)};}).sort((a,b)=>a.mtimeMs-b.mtimeMs);
+    const files=readdirSync(this.directory).filter(n=>traceName.test(n)).flatMap(n=>{
+      const path=resolve(this.directory,n);
+      try{this.regular(path);return[{path,...statSync(path)}];}
+      catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return[];throw error;}
+    }).sort((a,b)=>a.mtimeMs-b.mtimeMs);
     let bytes=files.reduce((sum,f)=>sum+f.size,0);
-    for(const f of files)if(Date.now()-f.mtimeMs>7*86400000||bytes>16*1024*1024){unlinkSync(f.path);bytes-=f.size;}
+    for(const f of files)if(Date.now()-f.mtimeMs>7*86400000||bytes>16*1024*1024){
+      // Another process may already have pruned this snapshot entry.
+      try{unlinkSync(f.path);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+      bytes-=f.size;
+    }
   }
   emit(id:string,event:string,data:TraceData={}){
     const file=this.file(id),line=JSON.stringify(safeTrace(event,id,data))+'\n';this.regular(file);this.regular(file+'.1');

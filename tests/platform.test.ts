@@ -139,3 +139,27 @@ test('bridge rejects wrong window, origin, session, protocol, size and malformed
   assert.deepEqual(acceptMessage(message, source, session), payload.event);
   for (const msg of [{ ...message, source: {} }, { ...message, origin: 'http://localhost' }, { ...message, data: null }, { ...message, data: { ...payload, event: { ...payload.event, sessionId: randomUUID() } } }, { ...message, data: { ...payload, event: { ...payload.event, protocolVersion: 2 } } }]) assert.equal(acceptMessage(msg as MessageEvent, source, session), null);
 });
+
+test('browser runtime ESM graph is served as JavaScript through the exact module allowlist', async t => {
+  const store = new Store(':memory:'); t.after(() => store.close());
+  const app = createApp(store), seen = new Set<string>();
+  async function visit(path: string) {
+    if (seen.has(path)) return;
+    seen.add(path);
+    const response = await app.request(path);
+    assert.equal(response.status, 200, path);
+    assert.match(response.headers.get('content-type') ?? '', /^text\/javascript/, path);
+    const source = await response.text();
+    for (const match of source.matchAll(/(?:from\s*|import\s*)['"]([^'"]+)['"]/g)) {
+      assert.ok(match[1].startsWith('./'), `Unexpected browser import: ${match[1]}`);
+      await visit(new URL(match[1], 'http://localhost' + path).pathname);
+    }
+  }
+  await visit('/runtime/runtime.js');
+  assert.deepEqual([...seen].sort(), ['/runtime/browser-profiles.js', '/runtime/contracts.js', '/runtime/runtime.js']);
+  for (const path of ['/runtime/unknown.js', '/runtime/store.js', '/runtime/browser-profiles.ts',
+    '/runtime/%2e%2e%2fsrc%2fstore.js', '/runtime/%2e%2e%5csrc%5cstore.js',
+    '/runtime/../src/store.ts', '/runtime/%252e%252e%252fsrc%252fstore.ts']) {
+    assert.equal((await app.request(path)).status, 404, path);
+  }
+});

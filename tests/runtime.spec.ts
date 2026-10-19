@@ -91,3 +91,22 @@ test('CSP blocks fetch, frames and forms; forged messages and game errors leave 
   expect(await page.evaluate(() => (window as any).received.length)).toBe(before);
   await expect(page.locator('iframe')).toHaveCount(0);
 });
+
+test('host loads the complete ESM graph, creates a session and initializes gameplay', async ({ page, request }) => {
+  const modules = new Map<string, number>(), errors: string[] = [];
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname;
+    if (path.startsWith('/runtime/')) modules.set(path, response.status());
+  });
+  page.on('pageerror', error => errors.push(error.message));
+  expect((await page.goto('/host'))!.status()).toBe(200);
+  await expect.poll(() => page.evaluate(() => (window as any).received?.[0]?.type)).toBe('game_ready');
+  const session = await page.evaluate(() => (window as any).testSession);
+  expect(session.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+  expect([...modules].sort()).toEqual([
+    ['/runtime/browser-profiles.js', 200], ['/runtime/contracts.js', 200], ['/runtime/runtime.js', 200]
+  ]);
+  await page.frameLocator('iframe').getByRole('button', { name: 'Start', exact: true }).click();
+  await expect.poll(async () => (await (await request.get(`/api/versions/${session.versionId}/analytics`)).json()).startedCount).toBe(1);
+  expect(errors).toEqual([]);
+});

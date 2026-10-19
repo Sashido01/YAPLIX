@@ -171,3 +171,62 @@ initData или необработанные журналы. [Запуск и о
 - Критерий MICRO-030, sandbox/CSP и таймауты сохранены. Авторские минимальные
   регрессии проверяют overlay с разными подписями и безопасную компоновку отдельно
   от полностью обрезанных controls. Эти проверки не доказывают gameplay/win/loss.
+
+## MICRO-036.4: post-merge ESM и controlled worker
+
+- На `05b7a59` целевой runtime Chromium desktop прошёл 4/4; controlled worker
+  на Chromium 320 / WebKit 390 упал 2/2. На `7d945502` запросы
+  `/runtime/runtime.js`, `/runtime/contracts.js`, `/runtime/browser-profiles.js`
+  вернули соответственно 200, 200, 404. Новый import в contracts остановил
+  выполнение ESM до присваивания `window.testSession`. Исправление: добавить
+  только `browser-profiles` в существующий точный allowlist `build/src`.
+  Неизвестные модули, исходники и encoded traversal по-прежнему возвращают 404.
+- В первоначальных trace controlled worker POST `/api/jobs` получил 503
+  `LLM_NOT_CONFIGURED`; GET списка вернул 200 и `{"jobs":[]}`, UI показал
+  «Заданий пока нет». `GenerationJobs.create` проверяет routes до INSERT,
+  поэтому задание не создавалось. Причина: synthetic provider в fixture
+  несовместим с явным UI mode `ollama-cloud`. Fixture теперь использует имя
+  `ollama.com` с прежним локальным mock complete, без внешнего запроса.
+  Assertions проверяют POST 202, наличие задания в manager/API, UI и завершение.
+  Изменение MICRO-023 в PR #46 касается другой fixture и не вызвало этот отказ.
+- Regression API обходит реальный ESM graph от runtime через contracts до
+  browser-profiles; браузерная проверка загружает `/host`, получает game_ready,
+  создаёт сессию и подтверждает game_started через analytics. RED воспроизведён
+  до исправления. Таймауты, retries, sandbox/CSP и production provider rules
+  не изменены. Все проверки synthetic/offline, реальные OAuth/inference POST: 0.
+
+### Обязательный локальный gate перед merge
+
+Любые изменения `src/`, `tests/`, игровых ресурсов, скриптов сборки или
+конфигурации, влияющей на выполнение приложения, требуют полного
+`npm run check` **до merge**.
+
+Проверки выполняются на точном HEAD коммита, который планируется слить.
+Результаты PASS, FAIL и SKIP фиксируются в описании PR.
+
+Изменения исключительно документации, не влияющие на выполнение приложения,
+допускаются без полного браузерного прогона.
+
+Пока GitHub Actions недоступны, локальный PASS обязателен, но не приравнивается
+к hosted CI PASS.
+
+
+## MICRO-036.4a: потеря job.created при параллельном pruning
+
+- Владелец воспроизвёл тот же flaky unit на main `7d945502` до MICRO-036.4:
+  последовательные запуски PASS, параллельные — intermittent FAIL.
+- Один инструментированный параллельный прогон на `37ea5f1` подтвердил 61
+  `unlinkSync: ENOENT` и 14 `statSync: ENOENT` в `GenerationTraces.prune()`.
+  Независимые тестовые процессы используют общий `.local/diagnostics/generation`
+  у лимита 16 MiB. Пока один процесс обходит snapshot, другой уже удаляет файл.
+  Ошибка конструктора предотвращает первую запись `job.created`; повторное
+  создание logger позднее успешно. Отчёт содержал последующие события до
+  `job.completed`, `traceAvailable:true`, `diagnosticsUnavailable:true`.
+- Pruning теперь пропускает только исчезнувшие entries (`ENOENT`) при чтении
+  metadata и удалении. Остальные ошибки не скрываются. Retention 7 дней,
+  общий лимит 16 MiB, rotation, защита ссылок и редактирование секретов сохранены.
+  Детерминированные тесты воспроизводят interleaving двух pruners после readdir
+  и перед unlink: RED — настоящий ENOENT; GREEN — сохранён `job.created`.
+  Permission failure и hardlink по-прежнему отклоняются, чужой HTML сохраняется.
+- Пользовательские журналы не очищать ради PASS и assertion не ослаблять.
+  Метаданные диагностического запуска находятся только в ignored `.local`.
