@@ -137,6 +137,16 @@ initData или необработанные журналы. [Запуск и о
 
 ## MICRO-029: изолированная подготовка SIWC
 
+- MICRO-029.2 third-probe preflight: на c440ca0 синтетические ответы без model,
+  с gpt-6-astra и с конфликтующими response.model ошибочно давали PASS.
+  Диагностика теперь читает фактическую модель из SSE response metadata;
+  отсутствие даёт SIWC_MODEL_ACTUAL_NOT_VERIFIED, несовпадение/конфликт —
+  SIWC_MODEL_ACTUAL_MISMATCH. Произвольные значения заменяются OTHER.
+  Регрессии RED до исправления, GREEN после. Это offline proof; прошлые LIVE
+  ответы не пересматриваются. Для третьего probe разрешены только один новый
+  OAuth и один POST с durable reservation в .local/siwc-third-probe; повтор
+  после любого исхода запрещён, отчёт сохраняется только в этом каталоге.
+
 - MICRO-029.3: проверка LocalSiwc.probe сама по себе не покрывает stdout/exit code
   CLI. Экспортированная runSiwcCli вызывается обычным source entry point и
   offline-тестами с fake HTTP/browser; 23 проверки, включая пять с loopback

@@ -38,6 +38,7 @@ export type SiwcProbeReport={
  error:string|null;httpStatus:number|null;
  responseMediaType:'event-stream'|'json'|'other'|'missing'|null;sseObserved:boolean;
  requestedReasoningEffort:'medium';
+ requestedModel:typeof PROBE_MODEL;actualModel:string|null;
 };
 export class SiwcError extends Error {constructor(code:string){super(code);this.name='SiwcError';}}
 function fail(code:string):never{throw new SiwcError(code);}
@@ -88,7 +89,7 @@ export class LocalSiwc {
   const tokens=this.#tokens!;
   // Do not expose provider text or metadata that might echo a credential.
   const safe=(value:string)=>[tokens.access,tokens.refresh,tokens.id].reduce((text,secret)=>text.split(secret).join('[REDACTED]'),value).replace(/[\u0000-\u001f\u007f]/g,'');
-  const report:SiwcProbeReport={result:'PARTIAL',authorization:'VERIFIED',planPermissionGranted:true,models:[],selectedModel:null,inference:'NOT_RUN',textReceived:false,exactMatch:false,usage:null,diagnostics:{eventCounts:{},lastEventType:null,responseStatus:null,apiErrorCode:null,incompleteReason:null,textPresent:false,textLength:0,receivedBytes:0},providerCalls:{modelsGet:0,inferencePost:0},tokensPersisted:false,error:null,httpStatus:null,responseMediaType:null,sseObserved:false,requestedReasoningEffort:'medium'};
+  const report:SiwcProbeReport={requestedModel:PROBE_MODEL,actualModel:null,result:'PARTIAL',authorization:'VERIFIED',planPermissionGranted:true,models:[],selectedModel:null,inference:'NOT_RUN',textReceived:false,exactMatch:false,usage:null,diagnostics:{eventCounts:{},lastEventType:null,responseStatus:null,apiErrorCode:null,incompleteReason:null,textPresent:false,textLength:0,receivedBytes:0},providerCalls:{modelsGet:0,inferencePost:0},tokensPersisted:false,error:null,httpStatus:null,responseMediaType:null,sseObserved:false,requestedReasoningEffort:'medium'};
   const request=async(url:string,body?:object)=>{
    signal.throwIfAborted();
    if(!this.status().planPermissionGranted)fail('SIWC_PLAN_PERMISSION_REQUIRED');
@@ -148,6 +149,11 @@ export class LocalSiwc {
    const metadata=(value:any)=>{
     const result=value?.response;
     if(result&&typeof result==='object'){
+     if(Object.hasOwn(result,'model')&&result.model!==undefined){
+      // Fixed labels only: arbitrary provider metadata may contain identity or credentials.
+      const model=safeCode(result.model,[PROBE_MODEL,'gpt-6-astra'])??'OTHER';
+      report.actualModel=report.actualModel===null||report.actualModel===model?model:'CONFLICT';
+     }
      report.diagnostics.responseStatus=safeCode(result.status,['completed','failed','incomplete','in_progress','queued','cancelled']);
      report.diagnostics.incompleteReason=safeCode(result.incomplete_details?.reason,['max_output_tokens','content_filter']);
     }
@@ -214,6 +220,8 @@ export class LocalSiwc {
    }
    if(!completed){report.inference='INTERRUPTED';fail('SIWC_STREAM_INTERRUPTED');}
    report.inference='COMPLETED';
+   if(report.actualModel===null)fail('SIWC_MODEL_ACTUAL_NOT_VERIFIED');
+   if(report.actualModel!==PROBE_MODEL)fail('SIWC_MODEL_ACTUAL_MISMATCH');
    if(report.exactMatch)report.result='PASS';else report.error='SIWC_OUTPUT_UNEXPECTED';
   }catch(error){
    report.error=signal.aborted?'SIWC_PROBE_CANCELLED':error instanceof SiwcError?error.message:'SIWC_PROBE_INVALID_OR_NETWORK';

@@ -40,10 +40,11 @@ async function exerciseCli(kind='completed',loopback=false){
   if(kind==='incomplete')return new Response('data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}\n\n');
   if(kind==='error')return new Response('data: {"type":"error","code":"invalid_request_error","message":"RAW_ERROR_SECRET"}\n\n');
   if(kind==='interrupted')return new Response('data: {"type":"response.output_text.delta","delta":"RAW_ANSWER_SECRET"}\n\n');
-  if(kind==='empty')return new Response('data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n');
+  if(kind==='empty')return new Response('data: {"type":"response.completed","response":{"status":"completed","model":"gpt-6.1-sol","output":[]}}\n\n');
   if(kind==='malformed')return new Response('data: {RAW_SSE_SECRET}\n\n');
   if(kind==='http200-only')return new Response('RAW_HTTP_SECRET');
-  return new Response('data: {"type":"response.output_text.done","text":"YAPLIX READY"}\n\ndata: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n');
+  if(kind==='model-missing'||kind==='model-wrong')return new Response('data: '+JSON.stringify({type:'response.completed',response:{status:'completed',...(kind==='model-wrong'?{model:'gpt-6-astra'}:{}),output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'YAPLIX READY'}]}]}})+'\n\n');
+  return new Response('data: {"type":"response.output_text.done","text":"YAPLIX READY"}\n\ndata: {"type":"response.completed","response":{"status":"completed","model":"gpt-6.1-sol","output":[]}}\n\n');
  };
  // Real local HTTP/SSE boundary, never an OpenAI connection. The router only
  // serves the two pinned API paths; discovery/token/JWKS remain synthetic.
@@ -101,6 +102,8 @@ for(const [kind,outcome,error,posts] of [
  ['expired','NOT_RUN','SIWC_PLAN_PERMISSION_REQUIRED',0],
  ['other-model','NOT_RUN','SIWC_PROBE_MODEL_UNAVAILABLE',0],['pro-only','NOT_RUN','SIWC_PROBE_MODEL_UNAVAILABLE',0],
  ['hidden','NOT_RUN','SIWC_PROBE_MODEL_UNAVAILABLE',0],
+ ['model-missing','COMPLETED','SIWC_MODEL_ACTUAL_NOT_VERIFIED',1],
+ ['model-wrong','COMPLETED','SIWC_MODEL_ACTUAL_MISMATCH',1],
 ] as const)test('SIWC CLI fails closed without retry, refresh or leaks: '+kind,async()=>{
  const actual=await exerciseCli(kind);
  assert.equal(actual.code,1);assert.equal(actual.report.result,'PARTIAL');assert.equal(actual.report.inference,outcome);assert.equal(actual.report.error,error);

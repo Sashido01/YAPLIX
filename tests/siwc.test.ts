@@ -35,7 +35,7 @@ test('SIWC preserves streamed text when completed output is empty and retains sa
  const {auth}=await probeSession(async input=>{
   if(String(input).endsWith('/models'))return Response.json({models:[{slug:'gpt-6.1-sol',display_name:'GPT-6.1 Sol',visibility:'list'}]});
   const events=[{type:'response.output_text.delta',output_index:0,content_index:0,delta:'YAPLIX READY'},
-   {type:'response.completed',response:{status:'completed',output:[],usage:{input_tokens:3,output_tokens:4,total_tokens:7}}}];
+   {type:'response.completed',response:{status:'completed',model:'gpt-6.1-sol',output:[],usage:{input_tokens:3,output_tokens:4,total_tokens:7}}}];
   return new Response(events.map(value=>'data: '+JSON.stringify(value)+'\n\n').join(''));
  });
  try{
@@ -46,10 +46,27 @@ test('SIWC preserves streamed text when completed output is empty and retains sa
  }finally{auth.dispose();}
 });
 
-const completion=(output:unknown[]=[],extra:object={})=>({type:'response.completed',response:{status:'completed',output,...extra}});
+const completion=(output:unknown[]=[],extra:object={})=>({type:'response.completed',response:{status:'completed',model:'gpt-6.1-sol',output,...extra}});
 const message=(text:string)=>({type:'message',role:'assistant',content:[{type:'output_text',text}]});
 const delta=(value:string,content=0)=>({type:'response.output_text.delta',output_index:0,content_index:content,delta:value});
 const doneText=(value:string,content=0)=>({type:'response.output_text.done',output_index:0,content_index:content,text:value});
+for(const [kind,model,error] of [
+ ['missing',undefined,'SIWC_MODEL_ACTUAL_NOT_VERIFIED'],
+ ['wrong','gpt-6-astra','SIWC_MODEL_ACTUAL_MISMATCH'],
+ ['untrusted','offline-access-credential','SIWC_MODEL_ACTUAL_MISMATCH'],
+] as const)test('SIWC requires actual response model evidence: '+kind,async()=>{
+ const {report}=await diagnosticProbe([completion([message('YAPLIX READY')],{model})]);
+ assert.equal(report.result,'PARTIAL');assert.equal(report.error,error);
+ assert.equal(report.requestedModel,'gpt-6.1-sol');
+ assert.equal(report.actualModel,kind==='missing'?null:kind==='wrong'?'gpt-6-astra':'OTHER');
+ assert.equal(report.diagnostics.textLength,12);assert.ok(!JSON.stringify(report).includes('credential'));
+});
+test('SIWC rejects conflicting models across response events',async()=>{
+ const {report}=await diagnosticProbe([{type:'response.created',response:{model:'gpt-6-astra'}},
+  completion([message('YAPLIX READY')],{model:'gpt-6.1-sol'})]);
+ assert.equal(report.result,'PARTIAL');assert.equal(report.error,'SIWC_MODEL_ACTUAL_MISMATCH');
+ assert.equal(report.actualModel,'CONFLICT');
+});
 async function diagnosticProbe(events:unknown[],raw?:string){
  const wire=raw??events.map(value=>'data: '+JSON.stringify(value)+'\n\n').join('');
  const {auth}=await probeSession(async input=>String(input).endsWith('/models')?
@@ -143,7 +160,7 @@ test('SIWC probe uses the visible account catalog and exactly one contract-compl
    {slug:'gpt-6.1-sol',display_name:'GPT-6.1 Sol',visibility:'list'},
    {slug:'gpt-99-astra',display_name:'Future GPT',visibility:'list'}]});
   assert.deepEqual(JSON.parse(String(init?.body)),{model:'gpt-6.1-sol',input:[{role:'user',content:'Ответь точно: YAPLIX READY'}],store:false,stream:true,reasoning:{effort:'medium'}});
-  return new Response('data: '+JSON.stringify({type:'response.completed',response:{status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'YAPLIX READY'}]}],usage:{input_tokens:12,output_tokens:4,total_tokens:16}}})+'\n\n',{headers:{'Content-Type':'text/event-stream'}});
+  return new Response('data: '+JSON.stringify({type:'response.completed',response:{status:'completed',model:'gpt-6.1-sol',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'YAPLIX READY'}]}],usage:{input_tokens:12,output_tokens:4,total_tokens:16}}})+'\n\n',{headers:{'Content-Type':'text/event-stream'}});
  });
  try{
   const report=await auth.probe();assert.equal(report.result,'PASS');assert.equal(report.inference,'COMPLETED');assert.equal(report.diagnostics.textLength,12);
@@ -159,7 +176,7 @@ test('SIWC probe uses the visible account catalog and exactly one contract-compl
 test('SIWC probe consumes actual SSE without relying solely on Content-Type',async()=>{
  const {auth}=await probeSession(async input=>{
   if(String(input).endsWith('/models'))return Response.json({models:[{slug:'gpt-6.1-sol',display_name:'Test GPT',visibility:'list'}]});
-  const bytes=new TextEncoder().encode('data: '+JSON.stringify({type:'response.completed',response:{status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'YAPLIX READY'}]}]}})+'\n\n');
+  const bytes=new TextEncoder().encode('data: '+JSON.stringify({type:'response.completed',response:{status:'completed',model:'gpt-6.1-sol',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'YAPLIX READY'}]}]}})+'\n\n');
   return new Response(bytes); // Deliberately no media type; still genuine SSE framing.
  });
  try{
@@ -187,7 +204,7 @@ for(const [mediaType,newline] of [['text/event-stream','\r'],['text/plain','\n']
   if(String(input).endsWith('/models'))return Response.json({models:[{slug:'gpt-6.1-sol',display_name:'GPT-6.1 Sol',visibility:'list'}]});
   const wire='\uFEFF: heartbeat'+newline+newline+'event: response.completed'+newline+
    'data: {"type":"response.completed",'+newline+
-   'data: "response":{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"YAPLIX READY"}]}]}}'+newline+newline;
+   'data: "response":{"status":"completed","model":"gpt-6.1-sol","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"YAPLIX READY"}]}]}}'+newline+newline;
   const bytes=new TextEncoder().encode(wire);
   return new Response(new ReadableStream({start(controller){for(const byte of bytes)controller.enqueue(Uint8Array.of(byte));controller.close();}}),{headers:{'Content-Type':mediaType}});
  });
@@ -204,7 +221,7 @@ for(const [kind,expected] of [
 ] as const)test('SIWC probe never treats '+kind+' as completed SSE',async()=>{
  const {auth}=await probeSession(async input=>{
   if(String(input).endsWith('/models'))return Response.json({models:[{slug:'gpt-6.1-sol',display_name:'GPT-6.1 Sol',visibility:'list'}]});
-  if(kind==='json-completed')return Response.json({type:'response.completed',response:{status:'completed',output_text:'YAPLIX READY'}});
+  if(kind==='json-completed')return Response.json({type:'response.completed',response:{status:'completed',model:'gpt-6.1-sol',output_text:'YAPLIX READY'}});
   if(kind==='json-limit'||kind==='json-error')return Response.json({error:{code:kind==='json-limit'?'subscription_sharing_usage_limit_exceeded':'offline-access-credential',message:'offline-refresh-credential'}});
   const wire=kind==='html'?'<html>offline-access-credential</html>':kind==='done-only'?'data: [DONE]\n\n':kind==='delta-only'?'data: {"type":"response.output_text.delta","delta":"YAPLIX READY"}\n\n':'data: {"type":"response.completed","response":{"status":"completed"}}';
   return new Response(wire,{headers:{'Content-Type':'text/event-stream'}});
@@ -241,7 +258,7 @@ for(const [kind,expected,posts] of [
   if(kind==='stalled')return new Response(new ReadableStream({cancel(){bodyCancelled=true;}}),{headers:{'Content-Type':'text/event-stream'}});
   const type=kind==='incomplete'?'response.incomplete':['failed','limit','unavailable'].includes(kind)?'response.failed':kind==='empty-output'?'response.completed':'response.output_text.delta';
   const errorCode=kind==='limit'?'subscription_sharing_usage_limit_exceeded':kind==='unavailable'?'subscription_sharing_usage_unavailable':'SENSITIVE offline-access-credential';
-  const data=kind==='bad-json'?'{invalid':JSON.stringify({type,delta:kind==='oversized'?'x'.repeat(70000):'YAPLIX READY',response:{status:'completed',output:[],error:kind==='empty-output'?null:{code:errorCode,message:'offline-refresh-credential'}}});
+  const data=kind==='bad-json'?'{invalid':JSON.stringify({type,delta:kind==='oversized'?'x'.repeat(70000):'YAPLIX READY',response:{status:'completed',model:'gpt-6.1-sol',output:[],error:kind==='empty-output'?null:{code:errorCode,message:'offline-refresh-credential'}}});
   return new Response('data: '+data+'\n\n',{headers:{'Content-Type':'text/event-stream'}});
  });
  try{
@@ -258,7 +275,7 @@ test('SIWC probe handles fragmented UTF-8/CRLF SSE and withholds unexpected outp
  const {auth}=await probeSession(async input=>{
   if(String(input).endsWith('/models'))return Response.json({models:[{slug:'gpt-6.1-sol',display_name:'offline-access-credential',visibility:'list'}]});
   const events=[{type:'response.output_text.delta',delta:'Готово'},
-   {type:'response.completed',response:{status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'offline-access-credential'}]}],usage:{input_tokens:1,output_tokens:'offline-refresh-credential',total_tokens:-1,secret:'offline-access-credential'}}}];
+   {type:'response.completed',response:{status:'completed',model:'gpt-6.1-sol',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'offline-access-credential'}]}],usage:{input_tokens:1,output_tokens:'offline-refresh-credential',total_tokens:-1,secret:'offline-access-credential'}}}];
   const bytes=new TextEncoder().encode(': keepalive\r\n\r\n'+events.map(event=>'event: '+event.type+'\r\ndata: '+JSON.stringify(event)+'\r\n\r\n').join(''));
   return new Response(new ReadableStream({start(controller){for(const byte of bytes)controller.enqueue(Uint8Array.of(byte));controller.close();}}),{headers:{'Content-Type':'text/event-stream; charset=utf-8'}});
  });
