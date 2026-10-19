@@ -96,7 +96,32 @@ Observer может отклонить допустимую, но ненаблю
 runtime не доказывает качество пикселей или корректность всех coordinate mappings.
 32×24 sampling и bounded probes не исследуют все состояния игры.
 
-Физические Android/iOS/Telegram, реальный LLM generation/edit, интеграция с
-незавершённым PR #49/A1.7, hosted Windows/Ubuntu CI и юридическое подтверждение
+Физические Android/iOS/Telegram, реальный LLM generation/edit,
+hosted Windows/Ubuntu CI и юридическое подтверждение
 организатором хакатона — NOT_VERIFIED. Локальный Windows/browser результат
 не заменяет эти свидетельства. Inference/OAuth/model requests этой задачи: 0.
+
+## A1.8.2 — независимый аудит и синтетическая интеграция
+
+20 октября 2026 полный diff A1.8 проверен независимо. В публичном `checkFullHtml`
+воспроизведены два ложных WebGL PASS: draw → явный clear и draw → backing reset.
+Исправление `a31a222` добавляет соответствующие наблюдения и два regression fixture:
+оба RED до исправления, GREEN после; весь Canvas-набор — 18/18 PASS.
+Typecheck/build и 374 source unit — PASS. Gitleaks исходных четырёх коммитов — no leaks.
+
+Локальная интеграция `c859768` сохраняет исходные SHA Canvas и A1.7
+`07e42a5f0d1fce3b4bb5fa3ef5949576b3663349` из Draft PR #49. В `src/live.ts`
+сохранены одновременно ChatGPT one-POST/no-repair и Canvas no-repair/no-fallback;
+в known-errors сохранены обе группы записей. Интеграционные unit — 448/448 PASS,
+включая synthetic signed OAuth/Responses, durable deadlines и restart/checkpoints.
+Дополнительный harness для каждого provider mode (`ollama-cloud`, `openrouter`,
+`chatgpt`) прошёл create/edit → настоящий Canvas gate → SQLite reopen → export,
+проверил `generationMessages` и defaults 30 min response / 35 min job. Его
+CodeTransport синтетический: это не доказательство доступности внешних провайдеров.
+
+Интеграционная ветка остаётся локальной; самостоятельный Canvas Draft PR к main
+не включает изменения #49. Для совместного review достаточно этой локальной
+проверки; при последующем объединении веток требуется смысловое разрешение
+`src/live.ts` с сохранением обоих ограничений. Полные команды, актуальные SHA и
+результат финального browser-прогона приводятся в описании Canvas PR.
+Реальных OAuth/model GET/inference запросов A1.8.2: 0. Main не меняется.
