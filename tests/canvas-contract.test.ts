@@ -29,3 +29,10 @@ test('render evidence survives metadata parsing; invalid evidence fails closed',
   assert.throws(()=>parseArtifact({...candidate,generation:{...candidate.generation,browser:{...candidate.generation.browser,rendering:invalid}}}),/INVALID_GENERATION_METADATA/);
  }
 });
+
+test('generation metadata preserves a 29-minute response and bounded 35-minute job timings',()=>{
+ const candidate={html:canvasGame(),method:'llm_code',provider:'offline',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:30*60000,requestMs:29*60000,validationMs:60000}],fallback:false,elapsedMs:30*60000,browser:{scope:'full-html',profiles:[320,390,844],offline:true,errors:0,elapsedMs:60000}}};
+ assert.equal(parseArtifact(candidate).generation?.attempts[0].requestMs,29*60000);
+ assert.equal(parseArtifact({...candidate,generation:{...candidate.generation,elapsedMs:35*60000}}).generation?.elapsedMs,35*60000);
+ for(const elapsedMs of [-1,35*60000+1,Infinity,NaN,1.5])assert.throws(()=>parseArtifact({...candidate,generation:{...candidate.generation,elapsedMs}}),/INVALID_GENERATION_METADATA/);
+});

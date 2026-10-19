@@ -125,3 +125,11 @@ CodeTransport синтетический: это не доказательств
 `src/live.ts` с сохранением обоих ограничений. Полные команды, актуальные SHA и
 результат финального browser-прогона приводятся в описании Canvas PR.
 Реальных OAuth/model GET/inference запросов A1.8.2: 0. Main не меняется.
+
+Дополнительная проверка длительности обнаружила старый metadata cap 5 min,
+несовместимый с A1.7 response 30 min / job 35 min. Публичные `parseArtifact` и
+`GenerationEngine` отказали при synthetic elapsed 29 min. Parser теперь принимает
+timings до 35 min включительно, сохраняя отказ для некорректных и превышающих
+предел значений. Это согласование сохраняемого evidence; inference/job deadlines
+и ограничения количества POST не меняются. Timer-only unit, не продвигающий
+`performance.now()`, сам по себе не доказывает приём долгого ответа.
