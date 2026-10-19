@@ -1,5 +1,11 @@
 # Production game validation — текущее поведение
 
+> A1.8: новый [Canvas/WebGL rendering gate](canvas-rendering-contract.md) применяется
+> ко всем новым LIVE create/edit и checkpoint revalidation, включая HTML с legacy
+> lifecycle markers. Текст исторических аудитов ниже не отменяет этот gate.
+> Runtime/render evidence отделено от gameplay evidence. Неподтверждённое
+> рисование или активность Canvas блокируют новую версию, сохраняя draft в job.
+
 > MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
 
 Аудит MICRO-036.2: 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`.

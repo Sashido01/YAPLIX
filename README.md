@@ -207,7 +207,10 @@ MICRO-022 проверяет ошибки выполнения, реальные
 
 `LLM_PROMPT_STYLE=direct` — code default: идея отдельно от компактного Full HTML
 contract в [generation.ts](src/generation.ts). Legacy `spec` меняет только envelope.
-Нет обязательного Visual Kit/GameDNA/достижений/телеметрии, движок выбирает модель.
+Нет обязательного Visual Kit/GameDNA/достижений/телеметрии. A1.8 требует Canvas 2D
+(предпочтительно) или WebGL для игрового мира; DOM разрешён для интерфейса.
+Новые LIVE create/edit проходят runtime gate до сохранения, старые HTML не мигрируют.
+[Контракт рендеринга и границы доказательств](docs/canvas-rendering-contract.md).
 [Лимиты, причины изменений, локальные тесты и процедура LIVE](docs/micro-023-report.md).
 MICRO-023L: **LIVE PARTIAL**, 1 Ollama POST. Полный HTML/desktop сбор/win/loss/restart
 и offline export проверены; touch-джойстик созданной игры скрыт в Chromium emulation.
