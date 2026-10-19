@@ -209,3 +209,24 @@ initData или необработанные журналы. [Запуск и о
 
 Пока GitHub Actions недоступны, локальный PASS обязателен, но не приравнивается
 к hosted CI PASS.
+
+
+## MICRO-036.4a: потеря job.created при параллельном pruning
+
+- Владелец воспроизвёл тот же flaky unit на main `7d945502` до MICRO-036.4:
+  последовательные запуски PASS, параллельные — intermittent FAIL.
+- Один инструментированный параллельный прогон на `37ea5f1` подтвердил 61
+  `unlinkSync: ENOENT` и 14 `statSync: ENOENT` в `GenerationTraces.prune()`.
+  Независимые тестовые процессы используют общий `.local/diagnostics/generation`
+  у лимита 16 MiB. Пока один процесс обходит snapshot, другой уже удаляет файл.
+  Ошибка конструктора предотвращает первую запись `job.created`; повторное
+  создание logger позднее успешно. Отчёт содержал последующие события до
+  `job.completed`, `traceAvailable:true`, `diagnosticsUnavailable:true`.
+- Pruning теперь пропускает только исчезнувшие entries (`ENOENT`) при чтении
+  metadata и удалении. Остальные ошибки не скрываются. Retention 7 дней,
+  общий лимит 16 MiB, rotation, защита ссылок и редактирование секретов сохранены.
+  Детерминированные тесты воспроизводят interleaving двух pruners после readdir
+  и перед unlink: RED — настоящий ENOENT; GREEN — сохранён `job.created`.
+  Permission failure и hardlink по-прежнему отклоняются, чужой HTML сохраняется.
+- Пользовательские журналы не очищать ради PASS и assertion не ослаблять.
+  Метаданные диагностического запуска находятся только в ignored `.local`.
