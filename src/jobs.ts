@@ -1,3 +1,4 @@
+import {CHATGPT_JOB_TIMEOUT_MS} from './chatgpt-timeouts.ts';
 import { GenerationTraces, safeTrace } from './generation-trace.ts';
 import { prepareDocument } from './validation.ts';
 import { validateDocument } from './generation.ts';
@@ -48,7 +49,7 @@ export class GenerationJobs {
     // policy. Cancelled jobs and configuration/quota refusals remain untouched.
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='needs_attention' AND json_extract(metadata,'$.automaticLimit') IS NULL").all()){
       const job=this.get(String(row.owner_id),String(row.job_id));if(job.providerMode==='chatgpt'||job.provider==='openrouter'||!['LLM_DNS','LLM_TCP_CONNECTION','LLM_PROXY_CONNECTION','LLM_NETWORK_UNAVAILABLE','LLM_RESPONSE_TIMEOUT','LLM_TIMEOUT','LLM_OUTPUT_TRUNCATED','LLM_CONNECTION_INTERRUPTED','LLM_STREAM_ERROR','LLM_RATE_LIMIT','JOB_RESTART_UNCERTAIN'].includes(job.errorCode??'')||job.attempts>=12)continue;
-      job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;
+      job.automaticRuns=0;job.automaticLimit=Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.jobDuration(job);
       if(job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
       job.stage='queued';job.recoveryState='retry_scheduled';job.retryAt=Math.max(job.retryAt??0,Date.now()+this.retryMs);this.write(job);
     }
@@ -57,7 +58,7 @@ export class GenerationJobs {
     for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status IN ('generating','validating','repairing')").all()){
       const job=this.get(String(row.owner_id),String(row.job_id));job.errorCode='JOB_RESTART_UNCERTAIN';
       if(job.provider&&!['openrouter','ollama','ollama.com'].includes(job.provider))job.blockedRoutes=[...new Set([...(job.blockedRoutes??[]),job.provider+'/'+job.requestedModel])];
-      job.deadlineAt??=Date.now()+this.duration;job.automaticLimit??=this.maxCalls;const routes=this.routes(job);const available=!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))||/<\/html>\s*$/i.test(job.checkpoint);job.stage=this.canRetry(job)&&available&&(!['openrouter','chatgpt'].includes(job.provider??'')||/<\/html>\s*$/i.test(job.checkpoint))?'queued':'needs_attention';job.retryAt=Date.now()+this.retryMs;job.recoveryState=job.stage==='queued'?'retry_scheduled':'failed_permanent';this.write(job);
+      job.deadlineAt??=Date.now()+this.jobDuration(job);job.automaticLimit??=this.maxCalls;const routes=this.routes(job);const available=!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))||/<\/html>\s*$/i.test(job.checkpoint);job.stage=this.canRetry(job)&&available&&(!['openrouter','chatgpt'].includes(job.provider??'')||/<\/html>\s*$/i.test(job.checkpoint))?'queued':'needs_attention';job.retryAt=Date.now()+this.retryMs;job.recoveryState=job.stage==='queued'?'retry_scheduled':'failed_permanent';this.write(job);
     }
     // Old automatic router retries must not dispatch after an upgrade. A manual
     // Continue resets automaticRuns to zero; complete drafts can revalidate locally.
@@ -92,7 +93,7 @@ export class GenerationJobs {
     if(request.mode==='live')this.routes(request,true);
     if(request.mode==='live'&&this.generator){this.limits.take('jobs-global',12);this.limits.take('jobs-'+owner,6);}
     const selected=request.mode==='live'?this.routes(request)?.[0]:undefined;
-    const job:GenerationJob={...request,jobId:randomUUID(),ownerId:owner,idempotencyKey:key,provider:selected?.provider??null,requestedModel:selected?.model??null,actualModel:null,createdAt:now(),updatedAt:now(),stage:'queued',attempts:0,checkpoint:'',checkpointAt:null,history:[],errorCode:null,retryAt:null,versionId:null,gameId:null,notificationClaimed:false,telegramState:request.telegramConsent?'pending':'none',outputTokens:null,reasoningTokens:null,elapsedMs:0,automaticRuns:0,automaticLimit:request.providerMode==='chatgpt'?1:this.maxCalls,deadlineAt:Date.now()+this.duration,blockedRoutes:[]};
+    const job:GenerationJob={...request,jobId:randomUUID(),ownerId:owner,idempotencyKey:key,provider:selected?.provider??null,requestedModel:selected?.model??null,actualModel:null,createdAt:now(),updatedAt:now(),stage:'queued',attempts:0,checkpoint:'',checkpointAt:null,history:[],errorCode:null,retryAt:null,versionId:null,gameId:null,notificationClaimed:false,telegramState:request.telegramConsent?'pending':'none',outputTokens:null,reasoningTokens:null,elapsedMs:0,automaticRuns:0,automaticLimit:request.providerMode==='chatgpt'?1:this.maxCalls,deadlineAt:Date.now()+this.jobDuration(request),blockedRoutes:[]};
     this.store.transaction(()=>{
       this.assertWorker();
       const counts=this.store.db.prepare("SELECT COUNT(*) total,SUM(status IN ('queued','generating','validating','repairing')) pending,COALESCE(SUM(length(CAST(checkpoint AS BLOB))+COALESCE(length(CAST(json_extract(metadata,'$.originalCheckpoint') AS BLOB)),0)),0) bytes FROM generation_jobs").get()!;
@@ -127,8 +128,9 @@ export class GenerationJobs {
     const owned=Number(this.store.db.prepare("SELECT COUNT(*) n FROM generation_jobs WHERE owner_id=? AND status IN ('queued','generating','validating','repairing')").get(job.ownerId)?.n);
     return pending>=20||owned>=3?'JOB_QUEUE_FULL':null;
   }
-  continue(owner:string,id:string){const job=this.get(owner,id),error=this.continuationError(job);if(error)throw new Fault(error,['JOB_RETRY_AFTER','JOB_QUEUE_FULL'].includes(error)?429:409);job.stage='queued';job.manualContinuation=true;job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=job.providerMode==='chatgpt'?1:Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.duration;this.write(job);this.kick();return this.summary(job);}
+  continue(owner:string,id:string){const job=this.get(owner,id),error=this.continuationError(job);if(error)throw new Fault(error,['JOB_RETRY_AFTER','JOB_QUEUE_FULL'].includes(error)?429:409);job.stage='queued';job.manualContinuation=true;job.errorCode=null;job.recoveryState=undefined;job.blockedRoutes=[...(job.retiredRoutes??[])];job.automaticRuns=0;job.automaticLimit=job.providerMode==='chatgpt'?1:Math.min(12,job.attempts+this.maxCalls);job.deadlineAt=Date.now()+this.jobDuration(job);this.write(job);this.kick();return this.summary(job);}
   claim(owner:string,id:string){this.get(owner,id);return this.store.db.prepare("UPDATE generation_jobs SET notified=1 WHERE job_id=? AND owner_id=? AND status='completed' AND notified=0").run(id,owner).changes===1;}
+  private jobDuration(job:{providerMode?:string;mode?:string}){return job.providerMode==='chatgpt'&&job.mode==='live'?CHATGPT_JOB_TIMEOUT_MS:this.duration;}
   private canRetry(job:GenerationJob){return(job.attempts<(job.automaticLimit??this.maxCalls)||Boolean(job.checkpointOrigin&&/<\/html>\s*$/i.test(job.checkpoint)))&&(job.automaticRuns??0)<4&&Date.now()<(job.deadlineAt??0);}
   private kick(){
     if(this.stopping||!this.started||this.active)return;this.assertWorker();clearTimeout(this.wake);
@@ -146,6 +148,7 @@ export class GenerationJobs {
     const cooldowns:Record<string,{until:number;code:string}>={};for(const row of this.store.db.prepare("SELECT metadata FROM generation_jobs WHERE json_extract(metadata,'$.routeCooldowns') IS NOT NULL").all()){const saved=JSON.parse(String(row.metadata)).routeCooldowns;for(const [key,value]of Object.entries(saved) as [string,{until:number;code:string}][])if(value.until>Date.now()&&value.until>(cooldowns[key]?.until??0))cooldowns[key]=value;}
     const context:GenerationContext={durableJob:true,manualContinuation,trace:(event,data)=>this.trace(this.get(owner,id),event,data),providerMode:job.providerMode,cooldowns,cooldownRoute:(route,until,code)=>update(j=>{j.routeCooldowns={...(j.routeCooldowns??{}),[route.provider+'/'+route.model]:{until,code}};}),checkpoint:job.checkpoint,blockedRoutes:job.blockedRoutes??[],...(job.checkpointOrigin?{checkpointOrigin:job.checkpointOrigin}:{}),blockRoute:(route)=>{const key=route.provider+'/'+route.model;if(!context.blockedRoutes!.includes(key))context.blockedRoutes!.push(key);update(j=>{j.blockedRoutes=[...context.blockedRoutes!];});},maxCalls:Math.min(6,(job.automaticLimit??this.maxCalls)-job.attempts),stage:stage=>update(j=>{if(!terminal.has(j.stage))j.stage=stage;}),dispatch:route=>{if(route.provider==='chatgpt'&&(job.providerMode!=='chatgpt'||job.attempts>=1))throw new Fault('CHATGPT_BUDGET_SPENT',409);if(Date.now()>=(job.deadlineAt??0))throw new Fault('JOB_DURATION_LIMIT',409);if(job.attempts>=(job.automaticLimit??this.maxCalls))throw new Fault('JOB_ATTEMPT_LIMIT',409);try{this.limits.take('provider-global',12);this.limits.take('provider-'+owner,6);}catch(error){update(j=>{j.retryAt=Date.now()+60000;});throw error;}update(j=>{if(j.provider&&j.requestedModel&&j.provider!==route.provider){const previous=j.provider+'/'+j.requestedModel;if(!context.blockedRoutes!.includes(previous))context.blockedRoutes!.push(previous);j.blockedRoutes=[...context.blockedRoutes!];j.retiredRoutes=[...new Set([...(j.retiredRoutes??[]),previous])];}j.attempts++;j.provider=route.provider;j.requestedModel=route.model;j.actualModel=null;});},partial:(code,model,tokens)=>update(j=>{if(code){j.checkpoint=code;j.checkpointAt=now();j.checkpointOrigin=model&&j.provider&&j.requestedModel?{provider:j.provider,requestedModel:j.requestedModel,model}:undefined;}if(model)j.actualModel=model;if(tokens?.outputTokens!==undefined)j.outputTokens=tokens.outputTokens;if(tokens?.reasoningTokens!==undefined)j.reasoningTokens=tokens.reasoningTokens;}),attempt:attempt=>update(j=>{j.history.push(attempt);j.history=j.history.slice(-12);}),retryAt:at=>update(j=>{j.retryAt=Math.max(j.retryAt??0,at);})};
     this.trace(job,'job.resumed',{next:job.checkpoint?'validating':'generating'});
+    const deadlineController=new AbortController(),deadlineTimer=setTimeout(()=>deadlineController.abort(),Math.max(1,(job.deadlineAt??Date.now()+this.jobDuration(job))-Date.now()));
     try{
       context.repairUsed=job.repairUsed;
       context.validationFailure=job.validation?.level!=='VERIFIED'?job.validation?.code:undefined;
@@ -154,7 +157,7 @@ export class GenerationJobs {
       context.validation=(diagnostic,repair)=>update(j=>{j.validation=diagnostic;if(repair)j.deterministicRepair=repair;});
       const previous=job.previousVersionId?this.store.getVersion(job.previousVersionId):undefined;
       if(job.mode==='live'&&!this.generator)throw new Fault('LLM_NOT_CONFIGURED',503);
-      const artifact=job.mode==='demo'?demoArtifact(job.spec):await this.generator!.generate(job.spec,previous,'llm_code',AbortSignal.any([signal,AbortSignal.timeout(Math.max(1,(job.deadlineAt??Date.now()+this.duration)-Date.now()))]),context);
+      const artifact=job.mode==='demo'?demoArtifact(job.spec):await this.generator!.generate(job.spec,previous,'llm_code',AbortSignal.any([signal,deadlineController.signal]),context);
       job=this.get(owner,id);if(signal.aborted||job.stage==='cancelled')return;
       if(Date.now()>=(job.deadlineAt??0))throw new Fault('JOB_DURATION_LIMIT',409);
       job.elapsedMs=initialElapsed+Date.now()-began;job.stage='validating';job.retryAt=null;job.errorCode=null;job.recoveryState=undefined;job.provider=artifact.provider;job.actualModel=artifact.model;job.requestedModel=artifact.generation?.attempts.at(-1)?.requestedModel??job.requestedModel;this.write(job);
@@ -167,6 +170,7 @@ export class GenerationJobs {
         if(!routes||routes.some(r=>!job.blockedRoutes?.includes(r.provider+'/'+r.model))){job.stage='queued';job.retryAt=Math.max(job.retryAt??0,Date.now()+Math.min(60000,this.retryMs*2**((job.automaticRuns??1)-1)));job.recoveryState=job.errorCode==='LLM_RATE_LIMIT'?'waiting_for_provider':'retry_scheduled';}
       }
       if(job.stage==='needs_attention')job.recoveryState='failed_permanent';this.write(job);this.trace(job,job.stage==='queued'?'job.retry_scheduled':job.stage==='cancelled'?'job.cancelled':'job.failed',{errorCode:job.errorCode,durationMs:job.elapsedMs,next:job.stage});}
+    finally{clearTimeout(deadlineTimer);deadlineController.abort();}
   }
   private async notifications(){if(this.stopping||!this.notify)return;for(const row of this.store.db.prepare("SELECT job_id,owner_id FROM generation_jobs WHERE status='completed' ORDER BY rowid DESC LIMIT 50").all()){
     const owner=String(row.owner_id),job=this.get(owner,String(row.job_id));if(job.telegramState!=='pending'||!job.telegramConsent||Date.now()-(this.presence.get(owner)??0)<30000)continue;

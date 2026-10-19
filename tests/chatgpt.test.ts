@@ -30,6 +30,7 @@ import {readFileSync,readdirSync,mkdtempSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
+import {setImmediate} from 'node:timers/promises';
 import {writeFileSync} from 'node:fs';
 const request={spec,mode:'live' as const,providerMode:'chatgpt' as const,telegramConsent:false};
 const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
@@ -154,11 +155,12 @@ test('fragmented UTF-8/CRLF, done and final snapshots preserve full HTML exceedi
  finally{session.disconnect();await jobs.close();store.close();}
 });
 
-for(const kind of ['timeout','stream error','disconnect'] as const)test('no repeat after '+kind,async()=>{
+for(const kind of ['timeout','stream error','disconnect'] as const)test('no repeat after '+kind,async t=>{
  let posts=0;let session!:ChatGptSession;
  ({session}=offlineChatGpt(async(_input,init)=>{posts++;return new Response(new ReadableStream({start(c){c.enqueue(Buffer.from('data: '+JSON.stringify({type:'response.output_text.delta',delta:html})+'\n\n'));if(kind==='stream error'){c.error(Error('private payload'));return;}init?.signal?.addEventListener('abort',()=>c.error(Error('aborted')),{once:true});if(kind==='disconnect')queueMicrotask(()=>session.disconnect());}}));}));await connected(session);
+ if(kind==='timeout')t.mock.timers.enable({apis:['setTimeout']});
  const store=new Store(':memory:'),jobs=new GenerationJobs(store,engineFor(session));
- try{const done=await settled(jobs,jobs.create('owner','cancel-'+kind.replace(' ','-'),request).jobId);assert.equal(done.stage,'needs_attention');assert.equal(posts,1);assert.equal(done.attempts,1);assert.throws(()=>jobs.continue('owner',done.jobId),/CHATGPT_NEW_JOB_REQUIRED/);assert.ok(!JSON.stringify(done).includes('private payload'));}
+ try{const job=jobs.create('owner','cancel-'+kind.replace(' ','-'),request);if(kind==='timeout'){await setImmediate();t.mock.timers.tick(45*60000);await setImmediate();}const done=await settled(jobs,job.jobId);assert.equal(done.stage,'needs_attention');assert.equal(posts,1);assert.equal(done.attempts,1);assert.throws(()=>jobs.continue('owner',done.jobId),/CHATGPT_NEW_JOB_REQUIRED/);assert.ok(!JSON.stringify(done).includes('private payload'));}
  finally{session.disconnect();await jobs.close();store.close();}
 });
 

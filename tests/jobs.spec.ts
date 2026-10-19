@@ -82,6 +82,25 @@ import {ChatGptTransport} from '../src/chatgpt.ts';
 import {offlineChatGpt,connected,localPolicy,completed,sse} from './chatgpt-helper.ts';
 import {BrowserFailure} from '../src/browser-check.ts';
 
+test('ChatGPT A1.5 elapsed minutes persist during wait and closing a tab leaves the durable job active',async({page,context,baseURL})=>{
+ let posts=0,release!:(value:Response)=>void;
+ const {session}=offlineChatGpt(async()=>{posts++;return new Promise<Response>(resolve=>{release=resolve;});});await connected(session);
+ const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html'})}),jobs=new GenerationJobs(store,engine);
+ const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
+ await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+ let reopened:typeof page|undefined;
+ try{
+  await page.clock.install();
+  await page.goto('/?view=create');await page.locator('#provider-mode').selectOption('chatgpt');await page.locator('#prompt').fill('Long synthetic game');await page.getByRole('button',{name:'Создать игру',exact:true}).click();
+  await expect.poll(()=>posts).toBe(1);const id=jobs.list('owner')[0].jobId;
+  await page.locator('#jobs-toggle').click();await page.clock.fastForward(754_000);
+  const row=page.locator('[data-job="'+id+'"]');await expect(row).toContainText(/ChatGPT создаёт игру · 12 мин \d+ с/);await expect(row).not.toContainText('%');
+  await page.close();expect(jobs.get('owner',id).stage).toBe('generating');expect(posts).toBe(1);
+  reopened=await context.newPage();await reopened.goto('/');await reopened.locator('#jobs-toggle').click();await expect(reopened.locator('[data-job="'+id+'"]')).toContainText('ChatGPT создаёт игру');
+  release(sse([completed(html)]));await expect.poll(()=>jobs.get('owner',id).stage).toBe('completed');expect(posts).toBe(1);expect(store.list()).toHaveLength(1);
+ }finally{await reopened?.close();session.disconnect();await jobs.close();store.close();}
+});
+
 test('ChatGPT A1 UI -> API -> durable job -> mock SSE -> real browser validation -> SQLite -> reopen',async({page,context,baseURL})=>{
  test.setTimeout(60000);
  let posts=0;const bodies:any[]=[];

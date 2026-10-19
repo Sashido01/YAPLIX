@@ -6,6 +6,7 @@ import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { generationMessages, validateDocument } from './generation.ts';
 import type { PromptStyle } from './generation.ts';
 import { prepareDocument } from './validation.ts';
+import {longChatGpt,CHATGPT_REQUEST_TIMEOUT_MS,CHATGPT_JOB_TIMEOUT_MS} from './chatgpt-timeouts.ts';
 
 export class GenerationFailure extends Fault {
   readonly attempts: GenerationAttempt[];
@@ -44,7 +45,7 @@ export class GenerationEngine implements Generator {
     if(this.check===browserCheck&&!checkerReady())throw new Fault('BROWSER_INSTALL_REQUIRED',503);
     if(this.active)throw new Fault('LLM_BUSY',409);
     const routes=this.routesFor(context?.providerMode);
-    const controller=new AbortController();this.active=controller;const timer=setTimeout(()=>controller.abort(),this.timeout),cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();
+    const controller=new AbortController();this.active=controller;const timer=setTimeout(()=>controller.abort(),longChatGpt(context)?CHATGPT_JOB_TIMEOUT_MS:this.timeout),cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();
     const attempts:GenerationAttempt[]=[];const started=performance.now();
     try{
       const priorRepairUsed=context?.repairUsed??false;
@@ -113,7 +114,7 @@ export class GenerationEngine implements Generator {
         for(let repair=0;repair<=Math.min(1,this.repairs);repair++){
           if(context&&attempts.length>=(context.maxCalls??6))throw new GenerationFailure(attempts.at(-1)?.errorCode??'JOB_ATTEMPT_LIMIT',attempts,409);
           const begin=performance.now();let actual:string|null=null,code='',requestMs=0,validationMs=0;let tokens:TokenUsage={};
-          const requestController=new AbortController(),requestTimer=setTimeout(()=>requestController.abort(),this.requestTimeout);
+          const requestController=new AbortController(),requestTimer=setTimeout(()=>requestController.abort(),longChatGpt(context)?CHATGPT_REQUEST_TIMEOUT_MS:this.requestTimeout);
           const requestSignal=AbortSignal.any([controller.signal,requestController.signal]);
           try{
             context?.stage(repair||repairUsed?'repairing':'generating');if(!route.observesDispatch)context?.dispatch(route);

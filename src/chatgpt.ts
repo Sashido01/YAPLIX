@@ -1,3 +1,4 @@
+import {longChatGpt} from './chatgpt-timeouts.ts';
 import {spawn} from 'node:child_process';
 import {LocalSiwc,SiwcError} from './experimental/siwc.ts';
 import {Fault,MAX_HTML_BYTES} from './contracts.ts';
@@ -33,9 +34,9 @@ export class ChatGptSession {
   return this.status();
  }
  disconnect(){++this.#epoch;this.#auth.dispose();this.#state='DISCONNECTED';this.#error=null;return this.status();}
- async respond(messages:Message[],signal:AbortSignal,beforePost:()=>void){
+ async respond(messages:Message[],signal:AbortSignal,beforePost:()=>void,longWait=false){
   this.assertConnected();
-  try{return await this.#auth.respond(messages,signal,()=>{this.assertConnected();beforePost();},MAX_HTML_BYTES);}
+  try{return await this.#auth.respond(messages,signal,()=>{this.assertConnected();beforePost();},MAX_HTML_BYTES,longWait);}
   catch(error){if(!this.#auth.status().connected){this.#state='EXPIRED';this.#error='CHATGPT_AUTH_REQUIRED';}throw error;}
  }
 }
@@ -47,7 +48,7 @@ export class ChatGptTransport implements CodeTransport {
  async complete(messages:Message[],signal:AbortSignal,context?:GenerationContext){
   // Legacy synchronous endpoints cannot spend a personal-account budget.
   if(!context?.durableJob)throw new Fault('CHATGPT_JOB_REQUIRED',409);
-  try{return await this.#session.respond(messages,signal,()=>context.dispatch(this));}
+  try{return await this.#session.respond(messages,signal,()=>context.dispatch(this),longChatGpt(context));}
   catch(error){throw error instanceof Fault?error:new ProviderFailure(error instanceof SiwcError?error.message:'SIWC_NETWORK');}
  }
 }

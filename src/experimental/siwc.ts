@@ -7,6 +7,7 @@ import {dirname,isAbsolute,relative,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createLocalJWKSet,jwtVerify} from 'jose';
 import {Fault} from '../contracts.ts';
+import {chatGptRequest} from '../chatgpt-http.ts';
 
 export const SIWC=Object.freeze({issuer:'https://auth.openai.com',discovery:'https://auth.openai.com/.well-known/openid-configuration',authorize:'https://auth.openai.com/api/accounts/authorize',token:'https://auth.openai.com/api/accounts/oauth/token',jwks:'https://auth.openai.com/.well-known/jwks.json'});
 const SCOPE='openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
@@ -79,7 +80,7 @@ export class LocalSiwc {
  }
  status():Status{const connected=Boolean(this.#tokens&&this.#tokens.expiresAt>Date.now());return{connected,planPermissionGranted:connected,registered:Boolean(this.#registration)};}
  dispose(){this.#active?.abort();for(const request of this.#requests)request.abort();this.#tokens=null;}
- async respond(messages:{role:'system'|'user'|'assistant';content:string}[],signal:AbortSignal,beforePost:()=>void,maxTextBytes:number){
+ async respond(messages:{role:'system'|'user'|'assistant';content:string}[],signal:AbortSignal,beforePost:()=>void,maxTextBytes:number,longWait=false){
   if(process.env.NODE_TLS_REJECT_UNAUTHORIZED==='0')fail('SIWC_INSECURE_TLS');
   if(!this.status().connected)fail('SIWC_PLAN_PERMISSION_REQUIRED');
   const tokens=this.#tokens!,controller=new AbortController();this.#requests.add(controller);
@@ -91,11 +92,14 @@ export class LocalSiwc {
    try{beforePost();}
    catch(error){if(error instanceof Fault)throw new Fault(error.code,error.status);if(error instanceof SiwcError)throw error;fail('SIWC_DISPATCH_FAILED');}
    try{
-   const response=await this.#request('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',signal:combined,headers:{Authorization:'Bearer '+tokens.access,Accept:'text/event-stream','Content-Type':'application/json'},body});
-   if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)this.dispose();fail(response.status===401||response.status===403?'SIWC_AUTH_REQUIRED':response.status===429?'SIWC_RATE_LIMIT':'SIWC_INFERENCE_HTTP');}
-   const report=newStreamReport(),code=await readSiwcStream(response,combined,report,maxTextBytes);
-   if([tokens.access,tokens.refresh,tokens.id].some(secret=>code.includes(secret)))fail('SIWC_OUTPUT_REJECTED');
-   return{code,model:PROBE_MODEL,...(report.usage?.output_tokens===undefined?{}:{outputTokens:report.usage.output_tokens})};
+   const consume=async(response:Response,readSignal:AbortSignal)=>{
+    if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)this.dispose();fail(response.status===401||response.status===403?'SIWC_AUTH_REQUIRED':response.status===429?'SIWC_RATE_LIMIT':'SIWC_INFERENCE_HTTP');}
+    const report=newStreamReport(),code=await readSiwcStream(response,readSignal,report,maxTextBytes);
+    if([tokens.access,tokens.refresh,tokens.id].some(secret=>code.includes(secret)))fail('SIWC_OUTPUT_REJECTED');
+    return{code,model:PROBE_MODEL,...(report.usage?.output_tokens===undefined?{}:{outputTokens:report.usage.output_tokens})};
+   };
+   const url='https://api.openai.com/v1/responses',init:RequestInit={method:'POST',redirect:'error',signal:combined,headers:{Authorization:'Bearer '+tokens.access,Accept:'text/event-stream','Content-Type':'application/json'},body};
+   return longWait?await chatGptRequest(this.#request,url,init,consume):await consume(await this.#request(url,init),combined);
    }catch(error){if(error instanceof SiwcError)throw error;if(combined.aborted)fail('SIWC_REQUEST_CANCELLED');fail('SIWC_NETWORK');}
   }finally{this.#requests.delete(controller);controller.abort();}
  }
