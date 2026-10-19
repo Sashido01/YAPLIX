@@ -29,7 +29,8 @@ checkFullHtml → parseArtifact → Store.save → preview → export`.
 
 Проверка проходит offline в disposable Chromium: opaque iframe `allow-scripts`,
 прежняя CSP, изолированный environment без серверных ключей. HTML локально
-fulfill-ится по случайному document URL; это исключает гонку init-script/srcdoc,
+fulfill-ится как `text/html; charset=utf-8` по случайному document URL; это
+сохраняет Unicode controls и исключает гонку init-script/srcdoc,
 не создавая внешнего сетевого запроса. Разрешены только iframe и standalone load
 этого точного URL; остальные requests блокируются. HTML игры не переписывается.
 

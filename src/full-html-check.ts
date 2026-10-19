@@ -106,7 +106,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       // URL never reaches a network; only these two document loads are allowed.
       const validationUrl='https://yaplix-check.invalid/'+canvasKey;let loads=0;
       await context.route('**/*',r=>{
-        if(r.request().url()===validationUrl&&r.request().isNavigationRequest()&&++loads<=2)return r.fulfill({status:200,contentType:'text/html',body:content});
+        if(r.request().url()===validationUrl&&r.request().isNavigationRequest()&&++loads<=2)return r.fulfill({status:200,contentType:'text/html; charset=utf-8',body:content});
         failure||='NETWORK_ATTEMPT';return r.abort();
       });
       await page.setContent('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%}iframe{width:100%;height:100%;border:0}</style><iframe sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>');

@@ -45,6 +45,6 @@ test('MICRO-027 actual UI job, diagnostic download, version edit, export and exa
 
 // Native-language Start controls must be exercised before tapping the canvas.
 test('MICRO-027 Russian Start dismisses an opaque overlay before input probe',async()=>{
- const source='<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;min-height:300px}canvas{width:200px;height:200px}#cover{position:fixed;inset:0;background:white}</style></head><body><canvas></canvas><div id="cover"><button onclick="document.querySelector(\'#cover\').remove()">Начать игру</button></div><script>document.addEventListener("pointerdown",()=>{});</script></body></html>';
+ const source='<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;min-height:300px}canvas{width:200px;height:200px}#cover{position:fixed;inset:0;background:white}</style></head><body><canvas></canvas><div id="cover"><button onclick="document.querySelector(\'#cover\').remove()">Начать игру</button></div><script>const surface=document.querySelector("canvas"),ctx=surface.getContext("2d");let x=20;function draw(){ctx.fillStyle="#142038";ctx.fillRect(0,0,300,150);ctx.fillStyle="#ffcc40";ctx.fillRect(x,40,50,60);}draw();surface.addEventListener("pointerdown",()=>{x=x===20?100:20;draw();});</script></body></html>';
  expect((await browserCheck(source,AbortSignal.timeout(18000))).errors).toBe(0);
 });
