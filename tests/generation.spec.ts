@@ -202,6 +202,8 @@ test('MICRO-022 runtime failures at startup, on input, promise rejection and des
 const restartFixture=html.replace('<p id="status">','<button data-yaplix-restart id="restart">Restart</button><output data-yaplix-state></output><p id="status">')
  .replace('</style>','@media(orientation:landscape){h1,p{margin:4px 0}main{padding:4px}}</style>')
  .replace('function draw(){',`function draw(){document.querySelector('[data-yaplix-state]').textContent=JSON.stringify({score});`)
+ // Restart at score zero must still present a game field, not an empty bitmap.
+ .replace("ctx.fillStyle='#ffd000';","ctx.fillStyle='#223344';ctx.fillRect(0,0,width,48);ctx.fillStyle='#6688aa';ctx.fillRect(width-24,0,24,48);ctx.fillStyle='#ffd000';")
  .replace('</script>',`document.querySelector('#restart').onclick=()=>{score=0;active=true;point.disabled=trap.disabled=false;start.disabled=true;draw();};</script>`);
 
 test('MICRO-022 repeat run uses real restart and input; a no-op or crashing restart is rejected',async()=>{
