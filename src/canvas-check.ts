@@ -80,12 +80,18 @@ export function observeCanvas(key:string) {
   for(let p:Element|null=el;p;p=parent(p)){const s=getComputedStyle(p);if(s.display==='none'||Number(s.opacity)===0||s.contentVisibility==='hidden')return false;}
   return true;
  };
- const visibleRect=(el:Element,r:DOMRect)=>{
+ const fixedBlock=(s:CSSStyleDeclaration)=>s.transform!=='none'||s.perspective!=='none'||s.filter!=='none'||s.backdropFilter!=='none'||/paint|layout|strict|content/.test(s.contain)||/transform|perspective|filter/.test(s.willChange);
+ const visibleRect=(el:Element,r:DOMRect,position:'absolute'|'fixed'|null=null)=>{
   let left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);
+  let escaping=position;
   for(let p:Element|null=el;p;p=parent(p)){
    const s=getComputedStyle(p),box=p.getBoundingClientRect();
-   if(s.overflowX!=='visible'){left=Math.max(left,box.left);right=Math.min(right,box.right);}
-   if(s.overflowY!=='visible'){top=Math.max(top,box.top);bottom=Math.min(bottom,box.bottom);}
+   if(escaping&&(fixedBlock(s)||escaping==='absolute'&&s.position!=='static'))escaping=null;
+   if(!escaping){
+    if(s.overflowX!=='visible'){left=Math.max(left,box.left);right=Math.min(right,box.right);}
+    if(s.overflowY!=='visible'){top=Math.max(top,box.top);bottom=Math.min(bottom,box.bottom);}
+    if(s.position==='absolute'||s.position==='fixed')escaping=s.position;
+   }
   }
   return right>left&&bottom>top;
  };
@@ -102,7 +108,17 @@ export function observeCanvas(key:string) {
    // A generated box can be visible even when its host has zero dimensions.
    for(const pseudo of ['::before','::after']){
     const p=getComputedStyle(el,pseudo);
-    if(p.display!=='none'&&p.visibility==='visible'&&Number(p.opacity)!==0&&p.content!=='none'&&p.content!=='normal'&&(p.content!=='\"\"'||p.backgroundColor!=='rgba(0, 0, 0, 0)'||p.backgroundImage!=='none'||p.borderStyle!=='none'||p.boxShadow!=='none')&&(visible(el)||p.position==='fixed'||p.position==='absolute'))return 1;
+    if(p.display==='none'||p.visibility!=='visible'||Number(p.opacity)===0||p.content==='none'||p.content==='normal'||p.content==='\"\"'&&p.backgroundColor==='rgba(0, 0, 0, 0)'&&p.backgroundImage==='none'&&p.borderStyle==='none'&&p.boxShadow==='none')continue;
+    if(p.position==='absolute'||p.position==='fixed'){
+     let origin={left:0,top:0};
+     for(let ancestor:Element|null=el;ancestor;ancestor=parent(ancestor)){
+      const style=getComputedStyle(ancestor);
+      if(fixedBlock(style)||p.position==='absolute'&&style.position!=='static'){origin=ancestor.getBoundingClientRect();break;}
+     }
+     const [x,y,w,h]=[p.left,p.top,p.width,p.height].map(parseFloat);
+     if(![x,y,w,h].every(Number.isFinite))return -1;
+     if(visibleRect(el,new DOMRect(origin.left+x,origin.top+y,w,h),p.position))return 1;
+    }else if(visible(el))return 1;
    }
    const color=(v:string)=>v!=='transparent'&&v!=='rgba(0, 0, 0, 0)';
    // Text paint does not require an element box (display:contents, overflow).

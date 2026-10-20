@@ -327,3 +327,12 @@ initData или необработанные журналы. [Запуск и о
 - Старые Canvas negatives с DOM controls отдельно проверяют historical refusal;
   новые Canvas-only reductions проверяют hidden/zero/no-draw/inert/landscape
   своими конкретными кодами, чтобы DOM gate не маскировал rendering regression.
+
+- Follow-up audit: fixed/absolute controls могут выходить из обычного overflow
+  ancestor, а offscreen pseudo не является видимым UI. Три новых RED→GREEN
+  проверяют CSS containing blocks и computed pseudo geometry. Неизвестная
+  геометрия pseudo даёт NOT_VERIFIED вместо ложного доказательства FAILED.
+- Browser test artifacts из параллельных focused runs должны иметь разные
+  `--output` каталоги; общий каталог дал trace ENOENT при удалении артефактов
+  другим запуском. Desktop pointer probes используют click, touch — отдельный
+  hasTouch context; tap на обычном desktop page отвергается самим Playwright.

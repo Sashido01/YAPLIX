@@ -27,6 +27,8 @@ for(const [name,source] of [
  ['text in display contents',insert('<span style="display:contents">HUD</span>')],
  ['overflowing text in zero-size host',insert('<span style="display:block;width:0;height:0">HUD</span>')],
  ['native sound controls',insert('<audio controls style="position:fixed;top:0;left:0"></audio>')],
+ ['fixed UI escapes ordinary clipping',insert('<div style="width:0;height:0;overflow:hidden"><button style="position:fixed;top:0;left:0">Pause</button></div>')],
+ ['absolute UI escapes ordinary clipping',insert('<div style="width:0;height:0;overflow:hidden"><button style="position:absolute;top:0;left:0">Pause</button></div>')],
  ['dynamic menu',dynamic('if(step===1)document.body.insertAdjacentHTML("afterbegin","<nav>Menu</nav>");')],
  ['dynamic HUD',dynamic('if(step===2)document.body.insertAdjacentHTML("afterbegin","<output>Score 2</output>");')],
  ['victory overlay',dynamic('if(step===4)document.body.insertAdjacentHTML("afterbegin","<section role=dialog>You won</section>");')],
@@ -58,4 +60,8 @@ test('opaque pointer-transparent Canvas cannot expose a changing world underneat
   .replace("ctx.fillRect(20+(step%5)*30,h*.6,40,40);","ctx.fillRect(20,h*.6,40,40);").replace("'Score '+step+' Lives 3'","'Score 0 Lives 3'")
   .replace("!active?'Start':step>=4?'Game Over / Restart':'Move'","'Static decoration'");
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
+});
+test('strict Canvas permits an offscreen technical pseudo-element',async({browser})=>{
+ const source=insert('<style>i::before{content:"technical";position:absolute;left:-10000px;top:0}</style><i style="display:block;width:0;height:0"></i>');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contract:'canvas-webgl-strict-v2'}});
 });

@@ -74,7 +74,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
       // The real server-side checker is included in the 15-second generation
       // deadline above. Wait for that contract, rather than a five-second poll.
       await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('Ollama Cloud');
-      const game=page.frameLocator('#game iframe');const canvas=game.locator('canvas');await canvas.tap();const before=await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL());await canvas.tap();expect(await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL())).not.toBe(before);
+      const game=page.frameLocator('#game iframe');const canvas=game.locator('canvas');await canvas.click();const before=await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL());await canvas.click();expect(await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL())).not.toBe(before);
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
       await expect(page.locator('#jobs-list')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Не удалось подключиться к модели'}[scenario]);
