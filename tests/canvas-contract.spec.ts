@@ -97,3 +97,33 @@ test('A1.8 rejects WebGL frames erased by a backing store reset',async({browser}
  const source=canvasGame('webgl').replace('ctx.drawArrays(ctx.TRIANGLES,0,3);','ctx.drawArrays(ctx.TRIANGLES,0,3);surface.width=surface.width;');
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
+
+for(const kind of ['arcade','webgl','webgl2'])for(const reset of [false,true])test(`A1.8.4 rejects late ${reset?'backing reset':'clear'} in ${kind}`,async()=>{
+ const erase=reset?'surface.width=surface.width;':kind==='arcade'?'ctx.clearRect(0,0,surface.width,surface.height);':'ctx.clear(ctx.COLOR_BUFFER_BIT);';
+ const source=canvasGame(kind).replace('step++;draw();','step++;draw();if(step>=2){'+erase+'}');
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
+
+for(const kind of ['arcade','webgl','webgl2'])test(`A1.8.4 accepts ${kind} clear, restart and backing resize followed by redraw`,async()=>{
+ const source=canvasGame(kind).replace('step++;draw();','step++;surface.width=surface.width;draw();')
+  .replace('<output>','<button id="restart">Restart</button><output>')
+  .replace('document.querySelector(\'#move\').onclick=act;','document.querySelector("#restart").onclick=()=>{step=0;surface.width=surface.width;draw();};document.querySelector(\'#move\').onclick=act;');
+ const evidence=await browserCheck(source,AbortSignal.timeout(18000));
+ expect(evidence.rendering?.contexts).toEqual([kind==='arcade'?'2d':kind]);
+});
+
+test('A1.8.4 checks the offline frame after keyboard input',async()=>{
+ const source=canvasGame('webgl').replace("if(e.key==='ArrowRight')act();","if(e.key==='ArrowRight'){act();ctx.clear(ctx.COLOR_BUFFER_BIT);}");
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
+
+test('A1.8.4 checks the final restart frame',async()=>{
+ const source=canvasGame('webgl').replace('<output>','<button id="restart">Restart</button><output>')
+  .replace('document.querySelector(\'#move\').onclick=act;','document.querySelector("#restart").onclick=()=>ctx.clear(ctx.COLOR_BUFFER_BIT);document.querySelector(\'#move\').onclick=act;');
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
+
+test('A1.8.4 allows a short clear-to-redraw transition',async()=>{
+ const source=canvasGame().replace('step++;draw();','step++;ctx.clearRect(0,0,surface.width,surface.height);setTimeout(draw,75);');
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contexts:['2d']}});
+});

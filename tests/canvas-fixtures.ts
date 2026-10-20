@@ -1,11 +1,11 @@
 /** Independently authored offline games and reductions, never provider output. */
 export function canvasGame(kind='arcade'){
- const gl=kind==='webgl';
+ const gl=kind==='webgl'||kind==='webgl2';
  const render=gl?`
- const ctx=surface.getContext('webgl');if(!ctx)throw Error('WEBGL_UNAVAILABLE');
+ const ctx=surface.getContext('${kind}');if(!ctx)throw Error('WEBGL_UNAVAILABLE');
  const shader=(type,source)=>{const s=ctx.createShader(type);ctx.shaderSource(s,source);ctx.compileShader(s);return s;};
- const program=ctx.createProgram();ctx.attachShader(program,shader(ctx.VERTEX_SHADER,'attribute vec2 p;uniform float shift;void main(){gl_Position=vec4(p.x+shift,p.y,0.,1.);}'));
- ctx.attachShader(program,shader(ctx.FRAGMENT_SHADER,'precision mediump float;void main(){gl_FragColor=vec4(1.,.7,.1,1.);}'));ctx.linkProgram(program);ctx.useProgram(program);
+ const program=ctx.createProgram();ctx.attachShader(program,shader(ctx.VERTEX_SHADER,'${kind==='webgl2'?'#version 300 es\\n in':'attribute'} vec2 p;uniform float shift;void main(){gl_Position=vec4(p.x+shift,p.y,0.,1.);}'));
+ ctx.attachShader(program,shader(ctx.FRAGMENT_SHADER,'${kind==='webgl2'?'#version 300 es\\n precision mediump float;out vec4 color;':'precision mediump float;'}void main(){${kind==='webgl2'?'color':'gl_FragColor'}=vec4(1.,.7,.1,1.);}'));ctx.linkProgram(program);ctx.useProgram(program);
  const buffer=ctx.createBuffer();ctx.bindBuffer(ctx.ARRAY_BUFFER,buffer);ctx.bufferData(ctx.ARRAY_BUFFER,new Float32Array([-.7,-.7,.2,-.7,-.2,.7]),ctx.STATIC_DRAW);
  const p=ctx.getAttribLocation(program,'p');ctx.enableVertexAttribArray(p);ctx.vertexAttribPointer(p,2,ctx.FLOAT,false,0,0);
  function draw(){ctx.viewport(0,0,surface.width,surface.height);ctx.clearColor(.05,.1,.2,1);ctx.clear(ctx.COLOR_BUFFER_BIT);ctx.uniform1f(ctx.getUniformLocation(program,'shift'),(step%3)*.2);ctx.drawArrays(ctx.TRIANGLES,0,3);}
