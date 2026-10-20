@@ -19,11 +19,11 @@ test('contexts reflect only currently visible meaningful canvases',()=>{
  const covered=frame();covered.canvases[0].exposed=false;
  assert.throws(()=>requireCanvas([frame(1,'first'),frame(),covered]),/BROWSER_CANVAS_RENDER_UNVERIFIED/);
 });
-test('terminal overlay needs changing exposed meaningful evidence before its transition',()=>{
+test('terminal labels cannot exempt blank final frames in strict rendering',()=>{
  const terminal=frame(1,'clear',false);terminal.terminal=true;
- assert.deepEqual(requireCanvas([frame(1,'first'),frame(),terminal]),['webgl']);
+ assert.throws(()=>requireCanvas([frame(1,'first'),frame(),terminal]),/BROWSER_CANVAS_RENDER_UNVERIFIED/);
  for(const prior of [[frame()],[frame(),frame()],[frame(1,'clear',false),frame()],[frame(2,'first'),frame(2)]])
-  assert.throws(()=>requireCanvas([...prior,terminal]),/BROWSER_CANVAS_ACTIVITY_UNVERIFIED/);
+  assert.throws(()=>requireCanvas([...prior,terminal]),/BROWSER_CANVAS_RENDER_UNVERIFIED/);
  const fake=frame();fake.terminal=true;
- assert.throws(()=>requireCanvas([fake,terminal]),/BROWSER_CANVAS_ACTIVITY_UNVERIFIED/);
+ assert.throws(()=>requireCanvas([fake,terminal]),/BROWSER_CANVAS_RENDER_UNVERIFIED/);
 });

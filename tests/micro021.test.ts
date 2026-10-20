@@ -151,7 +151,7 @@ test('offline job retains idea, checkpoint and finite attempt budget across work
 test('transient DNS loss recovers within the existing automatic budget and persists one checked game', async () => {
   const store = new Store(':memory:'); let calls = 0;
   const route = { route: 'primary' as const, provider: 'ollama.com', model: 'gemma4:31b', readiness: async () => 'ready', complete: async () => { if (++calls === 1) throw new ProviderFailure('LLM_DNS'); return { code: html, model: 'gemma4:31b' }; } };
-  const engine = new GenerationEngine([route], { repairs: 0, check: async () => ({ profiles: [320, 390], offline: true, errors: 0, scope: 'startup-input-pause' }) });
+  const engine = new GenerationEngine([route], { repairs: 0, check: async () => ({ profiles: [320, 390], offline: true, errors: 0, scope: 'startup-input-pause',rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]} }) });
   const jobs = new GenerationJobs(store, engine, undefined, true, { maxCalls: 2, retryMs: 10 });
   try {
     const id = jobs.create('owner', 'network-recovery-test', { mode: 'live', spec, telegramConsent: false }).jobId;

@@ -10,7 +10,8 @@ import {Store} from '../src/store.ts';
 import {createApp} from '../src/api.ts';
 import {PhoneConnection} from '../src/phone.ts';
 import {lanAddresses} from '../src/network.ts';
-import {html} from './helpers.ts';
+import {strictCanvas} from './strict-canvas-fixtures.ts';
+const html=strictCanvas();
 import jsQR from 'jsqr';
 import {PNG} from 'pngjs';
 test('MICRO-027 critical runtime error survives a later actionability timeout',async()=>{
@@ -46,5 +47,5 @@ test('MICRO-027 actual UI job, diagnostic download, version edit, export and exa
 // Native-language Start controls must be exercised before tapping the canvas.
 test('MICRO-027 Russian Start dismisses an opaque overlay before input probe',async()=>{
  const source='<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;min-height:300px}canvas{width:200px;height:200px}#cover{position:fixed;inset:0;background:white}</style></head><body><canvas></canvas><div id="cover"><button onclick="document.querySelector(\'#cover\').remove()">Начать игру</button></div><script>const surface=document.querySelector("canvas"),ctx=surface.getContext("2d");let x=20;function draw(){ctx.fillStyle="#142038";ctx.fillRect(0,0,300,150);ctx.fillStyle="#ffcc40";ctx.fillRect(x,40,50,60);}draw();surface.addEventListener("pointerdown",()=>{x=x===20?100:20;draw();});</script></body></html>';
- expect((await browserCheck(source,AbortSignal.timeout(18000))).errors).toBe(0);
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });

@@ -19,10 +19,18 @@ function draw(){
  ctx.fillText(paused?'Resume':'Pause',15,65);ctx.fillText(muted?'Sound off':'Sound on',w-100,65);
  ctx.fillStyle='#a94';ctx.fillRect(w*.2,h*.4,w*.6,48);ctx.fillStyle='white';ctx.fillText(!active?'Start':step>=4?'Game Over / Restart':'Move',w*.3,h*.4+30);
 }
+
 function resize(){for(const c of new Set([surface,hud])){const r=c.getBoundingClientRect();c.width=Math.round(r.width*devicePixelRatio);c.height=Math.round(r.height*devicePixelRatio);}draw();}
 function act(){if(!active){active=true;draw();return;}if(step>=4){step=0;paused=false;draw();return;}if(!paused){step++;draw();}}
 surface.addEventListener('pointerdown',e=>{const r=surface.getBoundingClientRect(),x=(e.clientX-r.left)*surface.width/r.width,y=(e.clientY-r.top)*surface.height/r.height;
  if(y<90*devicePixelRatio&&y>40*devicePixelRatio){if(x<r.width*devicePixelRatio/2)paused=!paused;else muted=!muted;draw();return;}act();});
 addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key===' ')act();});addEventListener('resize',resize);resize();
 </script></body></html>`;
+}
+
+export function strictAnimated(kind='webgl',ending='draw') {
+ return strictCanvas(kind).replace('preserveDrawingBuffer:true','preserveDrawingBuffer:false')
+  .replace('let active=false','let ticks=0;let active=false')
+  .replace('(step%3)*.2','(step%3)*.2+Math.sin(ticks/10)*.05')
+  .replace('resize();\n</script>',`resize();function tick(){ticks++;if(active){${ending==='clear'?'if(step>=2)gl.clear(gl.COLOR_BUFFER_BIT);else draw();':ending==='reset'?'if(step>=2)surface.width=surface.width;else draw();':ending==='stop'||ending==='halt'?'if(step<2)draw();':ending==='redraw'?'gl.clear(gl.COLOR_BUFFER_BIT);draw();':'draw();'}}${ending==='halt'?'if(step<2)':''}requestAnimationFrame(tick);}requestAnimationFrame(tick);\n</script>`);
 }

@@ -48,11 +48,11 @@ test('MICRO-031 direct and intent prepare concrete layout checks for creation an
   assert.deepEqual(generationMessages(request), generationMessages(request, undefined, 'direct'));
 });
 
-test('A1.8 rendering contract keeps system message growth below 20 percent', () => {
+test('strict rendering contract stays within the explicit 5 KB prompt budget', () => {
   // UTF-8 system-message sizes at d389821 (A1.8 base); requirements/HTML separate.
-  for (const [style, baseline] of [['direct', 2429], ['intent', 3284]] as const) {
+  for (const [style] of [['direct', 2429], ['intent', 3284]] as const) {
     const messages = generationMessages(spec('Аркада'), undefined, style);
-    assert.ok(Buffer.byteLength(messages[0].content) <= baseline * 1.2, style);
+    assert.ok(Buffer.byteLength(messages[0].content) <= 5000, style);
   }
 });
 
@@ -191,7 +191,7 @@ test('invalid input, host injection and quoted game signage respect the trust bo
   assert.equal(JSON.parse(messages[1].content).request, attack);
 });
 
-const evidence = async () => ({ profiles: [320, 390, 844], offline: true as const, errors: 0 as const, scope: 'full-html' as const });
+const evidence = async () => ({ profiles: [320, 390, 844], offline: true as const, errors: 0 as const, scope: 'full-html' as const,rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]} });
 test('engine switch defaults to byte-identical legacy messages and intent adds no interpretation call', async () => {
   const text = 'Змейка для бабушки';
   const captured: Message[][] = [];

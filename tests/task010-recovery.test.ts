@@ -8,7 +8,7 @@ import type {CodeTransport} from '../src/transport.ts';
 import type {GenerationJob} from '../src/job-contracts.ts';
 import {html,spec} from './helpers.ts';
 
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
+const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
 const request={spec,mode:'live' as const,telegramConsent:false};
 const route=(complete:CodeTransport['complete'],provider='synthetic-free',name:CodeTransport['route']='primary'):CodeTransport=>({route:name,provider,model:provider+'-requested',complete,readiness:async()=>'ready'});
 const pause=(ms=5)=>new Promise<void>(done=>setTimeout(done,ms));

@@ -71,7 +71,7 @@ test('real private-IP listener shares exact game bytes, denies owner APIs, expir
 test('saved LIVE evidence is separate from catalogue health and contains no source or other-provider history',()=>{
   const store=new Store(':memory:');try{
     store.save(spec,artifact);assert.equal(store.lastSavedGeneration('ollama.com'),null);
-    const live=store.save(spec,{...artifact,method:'llm_code',provider:'ollama.com',model:'gemma4:31b',validationStatus:'passed'});
+    const live=store.save(spec,{...artifact,method:'llm_code',provider:'ollama.com',model:'gemma4:31b',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'ollama.com',requestedModel:'gemma4:31b',model:'gemma4:31b',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:{scope:'full-html',profiles:[320,390,844],offline:true,errors:0,rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}}}});
     assert.deepEqual(store.lastSavedGeneration('ollama.com'),{provider:'ollama.com',model:'gemma4:31b',createdAt:live.createdAt,source:'saved-version'});
     assert.equal(store.lastSavedGeneration('openrouter'),null);
   }finally{store.close();}

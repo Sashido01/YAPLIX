@@ -13,7 +13,7 @@ import {Fault} from '../src/contracts.ts';
 import {createApp} from '../src/api.ts';
 import {TelegramSessions} from '../src/telegram.ts';
 import {spec,html,artifact} from './helpers.ts';
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
+const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
 const route=(complete:CodeTransport['complete'],name:'primary'|'secondary'|'local'='primary'):CodeTransport=>({route:name,provider:'synthetic',model:'requested',complete,readiness:async()=>'ready'});
 const request={spec,mode:'live' as const,telegramConsent:false};
 async function settled(jobs:GenerationJobs,id:string,owner='owner') {for(let i=0;i<550;i++){const job=jobs.get(owner,id);if(['completed','needs_attention','cancelled','failed'].includes(job.stage))return job;await new Promise(done=>setTimeout(done,20));}throw Error('JOB_NOT_SETTLED');}

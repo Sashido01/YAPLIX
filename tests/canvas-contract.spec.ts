@@ -1,3 +1,4 @@
+import {strictCanvas,strictAnimated} from './strict-canvas-fixtures.ts';
 import {test,expect} from '@playwright/test';
 import {checkFullHtml} from '../src/full-html-check.ts';
 import {browserCheck} from '../src/browser-check.ts';
@@ -14,25 +15,22 @@ import {pathToFileURL} from 'node:url';
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Production validator uses Chromium.'));
 
 test('A1.8 rejects DOM-only games through the production HTML checker',async({browser})=>{
- await expect(checkFullHtml(browser,domGame,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_REQUIRED'});
+ await expect(checkFullHtml(browser,domGame,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
 
 test('A1.8 lifecycle markers cannot bypass the rendering gate',async()=>{
  const source=html.replace('<main>','<main><div style="position:absolute;top:0;left:0;width:30px;height:30px;background:red">Sprite</div>');
- await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_WORLD'});
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
 
-for(const kind of ['arcade','puzzle','webgl'])test('A1.8 accepts real offline '+kind+' with touch and DOM controls',async({browser})=>{
- const evidence=await checkFullHtml(browser,canvasGame(kind),AbortSignal.timeout(18000));
- expect(evidence.profiles).toEqual([320,390,844]);
- expect(evidence.rendering).toEqual({contract:'canvas-webgl-v1',contexts:[kind==='webgl'?'webgl':'2d'],profiles:[320,390,844]});
- expect(evidence.checks?.find(c=>c.aspect==='gameplay-observed')?.level).toBe('NOT_VERIFIED');
+for(const kind of ['arcade','puzzle','webgl'])test('A1.8.6 rejects formerly accepted '+kind+' with DOM controls',async({browser})=>{
+ await expect(checkFullHtml(browser,canvasGame(kind),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
 
 test('A1.8 production job edit, SQLite restart, historical export and offline reopen',async({browser})=>{
  test.setTimeout(60000);
  const directory=mkdtempSync('.local/canvas-chain-'),path=directory+'/test.sqlite';
- let source=canvasGame('puzzle'),calls=0;
+ let source=strictCanvas(),calls=0;
  const engine=new GenerationEngine([{route:'primary',provider:'offline-fixture',model:'authored',readiness:async()=>'ready',complete:async(messages)=>{
   calls++;if(calls===1)expect(messages[1].content).toContain(domGame);
   return{code:source,model:'authored'};
@@ -55,20 +53,20 @@ test('A1.8 production job edit, SQLite restart, historical export and offline re
   const context=await browser.newContext({offline:true,hasTouch:true,viewport:{width:390,height:700}});
   try{
    const page=await context.newPage(),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-   await page.goto(pathToFileURL(offline).href);await page.getByRole('button',{name:'Start',exact:true}).tap();
-   await page.locator('canvas').tap();await expect(page.locator('output')).toHaveText('Steps 1');
+   await page.goto(pathToFileURL(offline).href);const canvas=page.locator('canvas');await canvas.tap();const before=await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL());
+   await canvas.tap();expect(await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL())).not.toBe(before);
    expect(errors).toEqual([]);
   }finally{await context.close();}
   // A real failed browser gate is retained in durable history, with no new
   // version, repair or second dispatch even when repair was enabled.
   source=domGame;
   const failed=await settled(jobs.create('owner','canvas-refusal',{spec,mode:'live',previousVersionId:version.versionId,telegramConsent:false}).jobId);
-  expect(failed.stage).toBe('needs_attention');expect(failed.errorCode).toBe('BROWSER_CANVAS_REQUIRED');
+  expect(failed.stage).toBe('needs_attention');expect(failed.errorCode).toBe('BROWSER_DOM_GAME_UI');
   expect(failed.originalCheckpoint).toBe(domGame);expect(failed.validation?.level).toBe('FAILED');expect(calls).toBe(2);
   expect(store.history(historical.gameId)).toHaveLength(2);expect(failed.versionId).toBeNull();
   const refusedId=failed.jobId;
   await jobs.close();store.close();store=new Store(path);jobs=new GenerationJobs(store,engine);
-  expect(jobs.get('owner',refusedId).errorCode).toBe('BROWSER_CANVAS_REQUIRED');
+  expect(jobs.get('owner',refusedId).errorCode).toBe('BROWSER_DOM_GAME_UI');
   jobs.continue('owner',refusedId);expect((await settled(refusedId)).stage).toBe('needs_attention');
   expect(calls).toBe(2);expect(store.history(historical.gameId)).toHaveLength(2);
  }finally{await jobs.close();engine.close();store.close();}
@@ -85,79 +83,48 @@ for(const [name,source,code] of [
  ['after Start error',canvasGame().replace('active=true;','throw Error("after Start");active=true;'),'JAVASCRIPT_EXCEPTION'],
  ['landscape canvas',canvasGame().replace('</style>','@media(orientation:landscape){canvas{height:500px}}</style>'),'BROWSER_CANVAS_LAYOUT'],
 ] as const)test('A1.8 rejects '+name,async({browser})=>{
- await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code});
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
 
 test('A1.8 rejects WebGL frames explicitly cleared after drawing',async({browser})=>{
- const source=canvasGame('webgl').replace('ctx.drawArrays(ctx.TRIANGLES,0,3);','ctx.drawArrays(ctx.TRIANGLES,0,3);ctx.clear(ctx.COLOR_BUFFER_BIT);');
+ const source=strictCanvas('webgl').replace('gl.drawArrays(gl.TRIANGLES,0,3);','gl.drawArrays(gl.TRIANGLES,0,3);gl.clear(gl.COLOR_BUFFER_BIT);');
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
 
 test('A1.8 rejects WebGL frames erased by a backing store reset',async({browser})=>{
- const source=canvasGame('webgl').replace('ctx.drawArrays(ctx.TRIANGLES,0,3);','ctx.drawArrays(ctx.TRIANGLES,0,3);surface.width=surface.width;');
+ const source=strictCanvas('webgl').replace('gl.drawArrays(gl.TRIANGLES,0,3);','gl.drawArrays(gl.TRIANGLES,0,3);surface.width=surface.width;');
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
 
-for(const kind of ['arcade','webgl','webgl2'])for(const reset of [false,true])test(`A1.8.4 rejects late ${reset?'backing reset':'clear'} in ${kind}`,async()=>{
- const erase=reset?'surface.width=surface.width;':kind==='arcade'?'ctx.clearRect(0,0,surface.width,surface.height);':'ctx.clear(ctx.COLOR_BUFFER_BIT);';
- const source=canvasGame(kind).replace('step++;draw();','step++;draw();if(step>=2){'+erase+'}');
+for(const kind of ['2d','webgl','webgl2'])for(const reset of [false,true])test(`strict Canvas rejects late ${reset?'backing reset':'clear'} in ${kind}`,async()=>{
+ const erase=reset?'surface.width=surface.width;':kind==='2d'?'ctx.clearRect(0,0,surface.width,surface.height);':'gl.clear(gl.COLOR_BUFFER_BIT);';
+ const source=strictCanvas(kind).replace('step++;draw();','step++;draw();if(step>=2){'+erase+'}');
  await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
-
-for(const kind of ['arcade','webgl','webgl2'])test(`A1.8.4 accepts ${kind} clear, restart and backing resize followed by redraw`,async()=>{
- const source=canvasGame(kind).replace('step++;draw();','step++;surface.width=surface.width;draw();')
-  .replace('<output>','<button id="restart">Restart</button><output>')
-  .replace('document.querySelector(\'#move\').onclick=act;','document.querySelector("#restart").onclick=()=>{step=0;surface.width=surface.width;draw();};document.querySelector(\'#move\').onclick=act;');
- const evidence=await browserCheck(source,AbortSignal.timeout(18000));
- expect(evidence.rendering?.contexts).toEqual([kind==='arcade'?'2d':kind]);
+for(const kind of ['2d','webgl','webgl2'])test(`strict Canvas accepts ${kind} backing resize followed by redraw`,async()=>{
+ const source=strictCanvas(kind).replace('step++;draw();','step++;surface.width=surface.width;draw();');
+ expect((await browserCheck(source,AbortSignal.timeout(18000))).rendering?.contexts).toContain(kind);
 });
-
-test('A1.8.4 checks the offline frame after keyboard input',async()=>{
- const source=canvasGame('webgl').replace("if(e.key==='ArrowRight')act();","if(e.key==='ArrowRight'){act();ctx.clear(ctx.COLOR_BUFFER_BIT);}");
+test('strict Canvas checks keyboard errors and final image',async()=>{
+ const source=strictCanvas().replace("if(e.key==='ArrowRight'||e.key===' ')act();","if(e.key==='ArrowRight'){act();ctx.clearRect(0,0,surface.width,surface.height);}");
  await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
-
-test('A1.8.4 checks the final restart frame',async()=>{
- const source=canvasGame('webgl').replace('<output>','<button id="restart">Restart</button><output>')
-  .replace('document.querySelector(\'#move\').onclick=act;','document.querySelector("#restart").onclick=()=>ctx.clear(ctx.COLOR_BUFFER_BIT);document.querySelector(\'#move\').onclick=act;');
- await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+for(const crash of [false,true])test('strict Canvas rejects broken Restart, crash='+crash,async()=>{
+ const source=strictCanvas().replace('step=0;paused=false;draw();',crash?'throw Error("restart failed");':'step=0;paused=false;ctx.clearRect(0,0,surface.width,surface.height);');
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:crash?'JAVASCRIPT_EXCEPTION':'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
-
-test('A1.8.4 allows a short clear-to-redraw transition',async()=>{
- const source=canvasGame().replace('step++;draw();','step++;ctx.clearRect(0,0,surface.width,surface.height);setTimeout(draw,75);');
+test('strict Canvas allows bounded clear-to-redraw transition',async()=>{
+ const source=strictCanvas().replace('step++;draw();','step++;ctx.clearRect(0,0,surface.width,surface.height);setTimeout(draw,75);');
  await expect(browserCheck(source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contexts:['2d']}});
 });
-
-for(const restart of [false,true])test(`A1.8.5 accepts observed Canvas gameplay then cleared terminal overlay, restart=${restart}`,async()=>{
- await expect(browserCheck(terminalCanvas({restart}),AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contexts:['2d']}});
+for(const restart of [false,true])test('strict Canvas rejects historical DOM terminal allowance, restart='+restart,async()=>{
+ await expect(browserCheck(terminalCanvas({restart}),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
-test('A1.8.5 rejects a decorative Canvas followed by a fake terminal overlay',async()=>{
- await expect(browserCheck(terminalCanvas({decorative:true}),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
-});
-test('A1.8.5 rejects JavaScript failure after terminal Restart',async()=>{
- await expect(browserCheck(terminalCanvas({crash:true}),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
-});
-for(const kind of ['webgl','webgl2'])for(const ending of ['draw','redraw','stop','halt','clear','reset'])test(`A1.8.5 animated ${kind} preserveDrawingBuffer=false ending=${ending}`,async()=>{
- const result=browserCheck(animatedWebgl(kind,ending),AbortSignal.timeout(18000));
- if(ending==='draw'||ending==='redraw')await expect(result).resolves.toMatchObject({rendering:{contexts:[kind]}});
+for(const kind of ['webgl','webgl2'])for(const ending of ['draw','redraw','stop','halt','clear','reset'])test(`strict animated ${kind} preserveDrawingBuffer=false ending=${ending}`,async()=>{
+ const result=browserCheck(strictAnimated(kind,ending),AbortSignal.timeout(18000));
+ if(ending==='draw'||ending==='redraw')expect((await result).rendering?.contexts).toContain(kind);
  else await expect(result).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
-
-test('A1.8.5 empty terminal overlay cannot establish a game loop',async()=>{
- const source=terminalCanvas({restart:false}).replaceAll('draw();','');
- await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
-});
-test('A1.8.5 a cleared active game cannot be concealed by an always visible Restart',async()=>{
- const source=canvasGame().replace('<output>','<button id="restart">Restart</button><output>')
-  .replace('step++;draw();','step++;ctx.clearRect(0,0,surface.width,surface.height);')
-  .replace("document.querySelector('#move').onclick=act;","document.querySelector('#restart').onclick=draw;document.querySelector('#move').onclick=act;");
- await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
-});
-test('A1.8.5 cleared terminal Restart must restore a rendered Canvas',async()=>{
- const source=terminalCanvas().replace("document.querySelector('section').hidden=true;draw();","document.querySelector('section').hidden=true;");
- await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
-});
-
 for(const kind of ['webgl','webgl2'])test(`A1.8.5 ${kind} fixture has native false buffer, running frames, score, win and Restart`,async({browser})=>{
  const context=await browser.newContext({offline:true,hasTouch:true,viewport:{width:390,height:700}});
  try{

@@ -9,7 +9,7 @@ import {createApp} from '../src/api.ts';
 import {mkdtempSync} from 'node:fs';
 
 function candidate(scope='full-html',profiles:unknown=[320,390,844]){
- return {html,method:'llm_code',provider:'offline-test',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline-test',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:{scope,profiles,offline:true,errors:0}}};
+ return {html,method:'llm_code',provider:'offline-test',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline-test',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:{scope,profiles,offline:true,errors:0,rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}}}};
 }
 
 test('scope accepts current Full HTML and preserves historical two-profile evidence without promotion',()=>{

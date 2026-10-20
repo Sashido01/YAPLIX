@@ -7,7 +7,7 @@ import {Store} from '../src/store.ts';
 import {GenerationJobs} from '../src/jobs.ts';
 import {createApp} from '../src/api.ts';
 import {html,spec} from './helpers.ts';
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
+const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
 const request={spec,mode:'live' as const,telegramConsent:false};
 const route=(provider:string,complete:CodeTransport['complete']):CodeTransport=>({provider,route:provider==='openrouter'?'secondary':'primary',model:provider==='openrouter'?'openrouter/free':'gemma4:31b',readiness:async()=>'ready',complete});
 async function settle(jobs:GenerationJobs,id:string){for(let i=0;i<400;i++){const j=jobs.get('owner',id);if(['completed','needs_attention','cancelled'].includes(j.stage))return j;await new Promise(r=>setTimeout(r,5));}throw Error('WAIT_TIMEOUT');}

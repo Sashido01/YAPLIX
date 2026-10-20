@@ -22,6 +22,7 @@ for(const [name,source] of [
  ['CSS Grid world',insert('<div style="display:grid"><div style="background:red;width:20px;height:20px"></div></div>')],
  ['SVG',insert('<svg width="40" height="40"><rect width="40" height="40"/></svg>')],
  ['pseudo interface',insert('<style>body::before{content:"Pause";position:fixed;top:0}</style>')],
+ ['pseudo on zero-size host',insert('<style>i::before{content:"Pause";position:fixed;left:0;top:0}</style><i style="display:block;width:0;height:0"></i>')],
  ['dynamic menu',dynamic('if(step===1)document.body.insertAdjacentHTML("afterbegin","<nav>Menu</nav>");')],
  ['dynamic HUD',dynamic('if(step===2)document.body.insertAdjacentHTML("afterbegin","<output>Score 2</output>");')],
  ['victory overlay',dynamic('if(step===4)document.body.insertAdjacentHTML("afterbegin","<section role=dialog>You won</section>");')],
@@ -35,4 +36,16 @@ for(const [name,source] of [
  ['nested document',insert('<iframe srcdoc="<p>HUD</p>"></iframe>')],
 ] as const)test('strict Canvas rejects '+name,async({browser})=>{
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:expect.stringMatching(/BROWSER_DOM_GAME_UI|NETWORK_ATTEMPT|BROWSER_CONSOLE_ERROR/)});
+});
+test('strict Canvas allows transparent structure and invisible technical resources',async({browser})=>{
+ const source=strictCanvas().replace('<canvas aria-label="Game">','<div><canvas aria-label="Game">').replace('</canvas>','</canvas></div><span hidden>Technical text</span><canvas hidden></canvas>')
+  .replace('canvas{display:block','[hidden]{display:none!important}div{width:100%;height:100%}canvas{display:block');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contract:'canvas-webgl-strict-v2'}});
+});
+for(const code of ['return;','step++;','draw();'])test('strict Canvas leaves inert interaction NOT_VERIFIED: '+code,async({browser})=>{
+ const source=strictCanvas().replace('function act(){','function act(){'+code+'return;');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
+});
+test('strict Canvas detects exceptions after Start',async({browser})=>{
+ await expect(checkFullHtml(browser,strictCanvas().replace('active=true;draw();return;','throw Error("start failure");'),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
 });
