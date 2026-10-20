@@ -353,3 +353,8 @@ initData или необработанные журналы. [Запуск и о
 - Нулевой backing store прежде доходил до NaN координат и общего INCONCLUSIVE.
   Теперь layout проверяется до probes: BROWSER_CANVAS_LAYOUT, без repair/fallback.
   Отдельный RED→GREEN фиксирует именно Canvas classification.
+
+- CSS-visible head/title мог обходить body-only обход. Отдельный RED принимал
+  такой HUD. Observer теперь обходит весь document (с прежним bounded cap),
+  обычные head/meta/title/script/style остаются разрешены невидимыми. Новый
+  negative и два Canvas/technical positives прошли 3/3 GREEN.

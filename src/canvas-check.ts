@@ -99,7 +99,7 @@ export function observeCanvas(key:string) {
   if(!rendered(el))return false;
   return visibleRect(el,el.getBoundingClientRect());
  };
- const elements=()=>[...document.querySelectorAll('html,body,body *'),...[...roots].filter(r=>r.host.isConnected).flatMap(r=>[...r.querySelectorAll('*')])];
+ const elements=()=>[...document.querySelectorAll('*'),...[...roots].filter(r=>r.host.isConnected).flatMap(r=>[...r.querySelectorAll('*')])];
  const color=(v:string)=>v!=='transparent'&&!/^rgba\([^)]*,\s*0(?:\.0+)?\)$/.test(v);
  const hasDom=()=>{
   const nodes=elements();if(nodes.length>4096)return -1;

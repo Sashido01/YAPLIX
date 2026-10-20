@@ -81,3 +81,7 @@ test('strict Canvas classifies zero backing size before coordinate probes',async
  const source=strictCanvas().replace('c.width=Math.round(r.width*devicePixelRatio)','c.width=0');
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_LAYOUT'});
 });
+test('strict Canvas rejects technical head content made visible by CSS',async({browser})=>{
+ const source=strictCanvas().replace('<head>','<head><title>HUD</title><style>head,title{display:block}</style>');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
+});
