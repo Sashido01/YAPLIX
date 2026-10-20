@@ -1,3 +1,4 @@
+import {strictCanvas} from './strict-canvas-fixtures.ts';
 import {test,expect} from '@playwright/test';
 import {createAndOpen} from './ui-jobs-helper.ts';
 import {spec,html} from './helpers.ts';
@@ -44,7 +45,7 @@ test('controlled LIVE worker runs while touch round continues; completed checked
   test.setTimeout(35000);
   test.skip(!['chromium-320','webkit-390'].includes(info.project.name),'Controlled LIVE worker on small Chromium/WebKit; other profiles run key-free background scenario.');
   const store=new Store(':memory:');let release!:()=>void;const held=new Promise<void>(done=>release=done);
-  const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'fixture-model',readiness:async()=>'ready',complete:async()=>{await held;return{code:html,model:'actual-fixture-model'};}}],{timeoutMs:15000});
+  const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'fixture-model',readiness:async()=>'ready',complete:async()=>{await held;return{code:strictCanvas(),model:'actual-fixture-model'};}}],{timeoutMs:15000});
   const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);const previous=store.save(spec,demoArtifact(spec));
   await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
   try{await page.goto('/?game='+previous.gameId);const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Старт',exact:true}).tap();await game.getByRole('button',{name:'Вправо',exact:true}).tap();const realm=await page.locator('iframe').elementHandle();await page.getByRole('button',{name:'Создать',exact:true}).click();const createdResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
