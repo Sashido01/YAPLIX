@@ -104,7 +104,7 @@ test('host loads the complete ESM graph, creates a session and initializes gamep
   const session = await page.evaluate(() => (window as any).testSession);
   expect(session.sessionId).toMatch(/^[0-9a-f-]{36}$/);
   expect([...modules].sort()).toEqual([
-    ['/runtime/browser-profiles.js', 200], ['/runtime/contracts.js', 200], ['/runtime/runtime.js', 200]
+    ['/runtime/browser-profiles.js', 200], ['/runtime/contracts.js', 200], ['/runtime/generation-limits.js', 200], ['/runtime/runtime.js', 200]
   ]);
   await page.frameLocator('iframe').getByRole('button', { name: 'Start', exact: true }).click();
   await expect.poll(async () => (await (await request.get(`/api/versions/${session.versionId}/analytics`)).json()).startedCount).toBe(1);
