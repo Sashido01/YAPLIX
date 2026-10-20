@@ -295,3 +295,25 @@ initData или необработанные журналы. [Запуск и о
   Permission failure и hardlink по-прежнему отклоняются, чужой HTML сохраняется.
 - Пользовательские журналы не очищать ради PASS и assertion не ослаблять.
   Метаданные диагностического запуска находятся только в ignored `.local`.
+
+## A1.8.6: Canvas с видимым DOM UI и неполное rendering evidence
+
+- RED на `7660afb`: production checkFullHtml принимал авторскую Canvas-игру
+  с HTML Start/Move/HUD как canvas-webgl-v1. Новый negative-тест требовал отказа,
+  но promise resolved. GREEN: тот же HTML получает BROWSER_DOM_GAME_UI.
+- Новый контракт запрещает DOM HUD/controls/Game Over. Проверка реального DOM
+  включает текст, computed styles/pseudo-elements, SVG и open/closed Shadow DOM;
+  ARIA роли не служат allowlist. Превышение bounded DOM анализа даёт
+  BROWSER_CANVAS_DOM_UNVERIFIED (NOT_VERIFIED), не FAILED.
+- Отдельный RED показал, что parseArtifact принимал новую checked LLM-версию
+  без rendering evidence. Теперь Save требует canvas-webgl-strict-v2;
+  saved-metadata сохраняет возможность читать прежний v1/отсутствующее поле.
+- Финальный кадр после нескольких taps мог скрыть пустой кадр после Restart,
+  если следующая проба снова рисовала. Каждый input теперь проверяется до
+  следующего; clear→redraw ограничен прежними двумя 50 ms наблюдениями.
+- Tests с прежним DOM UI не удалены: новая генерация ожидает отказ, а исторические
+  версии остаются доступными через history/reopen/export. Rendering regressions
+  дополнительно исполняются на Canvas-only authored fixtures.
+- Offline/synthetic проверки не доказывают реальные provider calls, универсальные
+  правила gameplay и физические Android/iOS/WebView. Детали и границы:
+  [Strict Canvas contract](canvas-rendering-contract.md).

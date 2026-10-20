@@ -1,189 +1,101 @@
-# A1.8 — Canvas / WebGL rendering contract
+# A1.8.6 — Strict Canvas / WebGL game contract
 
-Требование кейса, переданное владельцем: оболочка генератора может использовать
-любой фреймворк, сама игра — чистый HTML5 Canvas / WebGL. A1.8 вводит обязательный
-контракт новых LIVE-версий, включая редактирование. Документ кейса с ключами для
-этой работы не открывался. Реальные результаты провайдеров здесь не проверялись.
+Новые LIVE create/edit и Continue обязаны подтвердить `canvas-webgl-strict-v2`.
+Все видимые элементы игры рисуются только Canvas 2D, WebGL или WebGL2: мир,
+Start/Restart/Pause, HUD, прогресс, жизни, правила, настройки, управление звуком,
+победа и Game Over. Нажатия обрабатываются Canvas hitboxes с переводом CSS pixels
+в backing pixels и учётом DPR. Keyboard и touch обязательны; клавиатура не должна
+быть необходима на телефоне. Весь HTML автономен, без внешних библиотек/ресурсов.
 
-## Генерация и совместимость
+Разрешены технические html/head/body/meta/title/script/style, прозрачные layout
+контейнеры, невидимые ресурсы и невизуальные Canvas accessibility attributes.
+Несколько Canvas разрешены, например WebGL-мир + прозрачный 2D HUD. Каждый видимый
+Canvas должен действительно рисовать; изменяющийся HUD не маскирует пустой мир.
+Оболочка YAPLIX и её исторический player могут продолжать использовать DOM.
 
-Единый `GAME_GENERATION_CONTRACT` применяется в `direct`, `spec` и `intent`.
-Canvas 2D предпочтителен для лёгких игр; WebGL допустим. Игрок, враги, предметы,
-препятствия, карта и эффекты рисуются в Canvas/WebGL. DOM разрешён для меню,
-HUD, кнопок управления, настроек, правил и доступности. SVG/CSS/DOM не заменяют
-игровой мир. Не требуются конкретные ID, жанр, движок, библиотека или телеметрия.
-HTML автономен, CSS/JS встроены; внешние ресурсы и импорты запрещены.
-Промпт требует DPR backing store, portrait/landscape и desktop/touch controls.
+## Единая генерация и история
 
-Edit получает весь исходный HTML и исходную идею: DOM gameplay переводится в
-Canvas/WebGL с сохранением правил и концепции. Исторические HTML, SQLite rows,
-старые версии и экспорт не мигрируют. DEMO и импорт не получают LIVE provenance.
-Неактивный experimental Orchestrator уже требует Canvas; его browserCheck также
-проходит общий gate. Production server использует `configuredGenerator`.
+`GAME_GENERATION_CONTRACT` общий для direct/spec/intent, create/edit и всех
+production transports. Ollama Cloud, OpenRouter Free и локальный ручной ChatGPT
+не получают разных требований качества. Edit передаёт полный предыдущий HTML и
+исходную идею; DOM-интерфейс переводится в Canvas с сохранением концепции/правил.
+Оригинальная версия, её хеш, metadata и export не переписываются.
 
-Путь: `generationMessages → prepareDocument → validateDocument → browserCheck →
-checkFullHtml → parseArtifact → Store.save → preview → export`.
-Полный сохранённый checkpoint при Continue снова проходит тот же gate без POST.
-
-## Runtime gate
-
-Проверка проходит offline в disposable Chromium: opaque iframe `allow-scripts`,
-прежняя CSP, изолированный environment без серверных ключей. HTML локально
-fulfill-ится как `text/html; charset=utf-8` по случайному document URL; это
-сохраняет Unicode controls и исключает гонку init-script/srcdoc,
-не создавая внешнего сетевого запроса. Разрешены только iframe и standalone load
-этого точного URL; остальные requests блокируются. HTML игры не переписывается.
-
-До game script observer оборачивает нативные `getContext` и draw-вызовы,
-сохраняя receiver, аргументы, результат и исключения. Наблюдаются `2d`, `webgl`,
-`webgl2`; clear без draw не считается рисованием. Readback использует отдельный
-32×24 probe. WebGL считывается microtask в конце callback после его синхронных
-draw/clear, до presentation и implicit discard drawing buffer.
-Observer и его random-key состояние существуют только в checker, не в экспорте.
-Явные WebGL clear-вызовы обновляют снимок, не считаясь рисованием; сброс ширины
-или высоты backing store сбрасывает прежнее rendering evidence. Это исключает
-приём проверенных случаев draw → clear/reset с пустым конечным изображением.
-
-A1.8.4 требует meaningful image в последнем активном наблюдении, включая кадр
-после Restart и standalone keyboard input. История используется только для
-сравнения изменения того же Canvas (ID и context); накопленные draw counters
-или изображение другого Canvas не дают PASS. Если финальное изображение пусто,
-разрешены два дополнительных наблюдения через 50 ms (до 100 ms всего) для
-краткого clear → redraw перехода, внутри прежнего общего browser deadline.
-Это bounded наблюдение, а не гарантия всех будущих кадров или gameplay.
-
-A1.8.5 допускает очищенный Canvas под наблюдаемым терминальным DOM-оверлеем:
-видимые dialog/status/heading с Game Over / victory / defeat (или русскими
-эквивалентами) появляются после двух meaningful, exposed и различающихся
-наблюдений того же Canvas после Start. Статичная декорация и один terminal label
-этого не доказывают. Перед Restart проверяется состояние до него; после Restart
-история начинается заново, требуются восстановленный Canvas и новая активность.
-Это технический ACCEPT, gameplay/win/loss/restart semantics — NOT_VERIFIED.
-
-Для WebGL/WebGL2 с `preserveDrawingBuffer:false` native rAF heartbeat ограничивает
-возраст evidence текущим/предыдущим кадром; старый draw не даёт бессрочный PASS,
-даже если игра перестала планировать callbacks. Observer не меняет атрибут
-контекста и не рисует за игру. Синхронный clear после draw учитывается до readback;
-clear с новым draw в том же кадре допускается. Event-driven fixture использует
-явный `preserveDrawingBuffer:true`, а отдельная анимируемая игра — false и rAF.
-Это следует [WebGL specification](https://registry.khronos.org/webgl/specs/latest/1.0/#WEBGLCONTEXTATTRIBUTES):
-false допускает discard после presentation. Редкое/остановленное рисование с false
-может быть визуально допустимым, но автоматически остаётся NOT_VERIFIED и не
-получает ACCEPT по старому снимку. Browser deadline 18 s и дополнительные 100 ms
-наблюдения не увеличены; следующие состояния за пределами окна не проверены.
-
-На 320×700, 390×700, 844×390 нужны видимый, открытый для hit testing Canvas с
-ненулевым backing store, подходящий размер, реальные draw-вызовы и изображение
-минимум с двумя достаточно представленными цветами. После Start и настоящих
-touch/control probes нужно наблюдаемое изменение того же Canvas. Два разных
-статичных Canvas не подтверждают активность. Игровые probes пропускают служебные
-Pause/Resume/Restart и наблюдают каждый input до следующего противоположного.
-Затем отдельно загружается HTML
-без parent, проверяются запуск, touch и отсутствие ошибки от keyboard input.
-Прежняя landscape control reachability проверка сохранена.
-
-Очевидный DOM world определяется по наблюдаемым SVG graphics вне UI, styled
-позиционированным/трансформированным/анимированным leaf-элементам и styled grid
-cells. Меню, HUD и семантические controls допускаются. Подтверждённая ошибка JS,
-запрещённый request, popup или dialog блокируют приём независимо от изображения.
-
-Ошибки `BROWSER_CANVAS_*` / `BROWSER_DOM_GAME_WORLD` сохраняют отказ и исходный
-checkpoint в durable job, не создают версию и не запускают автоматический repair
-или fallback, даже если repair включён. История предыдущих версий сохраняется.
-Metadata `generation.browser.rendering` содержит `contract:canvas-webgl-v1`,
-наблюдённые context types и три профиля; parser проверяет форму и сохраняет их
-при SQLite reopen. Старые metadata без этого поля читаются без приписывания
-нового rendering evidence. Legacy lifecycle profiles остаются `[320,390]`, но
-их новый rendering evidence отдельно содержит `[320,390,844]`.
-
-## Проверяемые случаи
-
-Положительные authored fixtures: Canvas-аркада, Canvas-головоломка, WebGL triangle
-с рабочими shaders, Canvas с DOM-кнопкой, touch, редактирование старой DOM-версии.
-Отрицательные: DOM-only, SVG-only, пустой/скрытый/нулевой Canvas, отсутствие
-draw-вызовов, статичная неработающая сцена, декоративный Canvas рядом с DOM sprite,
-ошибка после Start, oversized landscape Canvas и недоступные landscape controls.
-Интеграция: synthetic transport → реальные static/browser gates → durable job →
-SQLite close/reopen → historical/new API export → file:// offline input.
-Transport fixture не выполняет реального LLM POST и не доказывает качество LLM.
-
-### A1.8.5 — ожидаемые результаты regressions
-
-| Наблюдаемый сценарий | Результат bounded rendering gate |
+| Evidence | Значение |
 | --- | --- |
-| Canvas gameplay → Game Over → clear + DOM overlay | ACCEPT после changing Canvas evidence; семантика окончания NOT_VERIFIED |
-| Тот же цикл → Restart → восстановленный Canvas + input | ACCEPT; полнота правил Restart NOT_VERIFIED |
-| Декоративный Canvas → фиктивный Game Over | REJECT, activity unverified |
-| Пустой Canvas без наблюдаемого игрового цикла, включая terminal label | REJECT, render/activity unverified |
-| Поздний clear/reset во время активной игры, в том числе перед видимым Restart | REJECT, render unverified |
-| Restart оставляет пустой Canvas | REJECT, render unverified |
-| JavaScript exception после Restart | REJECT, JAVASCRIPT_EXCEPTION |
-| Анимируемый WebGL/WebGL2, false, draw в rAF | ACCEPT, реальное свежесчитанное изображение |
-| WebGL/WebGL2 clear/reset без redraw | REJECT, render unverified |
-| WebGL/WebGL2 clear + redraw в том же кадре | ACCEPT |
-| Drawing остановлен, callbacks продолжаются либо полностью прекращены | REJECT, свежий rendering NOT_VERIFIED |
+| `canvas-webgl-v1` | Исторический контракт: DOM HUD, menus, controls и terminal overlays допускались |
+| `canvas-webgl-strict-v2` | Новый контракт: всё видимое игровое UI находится в Canvas/WebGL |
+| Без rendering evidence | Историческая запись; строгая проверка не приписывается |
 
-WebGL2 проверяется только при поддержке браузера; недоступность не считается PASS.
-Набор использует authored offline fixtures и реальные browser gates, не LLM.
-Положительная WebGL mini-game дополнительно проверяет native context attributes,
-движение rAF, счёт 0→3, видимую победу, Restart и новый счёт после реального ввода.
-`BROWSER_CANVAS_RENDER_UNVERIFIED` / `ACTIVITY_UNVERIFIED` сохраняют diagnostic
-level NOT_VERIFIED: новая версия блокируется без repair/fallback, но неизвестное
-рисование не объявляется подтверждённой поломкой игры. Отсутствующий Canvas и
-наблюдаемый DOM world сохраняют FAILED. Это отдельно защищено RED→GREEN units.
+`parseArtifact(..., 'saved-metadata')` читает старые metadata без миграции или
+повышения соответствия. Новая проверенная LLM-версия без v2 evidence отвергается,
+включая попытку повторно сохранить исторические v1 metadata как новое evidence.
+SQLite reopen/history/export читают прежние записи без перезаписи.
 
-## Границы достоверности
+## Production browser gate
 
-Rendering VERIFIED означает только перечисленные наблюдения. Это не Gameplay
-VERIFIED, не доказательство победы, поражения, правил, коллизий или бесконечной
-играбельности. Full HTML gameplay/win/loss/restart aspects остаются NOT_VERIFIED.
-Смена пикселей во время ввода не доказывает причинную связь с этим вводом:
-автономная анимация тоже может менять изображение. Семантическое различение HUD,
-кнопки управления и DOM игрового объекта универсально не решается геометрией.
-Специально замаскированная DOM-механика рядом с анимацией остаётся ограничением;
-bounded gate не является adversarial-proof сертификацией всего произвольного JS.
+Путь: generationMessages → prepareDocument → static validation → browserCheck →
+checkFullHtml → parseArtifact → Store.save → preview/export.
+Checker использует disposable offline Chromium, OS sandbox, opaque iframe
+`allow-scripts`, прежнюю CSP и очищенный environment. Только случайный точный
+validation URL локально fulfill-ится до game scripts; остальные requests,
+popup, native dialog и JS exceptions блокируют приём. HTML не переписывается.
 
-Observer может отклонить допустимую, но ненаблюдаемую игру: очень маленькие или
-одноцветные сцены, нестандартный Start, редкие/отложенные реакции, OffscreenCanvas,
-нестандартные draw extensions. Неоднозначное отсутствие render/activity evidence
-не даёт PASS и требует ручного аудита исходного draft. DPR указан в промпте, но
-runtime не доказывает качество пикселей или корректность всех coordinate mappings.
-32×24 sampling и bounded probes не исследуют все состояния игры.
+Observer проверяет фактический DOM и computed styles, текстовые Range rects,
+SVG/replaced elements, backgrounds/borders/shadows, `::before`/`::after`, в том
+числе после каждого input. Роли status/dialog, классы hud и custom elements не
+освобождают UI от проверки. MutationObserver удерживает обнаруженное нарушение
+между пробами; open/closed Shadow DOM, созданный после init observer, включён в
+анализ. Видимый iframe/object/embed — запрещённая не-Canvas поверхность, даже
+если вложенный документ same-origin; скрытый технический документ не получает
+автоматического запрета по одному факту существования. Анализ ограничен 4096
+элементами: превышение — NOT_VERIFIED, а не неподтверждённое обвинение игры.
 
-Физические Android/iOS/Telegram, реальный LLM generation/edit,
-hosted Windows/Ubuntu CI и юридическое подтверждение
-организатором хакатона — NOT_VERIFIED. Локальный Windows/browser результат
-не заменяет эти свидетельства. Inference/OAuth/model requests этой задачи: 0.
+Нативные draw/getContext сохраняют receiver, аргументы, результат и exceptions.
+32×24 readback не считает clear рисованием. WebGL evidence снимается microtask
+после синхронных draw/clear; `preserveDrawingBuffer:false` устаревает после
+текущего/предыдущего rAF кадра. Backing reset сбрасывает прежние draw/image.
+Нижний Canvas не отклоняется автоматически из-за Canvas HUD: проверяется
+прозрачность 2D слоя в ограниченном наборе точек. Все видимые слои должны иметь
+актуальное meaningful image. Старое разрешение очищенного мира под DOM Game Over
+не применяется. Краткий clear→redraw получает до двух дополнительных 50 ms
+наблюдений в прежнем общем deadline 18 s.
 
-## A1.8.2 — независимый аудит и синтетическая интеграция
+На 320×700, 390×700 и 844×390, DPR 2 выполняются по восемь ограниченных touch
+проб в нормализованных Canvas координатах, включая повторные центральные taps.
+После каждой пробы проверяются DOM, render и exceptions, поэтому следующий input
+не может скрыть обнаруженный пустой кадр/DOM. Начальный экран исключён из
+сравнения активности: одного изменения Start недостаточно. Независимая standalone
+загрузка повторяет touch и ArrowRight. Нет fixture-specific селекторов, hitboxes,
+инъекции состояния, force-click или рисования checker-ом.
 
-20 октября 2026 полный diff A1.8 проверен независимо. В публичном `checkFullHtml`
-воспроизведены два ложных WebGL PASS: draw → явный clear и draw → backing reset.
-Исправление `a31a222` добавляет соответствующие наблюдения и два regression fixture:
-оба RED до исправления, GREEN после; весь Canvas-набор — 18/18 PASS.
-Typecheck/build и 374 source unit — PASS. Gitleaks исходных четырёх коммитов — no leaks.
+Универсально найти Start/Pause/Restart произвольной игры невозможно. Незнакомая
+раскладка, слишком редкая анимация или недостаточные изменения дают NOT_VERIFIED,
+а не доказанную поломку. Тап и изменение пикселей подтверждают ограниченное
+техническое наблюдение, но не правильность gameplay, win/loss или Restart.
+Эти аспекты по-прежнему NOT_VERIFIED. Будущие состояния вне окна проверки,
+физические Android/iOS, Android WebView и реальные Telegram clients требуют
+отдельной проверки. Full Web Audio/SFX pipeline сюда не входит.
 
-Локальная интеграция `c859768` сохраняет исходные SHA Canvas и A1.7
-`07e42a5f0d1fce3b4bb5fa3ef5949576b3663349` из Draft PR #49. В `src/live.ts`
-сохранены одновременно ChatGPT one-POST/no-repair и Canvas no-repair/no-fallback;
-в known-errors сохранены обе группы записей. Интеграционные unit — 448/448 PASS,
-включая synthetic signed OAuth/Responses, durable deadlines и restart/checkpoints.
-Дополнительный harness для каждого provider mode (`ollama-cloud`, `openrouter`,
-`chatgpt`) прошёл create/edit → настоящий Canvas gate → SQLite reopen → export,
-проверил `generationMessages` и defaults 30 min response / 35 min job. Его
-CodeTransport синтетический: это не доказательство доступности внешних провайдеров.
+## Отказ без потери draft
 
-Интеграционная ветка остаётся локальной; самостоятельный Canvas Draft PR к main
-не включает изменения #49. Для совместного review достаточно этой локальной
-проверки; при последующем объединении веток требуется смысловое разрешение
-`src/live.ts` с сохранением обоих ограничений. Полные команды, актуальные SHA и
-результат финального browser-прогона приводятся в описании Canvas PR.
-Реальных OAuth/model GET/inference запросов A1.8.2: 0. Main не меняется.
+`BROWSER_DOM_GAME_UI` означает обнаруженный запрещённый DOM (FAILED).
+`BROWSER_CANVAS_DOM_UNVERIFIED`, `BROWSER_CANVAS_RENDER_UNVERIFIED` и
+`BROWSER_CANVAS_ACTIVITY_UNVERIFIED` означают недостаток evidence (NOT_VERIFIED).
+Оба уровня блокируют Save/Ready. Durable job сохраняет raw checkpoint, draft и
+диагностику, переходит в needs_attention без новой версии. Продолжение полного
+checkpoint снова проходит тот же gate без POST. Canvas/DOM отказы не разрешают
+LLM repair, автоматический fallback или повторный inference; старые
+`BROWSER_CANVAS_*` / `BROWSER_DOM_GAME_WORLD` guards сохранены.
 
-Дополнительная проверка длительности обнаружила старый metadata cap 5 min,
-несовместимый с A1.7 response 30 min / job 35 min. Публичные `parseArtifact` и
-`GenerationEngine` отказали при synthetic elapsed 29 min. Parser теперь принимает
-timings до 35 min включительно, сохраняя отказ для некорректных и превышающих
-предел значений. Это согласование сохраняемого evidence; inference/job deadlines
-и ограничения количества POST не меняются. Timer-only unit, не продвигающий
-`performance.now()`, сам по себе не доказывает приём долгого ответа.
+## Offline проверки
+
+`strict-canvas.spec.ts` содержит negative/positive DOM и Canvas матрицу;
+`canvas-contract.spec.ts` — WebGL/WebGL2 clear/reset/stale, Restart, production
+jobs, SQLite/history/export/Continue; `strict-offline.spec.ts` — file://,
+keyboard/touch, Pause/sound, Restart и rotation в browser matrix.
+`strict-metadata.test.ts` проверяет обязательный v2 и read-only историю.
+Synthetic transports не выполняют реальный provider POST и не доказывают качество
+реальной LLM-генерации. Проверки с внедрённым checker evidence являются unit
+проверками plumbing, а не browser proof. Исторические DOM-positive fixtures
+сохранены, но при новой генерации теперь ожидают REJECT.

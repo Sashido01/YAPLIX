@@ -1,6 +1,9 @@
 # Production game validation — текущее поведение
 
-> A1.8: новый [Canvas/WebGL rendering gate](canvas-rendering-contract.md) применяется
+> A1.8.6: строгий `canvas-webgl-strict-v2` требует весь видимый игровой UI в
+> Canvas/WebGL. DOM HUD/controls/terminal overlays запрещены.
+> Исторический v1 их допускал; старые metadata не мигрируют.
+> Новый [Canvas/WebGL rendering gate](canvas-rendering-contract.md) применяется
 > ко всем новым LIVE create/edit и checkpoint revalidation, включая HTML с legacy
 > lifecycle markers. Текст исторических аудитов ниже не отменяет этот gate.
 > Runtime/render evidence отделено от gameplay evidence. Неподтверждённое
@@ -17,7 +20,7 @@ revalidation → transaction Save/Ready`. Один production checker, без н
 игрового движка. Game Orchestrator не изменён; из существующего gameplay checker
 повторно используется чистая функция `summarizeSession`.
 
-## Автоматическая проверка
+## Историческая автоматическая проверка до строгого контракта
 
 Chromium запускается с OS sandbox и environment без server keys. Игра работает
 offline в opaque iframe `sandbox="allow-scripts"` с прежней CSP. Generated JS

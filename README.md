@@ -208,7 +208,10 @@ MICRO-022 проверяет ошибки выполнения, реальные
 `LLM_PROMPT_STYLE=direct` — code default: идея отдельно от компактного Full HTML
 contract в [generation.ts](src/generation.ts). Legacy `spec` меняет только envelope.
 Нет обязательного Visual Kit/GameDNA/достижений/телеметрии. A1.8 требует Canvas 2D
-(предпочтительно) или WebGL для игрового мира; DOM разрешён для интерфейса.
+(предпочтительно), WebGL или WebGL2. A1.8.6 `canvas-webgl-strict-v2` требует
+рисовать весь игровой интерфейс, включая Start/Restart/Pause, HUD и Game Over,
+в Canvas; видимые DOM controls/overlays запрещены. Исторические v1 версии
+читаются без миграции и без повышения evidence.
 Новые LIVE create/edit проходят runtime gate до сохранения, старые HTML не мигрируют.
 [Контракт рендеринга и границы доказательств](docs/canvas-rendering-contract.md).
 [Лимиты, причины изменений, локальные тесты и процедура LIVE](docs/micro-023-report.md).
