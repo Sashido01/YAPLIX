@@ -72,35 +72,69 @@ export function observeCanvas(key:string) {
    const record=records.get(this);if(record){record.draws=0;record.drawFrame=-10;record.image='';record.meaningful=false;}
   }});
  }
- const ui='button,input,select,textarea,output,label,nav,header,footer,[role=button],[role=status],[role=menu],[role=dialog],[aria-live]';
+ // Include closed shadow roots created by game scripts. No DOM is modified.
+ const roots=new Set<ShadowRoot>();const attach=Element.prototype.attachShadow;
+ const parent=(el:Element):Element|null=>el.parentElement??(el.getRootNode() instanceof ShadowRoot?(el.getRootNode() as ShadowRoot).host:null);
+ const rendered=(el:Element)=>{
+  if(getComputedStyle(el).visibility!=='visible')return false;
+  for(let p:Element|null=el;p;p=parent(p)){const s=getComputedStyle(p);if(s.display==='none'||Number(s.opacity)===0||s.contentVisibility==='hidden')return false;}
+  return true;
+ };
  const visible=(el:Element)=>{
-  for(let p:Element|null=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility!=='visible'||Number(s.opacity)===0)return false;}
+  if(!rendered(el))return false;
   const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight;
  };
+ const elements=()=>[...document.querySelectorAll('html,body,body *'),...[...roots].filter(r=>r.host.isConnected).flatMap(r=>[...r.querySelectorAll('*')])];
+ const hasDom=()=>{
+  const nodes=elements();if(nodes.length>4096)return -1;
+  for(const el of nodes){
+   if(el.matches('canvas,canvas *')||!rendered(el))continue;
+   const s=getComputedStyle(el);
+   // A generated box can be visible even when its host has zero dimensions.
+   for(const pseudo of ['::before','::after']){
+    const p=getComputedStyle(el,pseudo);
+    if(p.display!=='none'&&p.visibility==='visible'&&Number(p.opacity)!==0&&p.content!=='none'&&p.content!=='normal'&&(p.content!=='\"\"'||p.backgroundColor!=='rgba(0, 0, 0, 0)'||p.backgroundImage!=='none'||p.borderStyle!=='none'||p.boxShadow!=='none')&&(visible(el)||p.position==='fixed'))return 1;
+   }
+   if(!visible(el))continue;
+   // Transparent layout containers and solid document backdrop are technical.
+   // ARIA roles/classes never exempt visible text, controls or decoration.
+   if(el.matches('button,input,select,textarea,img,svg,video,iframe,object,embed,hr,meter,progress'))return 1;
+   const color=(v:string)=>v!=='transparent'&&v!=='rgba(0, 0, 0, 0)';
+   if(s.backgroundImage!=='none'||s.boxShadow!=='none'||(!el.matches('body,html')&&(color(s.backgroundColor)||(['Top','Right','Bottom','Left'] as const).some(side=>parseFloat(s['border'+side+'Width' as keyof CSSStyleDeclaration] as string)>0&&color(s['border'+side+'Color' as keyof CSSStyleDeclaration] as string)))))return 1;
+   for(const node of el.childNodes)if(node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()&&(color(s.color)||s.textShadow!=='none')){
+    const range=document.createRange();range.selectNodeContents(node);
+    if([...range.getClientRects()].some(r=>r.width>0&&r.height>0&&r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight))return 1;
+   }
+  }
+  return 0;
+ };
+ // Latch violations between probes (including menus removed by the next input).
+ let domSeen=0;
+ const scan=()=>{const dom=hasDom();if(dom)domSeen=dom;};
+ const observer=new MutationObserver(scan);observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+ Element.prototype.attachShadow=function(init:ShadowRootInit){const root=Reflect.apply(attach,this,[init]);roots.add(root);observer.observe(root,{subtree:true,childList:true,attributes:true,characterData:true});return root;};
  Object.defineProperty(window,key,{value:()=>{
-  const canvases=[...document.querySelectorAll('canvas')].filter(visible).map(canvas=>{
+  scan();
+  const canvases=elements().filter((el):el is HTMLCanvasElement=>el instanceof HTMLCanvasElement&&visible(el)).map(canvas=>{
    if(!ids.has(canvas))ids.set(canvas,++nextId);
    const record=records.get(canvas);if(record?.context==='2d')sample(canvas,record);
    const r=canvas.getBoundingClientRect();
-   const hit=document.elementFromPoint(Math.max(0,r.left)+Math.min(r.width,innerWidth-Math.max(0,r.left))/2,Math.max(0,r.top)+Math.min(r.height,innerHeight-Math.max(0,r.top))/2);
+   // A transparent Canvas HUD may overlap the world. Look through only native
+   // 2D transparent pixels; an opaque overlaid surface cannot validate hidden art.
+   const exposed=[.25,.5,.75].some(x=>[.25,.5,.75].some(y=>{
+    const px=Math.max(0,r.left)+Math.min(r.width,innerWidth-Math.max(0,r.left))*x,py=Math.max(0,r.top)+Math.min(r.height,innerHeight-Math.max(0,r.top))*y;
+    let hit=document.elementFromPoint(px,py);while(hit?.shadowRoot)hit=hit.shadowRoot.elementFromPoint(px,py);
+    if(hit===canvas)return true;
+    if(!(hit instanceof HTMLCanvasElement)||records.get(hit)?.context!=='2d')return false;
+    try{const h=hit.getBoundingClientRect(),ctx=Reflect.apply(nativeGet,hit,['2d']);return Reflect.apply(nativePixels,ctx,[Math.floor((px-h.left)*hit.width/h.width),Math.floor((py-h.top)*hit.height/h.height),1,1]).data[3]<16;}catch{return false;}
+   }));
    const fresh=record&&(record.preserved||frame-record.drawFrame<=1);
    return {id:ids.get(canvas)!,context:record?.context??'',draws:record?.draws??0,image:fresh?record.image:'',meaningful:!!fresh&&record.meaningful,
     fits:r.width>=20&&r.height>=20&&r.width<=innerWidth+2&&r.height<=innerHeight+2&&r.left>=-2&&r.right<=innerWidth+2&&canvas.width>0&&canvas.height>0,
-    exposed:hit===canvas};
+    exposed};
   });
-  // Conservative observable DOM-world indicators. UI text/controls/containers
-  // are allowed; moving sprites, SVG worlds and styled grid cells are not.
-  const dom=[...document.querySelectorAll('body *')].filter(el=>{
-   if(el.matches('canvas,script,style')||el.closest(ui)||!visible(el))return false;
-   if(el instanceof SVGElement)return !!el.closest('svg')&&!el.closest('svg')!.closest(ui);
-   const s=getComputedStyle(el),r=el.getBoundingClientRect();
-   if(el.children.length||r.width<8||r.height<8)return false;
-   const styled=s.backgroundColor!=='rgba(0, 0, 0, 0)'||s.backgroundImage!=='none'||s.borderStyle!=='none';
-   const grid=el.parentElement&&getComputedStyle(el.parentElement).display==='grid'&&el.parentElement.children.length>=4;
-   return !!styled&&(s.position==='absolute'||s.position==='fixed'||s.transform!=='none'||s.animationName!=='none'||grid);
-  }).length;
-  const terminal=[...document.querySelectorAll('[role=dialog],[role=status],h1,h2,h3')].some(el=>visible(el)&&/\b(?:game over|you won|you lost|victory|defeat)\b|игра окончена|победа|поражение/i.test(el.textContent??''));
-  return {canvases,dom,terminal};
+  // Visible game DOM is forbidden, including menus, HUD and terminal UI.
+  return {canvases,dom:domSeen};
  }});
 }
 
@@ -112,27 +146,24 @@ export async function canvasSnapshot(frame:Frame,key:string):Promise<CanvasSnaps
  * within the caller's existing browser deadline; never reuse an older image. */
 export async function finalCanvasSnapshot(frame:Frame,key:string):Promise<CanvasSnapshot>{
  let current=await canvasSnapshot(frame,key);
- for(let n=0;n<2&&!current.canvases.some(c=>c.fits&&c.exposed&&c.draws>0&&c.meaningful&&c.context);n++){
+ for(let n=0;n<2&&(!current.canvases.length||current.canvases.some(c=>!c.fits||c.draws<=0||!c.meaningful||!c.context));n++){
   await frame.page().waitForTimeout(50);current=await canvasSnapshot(frame,key);
  }
  return current;
 }
 export function requireCanvas(samples:CanvasSnapshot[],requireChange=true):('2d'|'webgl'|'webgl2')[]{
- if(samples.some(s=>s.dom))throw new Fault('BROWSER_DOM_GAME_WORLD',502);
+ if(samples.some(s=>s.dom===-1))throw new Fault('BROWSER_CANVAS_DOM_UNVERIFIED',502);
+ if(samples.some(s=>s.dom))throw new Fault('BROWSER_DOM_GAME_UI',502);
  const last=samples.at(-1)!;
  if(!last.canvases.length)throw new Fault('BROWSER_CANVAS_REQUIRED',502);
  if(last.canvases.some(c=>!c.fits))throw new Fault('BROWSER_CANVAS_LAYOUT',502);
  const usable=(c:CanvasSnapshot['canvases'][number])=>c.fits&&c.exposed&&c.draws>0&&c.meaningful&&!!c.context;
  const changed=(c:CanvasSnapshot['canvases'][number])=>samples.some(s=>!s.terminal&&s.canvases.some(p=>usable(p)&&p.id===c.id&&p.context===c.context&&p.image!==c.image));
- if(last.terminal){
-  // A terminal label alone proves nothing: require exposed changing Canvas
-  // observations before this transition, with the same identity and context.
-  const prior=samples.slice(0,-1).filter(s=>!s.terminal).flatMap(s=>s.canvases).filter(c=>usable(c)&&changed(c)&&last.canvases.some(p=>p.id===c.id&&p.context===c.context));
-  if(!prior.length)throw new Fault('BROWSER_CANVAS_ACTIVITY_UNVERIFIED',502);
-  return [...new Set(prior.map(c=>c.context))] as ('2d'|'webgl'|'webgl2')[];
- }
+ // Every visible Canvas layer must actually render. A live HUD cannot conceal
+ // an erased/stale WebGL world, and a decorative Canvas cannot rescue DOM UI.
+ if(last.canvases.some(c=>!c.context||c.draws<=0||!c.meaningful))throw new Fault('BROWSER_CANVAS_RENDER_UNVERIFIED',502);
  const drawn=last.canvases.filter(usable);
  if(!drawn.length)throw new Fault('BROWSER_CANVAS_RENDER_UNVERIFIED',502);
  if(requireChange&&!drawn.some(changed))throw new Fault('BROWSER_CANVAS_ACTIVITY_UNVERIFIED',502);
- return [...new Set(drawn.map(c=>c.context))] as ('2d'|'webgl'|'webgl2')[];
+ return [...new Set(last.canvases.map(c=>c.context))] as ('2d'|'webgl'|'webgl2')[];
 }

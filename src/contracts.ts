@@ -4,7 +4,7 @@ import {validBrowserProfiles,type BrowserScope} from './browser-profiles.ts';
 export interface BrowserChecks { checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number }
 // Historical full-html evidence predates landscape. Preserve its exact profiles;
 // the current checker emits 320/390/844, while startup-input-pause uses 320/390.
-export interface RenderingEvidence {contract:'canvas-webgl-v1';contexts:('2d'|'webgl'|'webgl2')[];profiles:number[]}
+export interface RenderingEvidence {contract:'canvas-webgl-v1'|'canvas-webgl-strict-v2';contexts:('2d'|'webgl'|'webgl2')[];profiles:number[]}
 export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offline:true; errors:0; scope:BrowserScope; levels?:string[];rendering?:RenderingEvidence }
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_EVENT_BYTES = 4096;
@@ -91,6 +91,7 @@ export function parseArtifact(value: unknown, source:'generation'|'saved-metadat
   if (!/^\s*<!doctype html>/i.test(html) || !/<html[\s>]/i.test(html) || !/<\/html>\s*$/i.test(html)) throw new Fault('INVALID_HTML');
   // Structure only; this does not establish playability or sanitize game code.
   const artifact:Artifact={ html, method: choice(o.method, methods), provider: o.provider === null ? null : string(o.provider, 128), model: o.model === null ? null : string(o.model, 128), generationStatus: choice(o.generationStatus, ['succeeded', 'failed'] as const), validationStatus: choice(o.validationStatus, ['unverified', 'passed', 'failed'] as const) };
+  if(source==='generation'&&artifact.method==='llm_code'&&artifact.validationStatus==='passed'&&o.generation===undefined)throw new Fault('INVALID_GENERATION_METADATA');
   if(o.generation!==undefined){
     const g=object(o.generation,['attempts','fallback','elapsedMs','browser']);
     // Persist the full supported job duration; dispatch deadlines remain independently enforced.
@@ -111,10 +112,11 @@ export function parseArtifact(value: unknown, source:'generation'|'saved-metadat
       extended.checks=b.checks.map((value,i)=>{const c=object(value,['aspect','level']);if(c.aspect!==aspects[i])throw new Fault('INVALID_GENERATION_METADATA');const level=choice(c.level,['VERIFIED','FAILED','NOT_VERIFIED'] as const);if(level==='FAILED')throw new Fault('INVALID_GENERATION_METADATA');return{aspect:aspects[i],level};});
     }
     let rendering:RenderingEvidence|undefined;
+    if(source==='generation'&&b.rendering===undefined)throw new Fault('INVALID_GENERATION_METADATA');
     if(b.rendering!==undefined){
       const r=object(b.rendering,['contract','contexts','profiles']);
-      if(r.contract!=='canvas-webgl-v1'||!Array.isArray(r.contexts)||!r.contexts.length||r.contexts.length>3||new Set(r.contexts).size!==r.contexts.length||r.contexts.some(c=>!['2d','webgl','webgl2'].includes(c))||!validBrowserProfiles(r.profiles,'full-html',false))throw new Fault('INVALID_GENERATION_METADATA');
-      rendering={contract:'canvas-webgl-v1',contexts:[...r.contexts],profiles:[...r.profiles as number[]]};
+      if(!['canvas-webgl-v1','canvas-webgl-strict-v2'].includes(r.contract as string)||source==='generation'&&r.contract!=='canvas-webgl-strict-v2'||!Array.isArray(r.contexts)||!r.contexts.length||r.contexts.length>3||new Set(r.contexts).size!==r.contexts.length||r.contexts.some(c=>!['2d','webgl','webgl2'].includes(c))||!validBrowserProfiles(r.profiles,'full-html',false))throw new Fault('INVALID_GENERATION_METADATA');
+      rendering={contract:r.contract as RenderingEvidence['contract'],contexts:[...r.contexts],profiles:[...r.profiles as number[]]};
     }
     artifact.generation={attempts,fallback:g.fallback,elapsedMs:timing(g.elapsedMs),browser:{profiles:[...profiles as number[]],offline:true,errors:0,scope:b.scope,...(b.levels?{levels}:{}),...extended,...(rendering?{rendering}:{})}};
   }
