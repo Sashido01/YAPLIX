@@ -92,3 +92,10 @@ for(const [name,source] of [
 ] as const)test('strict Canvas leaves unobservable shadow parsing NOT_VERIFIED: '+name,async({browser})=>{
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});
 });
+
+for(const [name,markup] of [
+ ['visible list marker',`<li style="position:fixed;left:160px;top:5px;width:1px;height:25px;list-style-type:'Score 100';color:white;font-size:20px"></li>`],
+ ['zero-size positioned pseudo text','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white;font-size:20px}</style><div id="probe"></div>'],
+] as const)test('A1.8.7 refuses visible DOM paint: '+name,async({browser})=>{
+ await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).rejects.toMatchObject({code:expect.stringMatching(/BROWSER_DOM_GAME_UI|BROWSER_CANVAS_DOM_UNVERIFIED/)});
+});

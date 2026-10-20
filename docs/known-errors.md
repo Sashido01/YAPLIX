@@ -366,3 +366,18 @@ initData или необработанные журналы. [Запуск и о
   без изменения их семантики. Programmatic attachShadow roots по-прежнему
   анализируются по фактическому DOM. Canvas/WebGL и invisible technical positives
   сохранены; ни одна unsupported ветка не получает строгий PASS по умолчанию.
+
+## A1.8.7: confirmed strict-v2 DOM paint false acceptance
+
+- On strict head `77cc4e6` and isolated integration `dc3bee9`, authored offline
+  Chromium fixtures with a visible CSS list marker (`list-style-type:'Score 100'`)
+  or zero-size positioned `::before` text (`overflow:visible`) were accepted as
+  `canvas-webgl-strict-v2` for profiles 320/390/844. Pixel comparisons independently
+  confirmed visible DOM text (538 and 332 changed pixels respectively).
+- `hasDom()` does not inspect list markers; positioned pseudo geometry considers
+  only its zero-size content box. The two A1.8.7 regression cases expect refusal
+  and expose these defects without changing production gates or budgets.
+- No verified remedy is implemented in this audit. Keep publication NO-GO until
+  a focused correction and fresh regression/full integration checks pass. Do not
+  remove the refusal assertions or count this false acceptance as Canvas-only proof.
+- Evidence is synthetic/offline only; real LLM/OAuth/model requests remain zero.
