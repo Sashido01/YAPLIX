@@ -231,7 +231,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });
-  for (const file of ['runtime', 'contracts', 'browser-profiles']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['runtime', 'contracts', 'browser-profiles', 'generation-limits']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/src/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });
