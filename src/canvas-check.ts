@@ -80,9 +80,18 @@ export function observeCanvas(key:string) {
   for(let p:Element|null=el;p;p=parent(p)){const s=getComputedStyle(p);if(s.display==='none'||Number(s.opacity)===0||s.contentVisibility==='hidden')return false;}
   return true;
  };
+ const visibleRect=(el:Element,r:DOMRect)=>{
+  let left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);
+  for(let p:Element|null=el;p;p=parent(p)){
+   const s=getComputedStyle(p),box=p.getBoundingClientRect();
+   if(s.overflowX!=='visible'){left=Math.max(left,box.left);right=Math.min(right,box.right);}
+   if(s.overflowY!=='visible'){top=Math.max(top,box.top);bottom=Math.min(bottom,box.bottom);}
+  }
+  return right>left&&bottom>top;
+ };
  const visible=(el:Element)=>{
   if(!rendered(el))return false;
-  const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight;
+  return visibleRect(el,el.getBoundingClientRect());
  };
  const elements=()=>[...document.querySelectorAll('html,body,body *'),...[...roots].filter(r=>r.host.isConnected).flatMap(r=>[...r.querySelectorAll('*')])];
  const hasDom=()=>{
@@ -93,18 +102,19 @@ export function observeCanvas(key:string) {
    // A generated box can be visible even when its host has zero dimensions.
    for(const pseudo of ['::before','::after']){
     const p=getComputedStyle(el,pseudo);
-    if(p.display!=='none'&&p.visibility==='visible'&&Number(p.opacity)!==0&&p.content!=='none'&&p.content!=='normal'&&(p.content!=='\"\"'||p.backgroundColor!=='rgba(0, 0, 0, 0)'||p.backgroundImage!=='none'||p.borderStyle!=='none'||p.boxShadow!=='none')&&(visible(el)||p.position==='fixed'))return 1;
+    if(p.display!=='none'&&p.visibility==='visible'&&Number(p.opacity)!==0&&p.content!=='none'&&p.content!=='normal'&&(p.content!=='\"\"'||p.backgroundColor!=='rgba(0, 0, 0, 0)'||p.backgroundImage!=='none'||p.borderStyle!=='none'||p.boxShadow!=='none')&&(visible(el)||p.position==='fixed'||p.position==='absolute'))return 1;
+   }
+   const color=(v:string)=>v!=='transparent'&&v!=='rgba(0, 0, 0, 0)';
+   // Text paint does not require an element box (display:contents, overflow).
+   for(const node of el.childNodes)if(node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()&&(color(s.color)||s.textShadow!=='none')){
+    const range=document.createRange();range.selectNodeContents(node);
+    if([...range.getClientRects()].some(r=>visibleRect(el,r)))return 1;
    }
    if(!visible(el))continue;
    // Transparent layout containers and solid document backdrop are technical.
    // ARIA roles/classes never exempt visible text, controls or decoration.
-   if(el.matches('button,input,select,textarea,img,svg,video,iframe,object,embed,hr,meter,progress'))return 1;
-   const color=(v:string)=>v!=='transparent'&&v!=='rgba(0, 0, 0, 0)';
+   if(el.matches('button,input,select,textarea,img,svg,video,audio[controls],iframe,object,embed,hr,meter,progress'))return 1;
    if(s.backgroundImage!=='none'||s.boxShadow!=='none'||(!el.matches('body,html')&&(color(s.backgroundColor)||(['Top','Right','Bottom','Left'] as const).some(side=>parseFloat(s['border'+side+'Width' as keyof CSSStyleDeclaration] as string)>0&&color(s['border'+side+'Color' as keyof CSSStyleDeclaration] as string)))))return 1;
-   for(const node of el.childNodes)if(node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()&&(color(s.color)||s.textShadow!=='none')){
-    const range=document.createRange();range.selectNodeContents(node);
-    if([...range.getClientRects()].some(r=>r.width>0&&r.height>0&&r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight))return 1;
-   }
   }
   return 0;
  };
@@ -115,7 +125,8 @@ export function observeCanvas(key:string) {
  Element.prototype.attachShadow=function(init:ShadowRootInit){const root=Reflect.apply(attach,this,[init]);roots.add(root);observer.observe(root,{subtree:true,childList:true,attributes:true,characterData:true});return root;};
  Object.defineProperty(window,key,{value:()=>{
   scan();
-  const canvases=elements().filter((el):el is HTMLCanvasElement=>el instanceof HTMLCanvasElement&&visible(el)).map(canvas=>{
+  const surfaces=elements().filter((el):el is HTMLCanvasElement=>el instanceof HTMLCanvasElement&&visible(el));
+  const canvases=surfaces.map(canvas=>{
    if(!ids.has(canvas))ids.set(canvas,++nextId);
    const record=records.get(canvas);if(record?.context==='2d')sample(canvas,record);
    const r=canvas.getBoundingClientRect();
@@ -124,9 +135,20 @@ export function observeCanvas(key:string) {
    const exposed=[.25,.5,.75].some(x=>[.25,.5,.75].some(y=>{
     const px=Math.max(0,r.left)+Math.min(r.width,innerWidth-Math.max(0,r.left))*x,py=Math.max(0,r.top)+Math.min(r.height,innerHeight-Math.max(0,r.top))*y;
     let hit=document.elementFromPoint(px,py);while(hit?.shadowRoot)hit=hit.shadowRoot.elementFromPoint(px,py);
-    if(hit===canvas)return true;
-    if(!(hit instanceof HTMLCanvasElement)||records.get(hit)?.context!=='2d')return false;
-    try{const h=hit.getBoundingClientRect(),ctx=Reflect.apply(nativeGet,hit,['2d']);return Reflect.apply(nativePixels,ctx,[Math.floor((px-h.left)*hit.width/h.width),Math.floor((py-h.top)*hit.height/h.height),1,1]).data[3]<16;}catch{return false;}
+    if(!(hit instanceof HTMLCanvasElement))return false;
+    // Hit testing ignores pointer-events:none. Include such painted layers.
+    // Sibling Canvas stacking is supported; ambiguous ancestor stacking is
+    // conservatively obstructing, so it cannot manufacture exposed evidence.
+    return surfaces.filter(other=>{
+     if(other===canvas)return false;
+     const box=other.getBoundingClientRect();if(px<box.left||px>=box.right||py<box.top||py>=box.bottom)return false;
+     if(other.parentElement!==canvas.parentElement)return true;
+     const z=(el:Element)=>{const s=getComputedStyle(el);return s.position==='static'?0:Number(s.zIndex)||0;};
+     return z(other)>z(canvas)||z(other)===z(canvas)&&!!(canvas.compareDocumentPosition(other)&Node.DOCUMENT_POSITION_FOLLOWING);
+    }).every(other=>{
+     if(records.get(other)?.context!=='2d')return false;
+     try{const h=other.getBoundingClientRect(),ctx=Reflect.apply(nativeGet,other,['2d']);return Reflect.apply(nativePixels,ctx,[Math.floor((px-h.left)*other.width/h.width),Math.floor((py-h.top)*other.height/h.height),1,1]).data[3]<16;}catch{return false;}
+    });
    }));
    const fresh=record&&(record.preserved||frame-record.drawFrame<=1);
    return {id:ids.get(canvas)!,context:record?.context??'',draws:record?.draws??0,image:fresh?record.image:'',meaningful:!!fresh&&record.meaningful,
@@ -165,5 +187,5 @@ export function requireCanvas(samples:CanvasSnapshot[],requireChange=true):('2d'
  const drawn=last.canvases.filter(usable);
  if(!drawn.length)throw new Fault('BROWSER_CANVAS_RENDER_UNVERIFIED',502);
  if(requireChange&&!drawn.some(changed))throw new Fault('BROWSER_CANVAS_ACTIVITY_UNVERIFIED',502);
- return [...new Set(last.canvases.map(c=>c.context))] as ('2d'|'webgl'|'webgl2')[];
+ return [...new Set(drawn.map(c=>c.context))] as ('2d'|'webgl'|'webgl2')[];
 }

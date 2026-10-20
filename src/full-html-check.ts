@@ -52,13 +52,15 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       await frame.waitForURL(validationUrl,{waitUntil:'load'});await page.waitForTimeout(100);
       const probe=async(target:Frame,keyboard=false)=>{
         const samples=[await canvasSnapshot(target,canvasKey)];
-        const check=async()=>{
+        const check=async(initial=false)=>{
           if(failure)throw new Fault(failure,502);
           const sample=await finalCanvasSnapshot(target,canvasKey);samples.push(sample);
           // Refuse new UI immediately, before any later action can conceal it.
-          requireCanvas(samples,false);
+          // A Canvas menu may precede the world's first draw. Inspect DOM at
+          // startup, then require current rendering after every real input.
+          if(!initial||sample.dom)requireCanvas(samples,false);
         };
-        await check();
+        await check(true);
         phase='canvas-input';
         // Bounded generic search, never fixture labels or internal game state.
         // Repeated centre probes may reach Start, play, terminal and Restart;

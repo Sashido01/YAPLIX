@@ -56,7 +56,9 @@ SVG/replaced elements, backgrounds/borders/shadows, `::before`/`::after`, в т�
 после синхронных draw/clear; `preserveDrawingBuffer:false` устаревает после
 текущего/предыдущего rAF кадра. Backing reset сбрасывает прежние draw/image.
 Нижний Canvas не отклоняется автоматически из-за Canvas HUD: проверяется
-прозрачность 2D слоя в ограниченном наборе точек. Все видимые слои должны иметь
+прозрачность 2D слоя в ограниченном наборе точек, включая pointer-events:none.
+Sibling stacking поддержан; неоднозначный ancestor stacking не создаёт exposure
+evidence и может дать NOT_VERIFIED. Все видимые слои должны иметь
 актуальное meaningful image. Старое разрешение очищенного мира под DOM Game Over
 не применяется. Краткий clear→redraw получает до двух дополнительных 50 ms
 наблюдений в прежнем общем deadline 18 s.

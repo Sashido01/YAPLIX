@@ -23,6 +23,10 @@ for(const [name,source] of [
  ['SVG',insert('<svg width="40" height="40"><rect width="40" height="40"/></svg>')],
  ['pseudo interface',insert('<style>body::before{content:"Pause";position:fixed;top:0}</style>')],
  ['pseudo on zero-size host',insert('<style>i::before{content:"Pause";position:fixed;left:0;top:0}</style><i style="display:block;width:0;height:0"></i>')],
+ ['absolute pseudo on zero-size host',insert('<style>i::before{content:"Pause";position:absolute;left:0;top:0}</style><i style="display:block;width:0;height:0"></i>')],
+ ['text in display contents',insert('<span style="display:contents">HUD</span>')],
+ ['overflowing text in zero-size host',insert('<span style="display:block;width:0;height:0">HUD</span>')],
+ ['native sound controls',insert('<audio controls style="position:fixed;top:0;left:0"></audio>')],
  ['dynamic menu',dynamic('if(step===1)document.body.insertAdjacentHTML("afterbegin","<nav>Menu</nav>");')],
  ['dynamic HUD',dynamic('if(step===2)document.body.insertAdjacentHTML("afterbegin","<output>Score 2</output>");')],
  ['victory overlay',dynamic('if(step===4)document.body.insertAdjacentHTML("afterbegin","<section role=dialog>You won</section>");')],
@@ -48,4 +52,10 @@ for(const code of ['return;','step++;','draw();'])test('strict Canvas leaves ine
 });
 test('strict Canvas detects exceptions after Start',async({browser})=>{
  await expect(checkFullHtml(browser,strictCanvas().replace('active=true;draw();return;','throw Error("start failure");'),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
+});
+test('opaque pointer-transparent Canvas cannot expose a changing world underneath',async({browser})=>{
+ const source=strictCanvas('webgl').replace('ctx.clearRect(0,0,w,h);',"ctx.fillStyle='#142038';ctx.fillRect(0,0,w,h);")
+  .replace("ctx.fillRect(20+(step%5)*30,h*.6,40,40);","ctx.fillRect(20,h*.6,40,40);").replace("'Score '+step+' Lives 3'","'Score 0 Lives 3'")
+  .replace("!active?'Start':step>=4?'Game Over / Restart':'Move'","'Static decoration'");
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
 });

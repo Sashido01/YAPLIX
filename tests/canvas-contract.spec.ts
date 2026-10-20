@@ -71,7 +71,7 @@ test('A1.8 production job edit, SQLite restart, historical export and offline re
   expect(calls).toBe(2);expect(store.history(historical.gameId)).toHaveLength(2);
  }finally{await jobs.close();engine.close();store.close();}
 });
-for(const [name,source,code] of [
+for(const [name,source] of [
  ['SVG only',domGame.replace('<button','<svg width="300" height="180"><rect width="100" height="100"/></svg><button'),'BROWSER_DOM_GAME_WORLD'],
  ['empty',domGame.replace('<button','<canvas></canvas><button'),'BROWSER_CANVAS_RENDER_UNVERIFIED'],
  ['hidden',canvasGame().replace('<canvas ','<canvas style="display:none" '),'BROWSER_CANVAS_REQUIRED'],
@@ -82,8 +82,17 @@ for(const [name,source,code] of [
  ['DOM grid world',canvasGame().replace('<output>','<div style="display:grid;grid-template-columns:repeat(4,30px)">'+Array.from({length:4},()=>'<div style="width:30px;height:30px;background:red">Tile</div>').join('')+'</div><output>'),'BROWSER_DOM_GAME_WORLD'],
  ['after Start error',canvasGame().replace('active=true;','throw Error("after Start");active=true;'),'JAVASCRIPT_EXCEPTION'],
  ['landscape canvas',canvasGame().replace('</style>','@media(orientation:landscape){canvas{height:500px}}</style>'),'BROWSER_CANVAS_LAYOUT'],
-] as const)test('A1.8 rejects '+name,async({browser})=>{
+] as const)test('strict contract rejects historical DOM fixture: '+name,async({browser})=>{
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
+});
+for(const [name,source,code] of [
+ ['hidden Canvas',strictCanvas().replace('canvas{display:block','canvas{display:none'),'BROWSER_CANVAS_REQUIRED'],
+ ['zero-height Canvas',strictCanvas().replace('height:100%;touch-action','height:0;touch-action'),'BROWSER_CANVAS_REQUIRED'],
+ ['no draw',strictCanvas().replace('function draw(){','function draw(){return;'),'BROWSER_CANVAS_RENDER_UNVERIFIED'],
+ ['inert logic',strictCanvas().replace('function act(){','function act(){return;'),'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'],
+ ['clipped landscape',strictCanvas().replace('</style>','@media(orientation:landscape){canvas{height:500px}}</style>'),'BROWSER_CANVAS_LAYOUT'],
+] as const)test('strict rendering regression: '+name,async({browser})=>{
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code});
 });
 
 test('A1.8 rejects WebGL frames explicitly cleared after drawing',async({browser})=>{

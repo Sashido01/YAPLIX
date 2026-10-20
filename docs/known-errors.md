@@ -317,3 +317,13 @@ initData или необработанные журналы. [Запуск и о
 - Offline/synthetic проверки не доказывают реальные provider calls, универсальные
   правила gameplay и физические Android/iOS/WebView. Детали и границы:
   [Strict Canvas contract](canvas-rendering-contract.md).
+
+- Независимый аудит A1.8.6 дал пять дополнительных RED: display:contents text,
+  текст за нулевым host, absolute pseudo UI, native audio controls и opaque Canvas
+  с pointer-events:none над меняющимся миром. Range paint проверяется независимо
+  от host rect (с overflow clipping); native audio controls запрещены. Canvas
+  exposure учитывает painted sibling layers независимо от pointer-events;
+  сложные неоднозначные ancestor stacking layouts остаются NOT_VERIFIED.
+- Старые Canvas negatives с DOM controls отдельно проверяют historical refusal;
+  новые Canvas-only reductions проверяют hidden/zero/no-draw/inert/landscape
+  своими конкретными кодами, чтобы DOM gate не маскировал rendering regression.
