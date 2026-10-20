@@ -61,6 +61,23 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
           if(!initial||sample.dom)requireCanvas(samples,false);
         };
         await check(true);
+        // Inspect UI revealed by real scrolling, without assigning scrollTop or
+        // scrolling hidden content into view. This is a DOM-contract probe,
+        // not evidence that arbitrary phone/game controls are reachable.
+        phase='scroll-ui';
+        const scrolls=await target.evaluate(()=>[...document.querySelectorAll('*')].filter(el=>{
+          const s=getComputedStyle(el),r=el.getBoundingClientRect();
+          if(s.visibility!=='visible'||Number(s.opacity)===0||r.width<20||r.height<20||r.right<=0||r.bottom<=0||r.left>=innerWidth||r.top>=innerHeight)return false;
+          return /auto|scroll/.test(s.overflowY)&&el.scrollHeight>el.clientHeight+2||/auto|scroll/.test(s.overflowX)&&el.scrollWidth>el.clientWidth+2;
+        }).slice(0,3).map(el=>{
+          const r=el.getBoundingClientRect();return{x:(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y:(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2,dx:el.scrollWidth>el.clientWidth+2?el.scrollWidth:0,dy:el.scrollHeight>el.clientHeight+2?el.scrollHeight:0};
+        }));
+        for(const {x,y,dx,dy} of scrolls){
+          if(signal.aborted)throw new Fault('BROWSER_TIMEOUT',504);
+          await page.mouse.move(x,y);await page.mouse.wheel(dx,dy);await page.waitForTimeout(50);
+          if(failure)throw new Fault(failure,502);
+          const sample=await canvasSnapshot(target,canvasKey);if(sample.dom)requireCanvas([sample],false);
+        }
         phase='canvas-input';
         // Bounded generic search, never fixture labels or internal game state.
         // Repeated centre probes may reach Start, play, terminal and Restart;

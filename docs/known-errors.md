@@ -336,3 +336,11 @@ initData или необработанные журналы. [Запуск и о
   `--output` каталоги; общий каталог дал trace ENOENT при удалении артефактов
   другим запуском. Desktop pointer probes используют click, touch — отдельный
   hasTouch context; tap на обычном desktop page отвергается самим Playwright.
+
+- Full suite A1.8.6 воспроизвёл приём DOM controls внутри вложенного auto-scroll
+  контейнера: до прокрутки их Range корректно clipped, но пользователь мог
+  открыть HTML UI обычной прокруткой. Bounded scroll-ui probe теперь выполняет
+  реальные wheel inputs максимум в трёх видимых scroll контейнерах и проверяет
+  обнаруженный DOM после каждого. scrollTop/DOM не подменяются. RED полного
+  теста nested → GREEN; положительные Canvas и невидимые technical fixtures
+  сохранены. Это DOM inspection, не доказательство phone control reachability.
