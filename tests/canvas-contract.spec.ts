@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {checkFullHtml} from '../src/full-html-check.ts';
 import {browserCheck} from '../src/browser-check.ts';
-import {canvasGame,domGame} from './canvas-fixtures.ts';
+import {canvasGame,domGame,terminalCanvas,animatedWebgl} from './canvas-fixtures.ts';
 import {GenerationEngine} from '../src/live.ts';
 import {GenerationJobs} from '../src/jobs.ts';
 import {Store} from '../src/store.ts';
@@ -126,4 +126,34 @@ test('A1.8.4 checks the final restart frame',async()=>{
 test('A1.8.4 allows a short clear-to-redraw transition',async()=>{
  const source=canvasGame().replace('step++;draw();','step++;ctx.clearRect(0,0,surface.width,surface.height);setTimeout(draw,75);');
  await expect(browserCheck(source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contexts:['2d']}});
+});
+
+for(const restart of [false,true])test(`A1.8.5 accepts observed Canvas gameplay then cleared terminal overlay, restart=${restart}`,async()=>{
+ await expect(browserCheck(terminalCanvas({restart}),AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contexts:['2d']}});
+});
+test('A1.8.5 rejects a decorative Canvas followed by a fake terminal overlay',async()=>{
+ await expect(browserCheck(terminalCanvas({decorative:true}),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
+});
+test('A1.8.5 rejects JavaScript failure after terminal Restart',async()=>{
+ await expect(browserCheck(terminalCanvas({crash:true}),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
+});
+for(const kind of ['webgl','webgl2'])for(const ending of ['draw','redraw','stop','halt','clear','reset'])test(`A1.8.5 animated ${kind} preserveDrawingBuffer=false ending=${ending}`,async()=>{
+ const result=browserCheck(animatedWebgl(kind,ending),AbortSignal.timeout(18000));
+ if(ending==='draw'||ending==='redraw')await expect(result).resolves.toMatchObject({rendering:{contexts:[kind]}});
+ else await expect(result).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
+
+test('A1.8.5 empty terminal overlay cannot establish a game loop',async()=>{
+ const source=terminalCanvas({restart:false}).replaceAll('draw();','');
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
+});
+test('A1.8.5 a cleared active game cannot be concealed by an always visible Restart',async()=>{
+ const source=canvasGame().replace('<output>','<button id="restart">Restart</button><output>')
+  .replace('step++;draw();','step++;ctx.clearRect(0,0,surface.width,surface.height);')
+  .replace("document.querySelector('#move').onclick=act;","document.querySelector('#restart').onclick=draw;document.querySelector('#move').onclick=act;");
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
+});
+test('A1.8.5 cleared terminal Restart must restore a rendered Canvas',async()=>{
+ const source=terminalCanvas().replace("document.querySelector('section').hidden=true;draw();","document.querySelector('section').hidden=true;");
+ await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });

@@ -37,19 +37,40 @@ fulfill-ится как `text/html; charset=utf-8` по случайному doc
 До game script observer оборачивает нативные `getContext` и draw-вызовы,
 сохраняя receiver, аргументы, результат и исключения. Наблюдаются `2d`, `webgl`,
 `webgl2`; clear без draw не считается рисованием. Readback использует отдельный
-32×24 probe. WebGL считывается сразу после draw, до очистки drawing buffer.
+32×24 probe. WebGL считывается microtask в конце callback после его синхронных
+draw/clear, до presentation и implicit discard drawing buffer.
 Observer и его random-key состояние существуют только в checker, не в экспорте.
 Явные WebGL clear-вызовы обновляют снимок, не считаясь рисованием; сброс ширины
 или высоты backing store сбрасывает прежнее rendering evidence. Это исключает
 приём проверенных случаев draw → clear/reset с пустым конечным изображением.
 
-A1.8.4 требует meaningful image именно в последнем наблюдении, включая кадр
+A1.8.4 требует meaningful image в последнем активном наблюдении, включая кадр
 после Restart и standalone keyboard input. История используется только для
 сравнения изменения того же Canvas (ID и context); накопленные draw counters
 или изображение другого Canvas не дают PASS. Если финальное изображение пусто,
 разрешены два дополнительных наблюдения через 50 ms (до 100 ms всего) для
 краткого clear → redraw перехода, внутри прежнего общего browser deadline.
 Это bounded наблюдение, а не гарантия всех будущих кадров или gameplay.
+
+A1.8.5 допускает очищенный Canvas под наблюдаемым терминальным DOM-оверлеем:
+видимые dialog/status/heading с Game Over / victory / defeat (или русскими
+эквивалентами) появляются после двух meaningful, exposed и различающихся
+наблюдений того же Canvas после Start. Статичная декорация и один terminal label
+этого не доказывают. Перед Restart проверяется состояние до него; после Restart
+история начинается заново, требуются восстановленный Canvas и новая активность.
+Это технический ACCEPT, gameplay/win/loss/restart semantics — NOT_VERIFIED.
+
+Для WebGL/WebGL2 с `preserveDrawingBuffer:false` native rAF heartbeat ограничивает
+возраст evidence текущим/предыдущим кадром; старый draw не даёт бессрочный PASS,
+даже если игра перестала планировать callbacks. Observer не меняет атрибут
+контекста и не рисует за игру. Синхронный clear после draw учитывается до readback;
+clear с новым draw в том же кадре допускается. Event-driven fixture использует
+явный `preserveDrawingBuffer:true`, а отдельная анимируемая игра — false и rAF.
+Это следует [WebGL specification](https://registry.khronos.org/webgl/specs/latest/1.0/#WEBGLCONTEXTATTRIBUTES):
+false допускает discard после presentation. Редкое/остановленное рисование с false
+может быть визуально допустимым, но автоматически остаётся NOT_VERIFIED и не
+получает ACCEPT по старому снимку. Browser deadline 18 s и дополнительные 100 ms
+наблюдения не увеличены; следующие состояния за пределами окна не проверены.
 
 На 320×700, 390×700, 844×390 нужны видимый, открытый для hit testing Canvas с
 ненулевым backing store, подходящий размер, реальные draw-вызовы и изображение
@@ -85,6 +106,25 @@ draw-вызовов, статичная неработающая сцена, д�
 Интеграция: synthetic transport → реальные static/browser gates → durable job →
 SQLite close/reopen → historical/new API export → file:// offline input.
 Transport fixture не выполняет реального LLM POST и не доказывает качество LLM.
+
+### A1.8.5 — ожидаемые результаты regressions
+
+| Наблюдаемый сценарий | Результат bounded rendering gate |
+| --- | --- |
+| Canvas gameplay → Game Over → clear + DOM overlay | ACCEPT после changing Canvas evidence; семантика окончания NOT_VERIFIED |
+| Тот же цикл → Restart → восстановленный Canvas + input | ACCEPT; полнота правил Restart NOT_VERIFIED |
+| Декоративный Canvas → фиктивный Game Over | REJECT, activity unverified |
+| Пустой Canvas без наблюдаемого игрового цикла, включая terminal label | REJECT, render/activity unverified |
+| Поздний clear/reset во время активной игры, в том числе перед видимым Restart | REJECT, render unverified |
+| Restart оставляет пустой Canvas | REJECT, render unverified |
+| JavaScript exception после Restart | REJECT, JAVASCRIPT_EXCEPTION |
+| Анимируемый WebGL/WebGL2, false, draw в rAF | ACCEPT, реальное свежесчитанное изображение |
+| WebGL/WebGL2 clear/reset без redraw | REJECT, render unverified |
+| WebGL/WebGL2 clear + redraw в том же кадре | ACCEPT |
+| Drawing остановлен, callbacks продолжаются либо полностью прекращены | REJECT, свежий rendering NOT_VERIFIED |
+
+WebGL2 проверяется только при поддержке браузера; недоступность не считается PASS.
+Набор использует authored offline fixtures и реальные browser gates, не LLM.
 
 ## Границы достоверности
 

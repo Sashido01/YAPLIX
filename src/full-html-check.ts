@@ -138,24 +138,37 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
         await page.waitForTimeout(50);canvasSamples.push(await canvasSnapshot(frame,canvasKey));
       }
       await page.waitForTimeout(100);
-      canvasSamples.push(await canvasSnapshot(frame,canvasKey));
+      canvasSamples.push(await finalCanvasSnapshot(frame,canvasKey));
+      // Restart cannot conceal a blank active game or decorative start pixels.
+      if(failure)throw new Fault(failure,502);
+      requireCanvas(canvasSamples.slice(1));
       phase='restart';const restart=frame.getByRole('button',{name:/^(restart|replay|перезапуск|заново|начать заново|повторить)$/i}).filter({visible:true});
-      if(await restart.count()===1&&await restart.evaluate(activeElement)){await restart.tap();await page.waitForTimeout(100);}
+      if(await restart.count()===1&&await restart.evaluate(activeElement)){
+        await restart.tap();await page.waitForTimeout(100);
+        if(failure)throw new Fault(failure,502);
+        // New history prevents old gameplay from validating a broken Restart.
+        canvasSamples.length=0;canvasSamples.push(await finalCanvasSnapshot(frame,canvasKey));
+        requireCanvas(canvasSamples,false);
+        for(let i=0,n=Math.min(64,await input.count());i<n;i++)if(await input.nth(i).evaluate(activeElement)&&!await input.nth(i).evaluate(serviceControl)){await input.nth(i).tap();break;}
+        await page.waitForTimeout(100);
+      }
       canvasSamples.push(await finalCanvasSnapshot(frame,canvasKey));
       if(failure)throw new Fault(failure,502);
-      phase='canvas-render';for(const context of requireCanvas(canvasSamples.slice(1)))renderContexts.add(context);
+      phase='canvas-render';for(const context of requireCanvas(canvasSamples))renderContexts.add(context);
       // An additional standalone offline load checks that parent init is optional.
       phase='standalone';await page.goto(validationUrl,{waitUntil:'load'});await page.waitForTimeout(100);
       if(failure)throw new Fault(failure,502);
       // Observe a real Start and input in the independent document as well.
       const offlineStart=page.getByRole('button',{name:/^(start|play|начать(?: игру)?|старт|играть)$/i}).filter({visible:true});
       if(await offlineStart.count()===1&&await offlineStart.isEnabled())await offlineStart.tap();
+      const offlineSamples=[await canvasSnapshot(page.mainFrame(),canvasKey)];
       const offlineInput=page.locator('canvas:visible,button:visible:enabled');
       for(let i=0,n=Math.min(64,await offlineInput.count());i<n;i++)if(await offlineInput.nth(i).evaluate(activeElement)&&!await offlineInput.nth(i).evaluate(serviceControl)){await offlineInput.nth(i).tap();break;}
       await page.waitForTimeout(100);
+      offlineSamples.push(await canvasSnapshot(page.mainFrame(),canvasKey));
       if(failure)throw new Fault(failure,502);
       await page.keyboard.press('ArrowRight');await page.waitForTimeout(50);
-      requireCanvas([await finalCanvasSnapshot(page.mainFrame(),canvasKey)],false);
+      offlineSamples.push(await finalCanvasSnapshot(page.mainFrame(),canvasKey));requireCanvas(offlineSamples,false);
       if(failure)throw new Fault(failure,502);
       if(signal.aborted)throw new Fault('BROWSER_TIMEOUT',504);
     }catch(error){

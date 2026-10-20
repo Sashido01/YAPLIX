@@ -1,8 +1,24 @@
 /** Independently authored offline games and reductions, never provider output. */
+export function terminalCanvas({restart=true,decorative=false,crash=false}={}){
+ return canvasGame().replace('<output>',`<section role="dialog" hidden><h2>Game Over</h2><p>Score: 2</p>${restart?'<button id="restart">Restart</button>':''}</section><output>`)
+  .replace('step++;draw();',decorative?'step++;':'step++;draw();')
+  .replace('document.querySelector("output").textContent="Steps "+step;',`document.querySelector("output").textContent="Steps "+step;if(step>=2){active=false;ctx.clearRect(0,0,surface.width,surface.height);document.querySelector('section').hidden=false;}`)
+  .replace("document.querySelector('#move').onclick=act;",`${restart?`document.querySelector('#restart').onclick=()=>{${crash?'throw Error("restart failed");':''}step=0;active=true;document.querySelector('section').hidden=true;draw();};`:''}document.querySelector('#move').onclick=act;`);
+}
+
+export function animatedWebgl(kind='webgl',ending='draw'){
+ return canvasGame(kind).replace('preserveDrawingBuffer:true','preserveDrawingBuffer:false')
+  .replace('function act(){','let ticks=0;function tick(){ticks++;if(active){'+
+   (ending==='stop'||ending==='halt'?'if(step<2)draw();':ending==='clear'?'if(step>=2)ctx.clear(ctx.COLOR_BUFFER_BIT);else draw();':ending==='reset'?'if(step>=2)surface.width=surface.width;else draw();':ending==='redraw'?'ctx.clear(ctx.COLOR_BUFFER_BIT);draw();':'draw();')+
+   '}'+(ending==='halt'?'if(step<2)':'')+'requestAnimationFrame(tick);}requestAnimationFrame(tick);function act(){')
+  .replace('(step%3)*.2','(step%3)*.2+Math.sin(ticks/10)*.05')
+  .replace('let active=false,step=0;','let active=false,step=0,ticks=0;')
+  .replace('let ticks=0;function tick()','function tick()');
+}
 export function canvasGame(kind='arcade'){
  const gl=kind==='webgl'||kind==='webgl2';
  const render=gl?`
- const ctx=surface.getContext('${kind}');if(!ctx)throw Error('WEBGL_UNAVAILABLE');
+ const ctx=surface.getContext('${kind}',{preserveDrawingBuffer:true});if(!ctx)throw Error('WEBGL_UNAVAILABLE');
  const shader=(type,source)=>{const s=ctx.createShader(type);ctx.shaderSource(s,source);ctx.compileShader(s);return s;};
  const program=ctx.createProgram();ctx.attachShader(program,shader(ctx.VERTEX_SHADER,'${kind==='webgl2'?'#version 300 es\\n in':'attribute'} vec2 p;uniform float shift;void main(){gl_Position=vec4(p.x+shift,p.y,0.,1.);}'));
  ctx.attachShader(program,shader(ctx.FRAGMENT_SHADER,'${kind==='webgl2'?'#version 300 es\\n precision mediump float;out vec4 color;':'precision mediump float;'}void main(){${kind==='webgl2'?'color':'gl_FragColor'}=vec4(1.,.7,.1,1.);}'));ctx.linkProgram(program);ctx.useProgram(program);
