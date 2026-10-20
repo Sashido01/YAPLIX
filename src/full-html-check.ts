@@ -4,7 +4,7 @@ import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
 import type { BrowserEvidence } from './browser-check.ts';
 import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
 import {randomUUID} from 'node:crypto';
-import {observeCanvas,canvasSnapshot,requireCanvas} from './canvas-check.ts';
+import {observeCanvas,canvasSnapshot,finalCanvasSnapshot,requireCanvas} from './canvas-check.ts';
 
 function activeElement(el:Element):boolean {
   if(el.matches(':disabled')||el.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]'))return false;
@@ -141,6 +141,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       canvasSamples.push(await canvasSnapshot(frame,canvasKey));
       phase='restart';const restart=frame.getByRole('button',{name:/^(restart|replay|перезапуск|заново|начать заново|повторить)$/i}).filter({visible:true});
       if(await restart.count()===1&&await restart.evaluate(activeElement)){await restart.tap();await page.waitForTimeout(100);}
+      canvasSamples.push(await finalCanvasSnapshot(frame,canvasKey));
       if(failure)throw new Fault(failure,502);
       phase='canvas-render';for(const context of requireCanvas(canvasSamples.slice(1)))renderContexts.add(context);
       // An additional standalone offline load checks that parent init is optional.
@@ -153,8 +154,8 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       for(let i=0,n=Math.min(64,await offlineInput.count());i<n;i++)if(await offlineInput.nth(i).evaluate(activeElement)&&!await offlineInput.nth(i).evaluate(serviceControl)){await offlineInput.nth(i).tap();break;}
       await page.waitForTimeout(100);
       if(failure)throw new Fault(failure,502);
-      requireCanvas([await canvasSnapshot(page.mainFrame(),canvasKey)],false);
       await page.keyboard.press('ArrowRight');await page.waitForTimeout(50);
+      requireCanvas([await finalCanvasSnapshot(page.mainFrame(),canvasKey)],false);
       if(failure)throw new Fault(failure,502);
       if(signal.aborted)throw new Fault('BROWSER_TIMEOUT',504);
     }catch(error){

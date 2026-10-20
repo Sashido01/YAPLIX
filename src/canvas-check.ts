@@ -90,12 +90,21 @@ export interface CanvasSnapshot {canvases:{id:number;context:string;draws:number
 export async function canvasSnapshot(frame:Frame,key:string):Promise<CanvasSnapshot>{
  return frame.evaluate(key=>(window as unknown as Record<string,()=>CanvasSnapshot>)[key](),key);
 }
+/** A clear can briefly precede the next frame. Allow at most 100 ms to redraw,
+ * within the caller's existing browser deadline; never reuse an older image. */
+export async function finalCanvasSnapshot(frame:Frame,key:string):Promise<CanvasSnapshot>{
+ let current=await canvasSnapshot(frame,key);
+ for(let n=0;n<2&&!current.canvases.some(c=>c.fits&&c.exposed&&c.draws>0&&c.meaningful&&c.context);n++){
+  await frame.page().waitForTimeout(50);current=await canvasSnapshot(frame,key);
+ }
+ return current;
+}
 export function requireCanvas(samples:CanvasSnapshot[],requireChange=true):('2d'|'webgl'|'webgl2')[]{
  if(samples.some(s=>s.dom))throw new Fault('BROWSER_DOM_GAME_WORLD',502);
  const last=samples.at(-1)!;
  if(!last.canvases.length)throw new Fault('BROWSER_CANVAS_REQUIRED',502);
  if(last.canvases.some(c=>!c.fits))throw new Fault('BROWSER_CANVAS_LAYOUT',502);
- const drawn=samples.flatMap(s=>s.canvases).filter(c=>c.fits&&c.exposed&&c.draws>0&&c.meaningful&&c.context);
+ const drawn=last.canvases.filter(c=>c.fits&&c.exposed&&c.draws>0&&c.meaningful&&c.context);
  if(!drawn.length)throw new Fault('BROWSER_CANVAS_RENDER_UNVERIFIED',502);
  if(requireChange&&!drawn.some(c=>samples.some(s=>s.canvases.some(p=>p.id===c.id&&p.context===c.context&&p.image&&p.image!==c.image))))throw new Fault('BROWSER_CANVAS_ACTIVITY_UNVERIFIED',502);
  return [...new Set(drawn.map(c=>c.context))] as ('2d'|'webgl'|'webgl2')[];
