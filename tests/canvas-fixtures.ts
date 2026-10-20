@@ -8,12 +8,20 @@ export function terminalCanvas({restart=true,decorative=false,crash=false}={}){
 
 export function animatedWebgl(kind='webgl',ending='draw'){
  return canvasGame(kind).replace('preserveDrawingBuffer:true','preserveDrawingBuffer:false')
-  .replace('function act(){','let ticks=0;function tick(){ticks++;if(active){'+
+  .replace('Move past the obstacle','Reach the gold target twice per point. Collect three points to win.')
+  .replace('<output>','<section role="dialog" hidden><h2>You won</h2><button id="restart">Restart</button></section><output>')
+  .replace('vec4(1.,.7,.1,1.)','tint')
+  .replace("void main(){gl_FragColor=tint;}","uniform vec4 tint;void main(){gl_FragColor=tint;}")
+  .replace("void main(){color=tint;}","uniform vec4 tint;void main(){color=tint;}")
+  .replace('ctx.drawArrays(ctx.TRIANGLES,0,3);',"ctx.uniform4f(ctx.getUniformLocation(program,'tint'),.2,.7,1,1);ctx.drawArrays(ctx.TRIANGLES,0,3);ctx.uniform1f(ctx.getUniformLocation(program,'shift'),.65+Math.sin(ticks/10)*.05);ctx.uniform4f(ctx.getUniformLocation(program,'tint'),1,.7,.1,1);ctx.drawArrays(ctx.TRIANGLES,0,3);")
+  .replace('function act(){','let ticks=0;function tick(){ticks++;surface.dataset.frame=String(ticks);if(active){'+
    (ending==='stop'||ending==='halt'?'if(step<2)draw();':ending==='clear'?'if(step>=2)ctx.clear(ctx.COLOR_BUFFER_BIT);else draw();':ending==='reset'?'if(step>=2)surface.width=surface.width;else draw();':ending==='redraw'?'ctx.clear(ctx.COLOR_BUFFER_BIT);draw();':'draw();')+
    '}'+(ending==='halt'?'if(step<2)':'')+'requestAnimationFrame(tick);}requestAnimationFrame(tick);function act(){')
   .replace('(step%3)*.2','(step%3)*.2+Math.sin(ticks/10)*.05')
-  .replace('let active=false,step=0;','let active=false,step=0,ticks=0;')
-  .replace('let ticks=0;function tick()','function tick()');
+  .replace('let active=false,step=0;','let active=false,step=0,ticks=0,score=0;')
+  .replace('let ticks=0;function tick()','function tick()')
+  .replace('document.querySelector("output").textContent="Steps "+step;',`if(step%2===0)score++;document.querySelector('output').textContent='Score '+score;if(score===3){active=false;document.querySelector('section').hidden=false;}`)
+  .replace("document.querySelector('#move').onclick=act;","document.querySelector('#restart').onclick=()=>{step=0;score=0;active=true;document.querySelector('section').hidden=true;document.querySelector('output').textContent='Score 0';draw();};document.querySelector('#move').onclick=act;");
 }
 export function canvasGame(kind='arcade'){
  const gl=kind==='webgl'||kind==='webgl2';

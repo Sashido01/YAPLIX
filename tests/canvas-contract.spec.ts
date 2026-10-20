@@ -157,3 +157,21 @@ test('A1.8.5 cleared terminal Restart must restore a rendered Canvas',async()=>{
  const source=terminalCanvas().replace("document.querySelector('section').hidden=true;draw();","document.querySelector('section').hidden=true;");
  await expect(browserCheck(source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_RENDER_UNVERIFIED'});
 });
+
+for(const kind of ['webgl','webgl2'])test(`A1.8.5 ${kind} fixture has native false buffer, running frames, score, win and Restart`,async({browser})=>{
+ const context=await browser.newContext({offline:true,hasTouch:true,viewport:{width:390,height:700}});
+ try{
+  const page=await context.newPage(),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.setContent(animatedWebgl(kind));
+  expect(await page.locator('canvas').evaluate((c,kind)=>(c as HTMLCanvasElement).getContext(kind as 'webgl')!.getContextAttributes()!.preserveDrawingBuffer,kind)).toBe(false);
+  await page.getByRole('button',{name:'Start',exact:true}).tap();
+  const before=Number(await page.locator('canvas').getAttribute('data-frame'));
+  await page.waitForTimeout(80);expect(Number(await page.locator('canvas').getAttribute('data-frame'))).toBeGreaterThan(before);
+  for(let n=0;n<6;n++)await page.getByRole('button',{name:'Move',exact:true}).tap();
+  await expect(page.locator('output')).toHaveText('Score 3');await expect(page.getByRole('heading',{name:'You won'})).toBeVisible();
+  await page.getByRole('button',{name:'Restart',exact:true}).tap();
+  await expect(page.getByRole('heading',{name:'You won'})).toBeHidden();await expect(page.locator('output')).toHaveText('Score 0');
+  await page.locator('canvas').tap();await page.getByRole('button',{name:'Move',exact:true}).tap();await expect(page.locator('output')).toHaveText('Score 1');
+  expect(errors).toEqual([]);
+ }finally{await context.close();}
+});

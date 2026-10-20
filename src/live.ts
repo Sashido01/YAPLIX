@@ -74,7 +74,7 @@ export class GenerationEngine implements Generator {
           context?.preserveOriginal?.(raw);
           const code=error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';
           context?.trace?.(/JAVASCRIPT_EXCEPTION|CONSOLE_ERROR/.test(code)?'browser.runtime_error':code.startsWith('BROWSER_')?'browser.validation_completed':'html.validated',{errorCode:code,durationMs:Math.round(performance.now()-(browserBegan??formatBegan)),validationPhase:(error as {validationPhase?:string})?.validationPhase,profileWidth:(error as {profileWidth?:number})?.profileWidth,next:'needs_attention'});
-          context?.validation?.({level:/TIMEOUT|CANCELLED|SANDBOX|INSTALL_REQUIRED|STARTUP_FAILED|INCONCLUSIVE/.test(code)?'NOT_VERIFIED':'FAILED',code,phase:'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
+          context?.validation?.({level:/TIMEOUT|CANCELLED|SANDBOX|INSTALL_REQUIRED|STARTUP_FAILED|INCONCLUSIVE|^BROWSER_CANVAS_(?:RENDER|ACTIVITY)_UNVERIFIED$/.test(code)?'NOT_VERIFIED':'FAILED',code,phase:'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
           throw error;
         }
       };

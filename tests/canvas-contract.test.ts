@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generationMessages} from '../src/generation.ts';
 import {Store} from '../src/store.ts';
-import {parseArtifact} from '../src/contracts.ts';
+import {parseArtifact,Fault} from '../src/contracts.ts';
+import {GenerationEngine} from '../src/live.ts';
 import {spec} from './helpers.ts';
 import {canvasGame,domGame} from './canvas-fixtures.ts';
 
@@ -35,4 +36,14 @@ test('generation metadata preserves a 29-minute response and bounded 35-minute j
  assert.equal(parseArtifact(candidate).generation?.attempts[0].requestMs,29*60000);
  assert.equal(parseArtifact({...candidate,generation:{...candidate.generation,elapsedMs:35*60000}}).generation?.elapsedMs,35*60000);
  for(const elapsedMs of [-1,35*60000+1,Infinity,NaN,1.5])assert.throws(()=>parseArtifact({...candidate,generation:{...candidate.generation,elapsedMs}}),/INVALID_GENERATION_METADATA/);
+});
+
+for(const code of ['BROWSER_CANVAS_RENDER_UNVERIFIED','BROWSER_CANVAS_ACTIVITY_UNVERIFIED','BROWSER_CANVAS_REQUIRED','BROWSER_DOM_GAME_WORLD'])test('render refusal preserves its evidence level and cannot repair or fall back: '+code,async()=>{
+ let calls=0,level='';
+ const route={route:'primary' as const,provider:'offline',model:'authored',readiness:async()=>'ready' as const,complete:async()=>{calls++;return{code:canvasGame(),model:'authored'};}};
+ const engine=new GenerationEngine([route,{...route,route:'secondary'}],{allowLlmRepair:true,repairs:1,check:async()=>{throw new Fault(code,502);}});
+ try{
+  await assert.rejects(engine.generate(spec,undefined,'llm_code',undefined,{dispatch:()=>{},stage:()=>{},partial:()=>{},attempt:()=>{},validation:d=>{level=d.level;}}),new RegExp(code));
+  assert.equal(calls,1);assert.equal(level,code.endsWith('_UNVERIFIED')?'NOT_VERIFIED':'FAILED');
+ }finally{engine.close();}
 });

@@ -125,6 +125,12 @@ Transport fixture не выполняет реального LLM POST и не д
 
 WebGL2 проверяется только при поддержке браузера; недоступность не считается PASS.
 Набор использует authored offline fixtures и реальные browser gates, не LLM.
+Положительная WebGL mini-game дополнительно проверяет native context attributes,
+движение rAF, счёт 0→3, видимую победу, Restart и новый счёт после реального ввода.
+`BROWSER_CANVAS_RENDER_UNVERIFIED` / `ACTIVITY_UNVERIFIED` сохраняют diagnostic
+level NOT_VERIFIED: новая версия блокируется без repair/fallback, но неизвестное
+рисование не объявляется подтверждённой поломкой игры. Отсутствующий Canvas и
+наблюдаемый DOM world сохраняют FAILED. Это отдельно защищено RED→GREEN units.
 
 ## Границы достоверности
 
