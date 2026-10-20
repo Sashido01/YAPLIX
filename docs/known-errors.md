@@ -344,3 +344,12 @@ initData или необработанные журналы. [Запуск и о
   обнаруженный DOM после каждого. scrollTop/DOM не подменяются. RED полного
   теста nested → GREEN; положительные Canvas и невидимые technical fixtures
   сохранены. Это DOM inspection, не доказательство phone control reachability.
+
+- Итоговая paint матрица добавила четыре RED→GREEN: in-flow pseudo и shadow на
+  нулевом host, outline и SVG child за нулевым SVG viewport. Видимое outline/SVG
+  отвергается; неподтверждаемая геометрия generated paint/shadow даёт
+  BROWSER_CANVAS_DOM_UNVERIFIED. Полностью transparent pseudo text допускается.
+  Пять positive + четыре negative cases прошли 9/9.
+- Нулевой backing store прежде доходил до NaN координат и общего INCONCLUSIVE.
+  Теперь layout проверяется до probes: BROWSER_CANVAS_LAYOUT, без repair/fallback.
+  Отдельный RED→GREEN фиксирует именно Canvas classification.

@@ -65,3 +65,19 @@ test('strict Canvas permits an offscreen technical pseudo-element',async({browse
  const source=insert('<style>i::before{content:"technical";position:absolute;left:-10000px;top:0}</style><i style="display:block;width:0;height:0"></i>');
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contract:'canvas-webgl-strict-v2'}});
 });
+test('strict Canvas permits transparent nonvisual pseudo content',async({browser})=>{
+ const source=insert('<style>i::before{content:"technical";color:rgba(255,0,0,0)}</style><i style="display:block;width:0;height:0"></i>');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contract:'canvas-webgl-strict-v2'}});
+});
+for(const [name,markup] of [
+ ['in-flow pseudo on zero box','<style>i::before{content:"Pause"}</style><i style="display:block;width:0;height:0"></i>'],
+ ['shadow on zero box','<i style="display:block;width:0;height:0;box-shadow:0 0 0 30px red"></i>'],
+ ['outline decoration','<i style="display:block;width:30px;height:30px;outline:3px solid red"></i>'],
+ ['overflowing SVG child','<svg style="width:0;height:0;overflow:visible"><rect width="40" height="40"/></svg>'],
+] as const)test('strict Canvas refuses unsupported or visible paint: '+name,async({browser})=>{
+ await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).rejects.toMatchObject({code:expect.stringMatching(/BROWSER_DOM_GAME_UI|BROWSER_CANVAS_DOM_UNVERIFIED/)});
+});
+test('strict Canvas classifies zero backing size before coordinate probes',async({browser})=>{
+ const source=strictCanvas().replace('c.width=Math.round(r.width*devicePixelRatio)','c.width=0');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_LAYOUT'});
+});

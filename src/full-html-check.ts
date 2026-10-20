@@ -58,7 +58,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
           // Refuse new UI immediately, before any later action can conceal it.
           // A Canvas menu may precede the world's first draw. Inspect DOM at
           // startup, then require current rendering after every real input.
-          if(!initial||sample.dom)requireCanvas(samples,false);
+          if(!initial||sample.dom||sample.canvases.some(c=>!c.fits))requireCanvas(samples,false);
         };
         await check(true);
         // Inspect UI revealed by real scrolling, without assigning scrollTop or

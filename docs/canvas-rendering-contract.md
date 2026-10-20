@@ -43,7 +43,9 @@ popup, native dialog и JS exceptions блокируют приём. HTML не �
 
 Observer проверяет фактический DOM и computed styles, текстовые Range rects,
 SVG/replaced elements, backgrounds/borders/shadows, `::before`/`::after`, в том
-числе после каждого input. Роли status/dialog, классы hud и custom elements не
+числе после каждого input. Outline и SVG children также проверяются. Generated paint без подтверждаемой
+геометрии, включая in-flow pseudo/zero-box shadow, даёт NOT_VERIFIED; полностью
+transparent text не считается видимым. Роли status/dialog, классы hud и custom elements не
 освобождают UI от проверки. MutationObserver удерживает обнаруженное нарушение
 между пробами; open/closed Shadow DOM, созданный после init observer, включён в
 анализ. Видимый iframe/object/embed — запрещённая не-Canvas поверхность, даже

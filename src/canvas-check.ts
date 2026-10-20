@@ -100,6 +100,7 @@ export function observeCanvas(key:string) {
   return visibleRect(el,el.getBoundingClientRect());
  };
  const elements=()=>[...document.querySelectorAll('html,body,body *'),...[...roots].filter(r=>r.host.isConnected).flatMap(r=>[...r.querySelectorAll('*')])];
+ const color=(v:string)=>v!=='transparent'&&!/^rgba\([^)]*,\s*0(?:\.0+)?\)$/.test(v);
  const hasDom=()=>{
   const nodes=elements();if(nodes.length>4096)return -1;
   for(const el of nodes){
@@ -108,7 +109,9 @@ export function observeCanvas(key:string) {
    // A generated box can be visible even when its host has zero dimensions.
    for(const pseudo of ['::before','::after']){
     const p=getComputedStyle(el,pseudo);
-    if(p.display==='none'||p.visibility!=='visible'||Number(p.opacity)===0||p.content==='none'||p.content==='normal'||p.content==='\"\"'&&p.backgroundColor==='rgba(0, 0, 0, 0)'&&p.backgroundImage==='none'&&p.borderStyle==='none'&&p.boxShadow==='none')continue;
+    if(p.display==='none'||p.visibility!=='visible'||Number(p.opacity)===0||p.content==='none'||p.content==='normal')continue;
+    const text=p.content!=='\"\"'&&(p.content.startsWith('url(')||parseFloat(p.fontSize)>0&&color(p.color)||p.textShadow!=='none');
+    if(!text&&!color(p.backgroundColor)&&p.backgroundImage==='none'&&p.borderStyle==='none'&&p.boxShadow==='none'&&p.outlineStyle==='none')continue;
     if(p.position==='absolute'||p.position==='fixed'){
      let origin={left:0,top:0};
      for(let ancestor:Element|null=el;ancestor;ancestor=parent(ancestor)){
@@ -119,18 +122,19 @@ export function observeCanvas(key:string) {
      if(![x,y,w,h].every(Number.isFinite))return -1;
      if(visibleRect(el,new DOMRect(origin.left+x,origin.top+y,w,h),p.position))return 1;
     }else if(visible(el))return 1;
+    else return -1; // In-flow generated paint has no DOM Range/box to certify.
    }
-   const color=(v:string)=>v!=='transparent'&&v!=='rgba(0, 0, 0, 0)';
    // Text paint does not require an element box (display:contents, overflow).
    for(const node of el.childNodes)if(node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()&&(color(s.color)||s.textShadow!=='none')){
     const range=document.createRange();range.selectNodeContents(node);
     if([...range.getClientRects()].some(r=>visibleRect(el,r)))return 1;
    }
-   if(!visible(el))continue;
+   const outline=s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>0&&color(s.outlineColor);
+   if(!visible(el)){if(s.boxShadow!=='none'||outline)return -1;continue;}
    // Transparent layout containers and solid document backdrop are technical.
    // ARIA roles/classes never exempt visible text, controls or decoration.
-   if(el.matches('button,input,select,textarea,img,svg,video,audio[controls],iframe,object,embed,hr,meter,progress'))return 1;
-   if(s.backgroundImage!=='none'||s.boxShadow!=='none'||(!el.matches('body,html')&&(color(s.backgroundColor)||(['Top','Right','Bottom','Left'] as const).some(side=>parseFloat(s['border'+side+'Width' as keyof CSSStyleDeclaration] as string)>0&&color(s['border'+side+'Color' as keyof CSSStyleDeclaration] as string)))))return 1;
+   if(el instanceof SVGElement||el.matches('button,input,select,textarea,img,video,audio[controls],iframe,object,embed,hr,meter,progress'))return 1;
+   if(s.backgroundImage!=='none'||s.boxShadow!=='none'||outline||(!el.matches('body,html')&&(color(s.backgroundColor)||(['Top','Right','Bottom','Left'] as const).some(side=>parseFloat(s['border'+side+'Width' as keyof CSSStyleDeclaration] as string)>0&&color(s['border'+side+'Color' as keyof CSSStyleDeclaration] as string)))))return 1;
   }
   return 0;
  };
