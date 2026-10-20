@@ -358,3 +358,11 @@ initData или необработанные журналы. [Запуск и о
   такой HUD. Observer теперь обходит весь document (с прежним bounded cap),
   обычные head/meta/title/script/style остаются разрешены невидимыми. Новый
   negative и два Canvas/technical positives прошли 3/3 GREEN.
+
+- Closed roots, созданные declarative/native HTML parser, обходят attachShadow.
+  Три RED принимали DOM HUD через shadowrootmode, setHTMLUnsafe и document.write.
+  Такие неподтверждаемые parsing paths теперь дают BROWSER_CANVAS_DOM_UNVERIFIED:
+  initial source проверяется inert DOMParser, native parsing calls отмечаются
+  без изменения их семантики. Programmatic attachShadow roots по-прежнему
+  анализируются по фактическому DOM. Canvas/WebGL и invisible technical positives
+  сохранены; ни одна unsupported ветка не получает строгий PASS по умолчанию.

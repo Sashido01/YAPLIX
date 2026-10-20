@@ -30,7 +30,7 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
     let failure='',phase='load';
     try{
       const canvasKey='__canvas_'+randomUUID().replaceAll('-','');
-      await context.addInitScript(observeCanvas,canvasKey);
+      await context.addInitScript(observeCanvas,{key:canvasKey,html});
       const page=await context.newPage();page.setDefaultTimeout(1500);
       page.on('pageerror',()=>{failure='JAVASCRIPT_EXCEPTION';});
       page.on('console',m=>{if(m.type()==='error')failure||='BROWSER_CONSOLE_ERROR';});

@@ -3,7 +3,10 @@ import {Fault} from './contracts.ts';
 
 /** Runs before game scripts, only in the disposable validation browser. Native
  * calls retain their receiver/arguments/results. No game source is rewritten. */
-export function observeCanvas(key:string) {
+export function observeCanvas({key,html}:{key:string;html:string}) {
+ // DOMParser is inert and retains declarative shadow templates. Native parser
+ // roots can bypass attachShadow, so their contents cannot earn strict evidence.
+ const parserRoot=!!new DOMParser().parseFromString(html,'text/html').querySelector('template[shadowrootmode]');
  const records=new Map<HTMLCanvasElement,{context:string;draws:number;image:string;meaningful:boolean;preserved:boolean;drawFrame:number}>();
  // Expire non-preserved evidence even when the game stops scheduling frames.
  // This observer never draws or changes the game's context options.
@@ -139,7 +142,14 @@ export function observeCanvas(key:string) {
   return 0;
  };
  // Latch violations between probes (including menus removed by the next input).
- let domSeen=0;
+ let domSeen=parserRoot?-1:0;
+ for(const owner of [Element.prototype,ShadowRoot.prototype,Document.prototype,Document])for(const name of ['setHTML','setHTMLUnsafe','parseHTML','parseHTMLUnsafe','write','writeln']){
+  const descriptor=Object.getOwnPropertyDescriptor(owner,name),native=descriptor?.value;
+  if(typeof native!=='function')continue;
+  Object.defineProperty(owner,name,{...descriptor,value:function(this:unknown,...args:unknown[]){
+   const result=Reflect.apply(native,this,args);domSeen=-1;return result;
+  }});
+ }
  const scan=()=>{const dom=hasDom();if(dom)domSeen=dom;};
  const observer=new MutationObserver(scan);observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
  Element.prototype.attachShadow=function(init:ShadowRootInit){const root=Reflect.apply(attach,this,[init]);roots.add(root);observer.observe(root,{subtree:true,childList:true,attributes:true,characterData:true});return root;};

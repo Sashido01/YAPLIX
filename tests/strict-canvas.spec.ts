@@ -85,3 +85,10 @@ test('strict Canvas rejects technical head content made visible by CSS',async({b
  const source=strictCanvas().replace('<head>','<head><title>HUD</title><style>head,title{display:block}</style>');
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
+for(const [name,source] of [
+ ['declarative closed root',strictCanvas().replace('<body>','<body><div><template shadowrootmode="closed"><span>HUD</span></template></div>')],
+ ['native shadow parser after input',strictCanvas().replace('step++;draw();',`step++;if(step===1){const host=document.createElement('div');host.style.cssText='position:fixed;top:0';host.setHTMLUnsafe('<template shadowrootmode="closed"><span>HUD</span></template>');document.body.append(host);}draw();`)],
+ ['document stream parser',strictCanvas().replace('let active=false',`document.write('<div style="position:fixed;top:0"><template shadowrootmode="closed"><span>HUD</span></template></div>');let active=false`)],
+] as const)test('strict Canvas leaves unobservable shadow parsing NOT_VERIFIED: '+name,async({browser})=>{
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});
+});

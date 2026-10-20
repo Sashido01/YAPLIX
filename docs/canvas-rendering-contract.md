@@ -48,7 +48,12 @@ SVG/replaced elements, backgrounds/borders/shadows, `::before`/`::after`, в т�
 transparent text не считается видимым. Роли status/dialog, классы hud и custom elements не
 освобождают UI от проверки. MutationObserver удерживает обнаруженное нарушение
 между пробами; open/closed Shadow DOM, созданный после init observer, включён в
-анализ. Видимый iframe/object/embed — запрещённая не-Canvas поверхность, даже
+анализ. Declarative shadow templates проверяются inert DOMParser без исполнения
+кода. Native parsing paths (`setHTML*`, `parseHTML*`, document.write/writeln)
+могут создавать closed roots без attachShadow и остаются NOT_VERIFIED:
+проверенная версия не сохраняется, repair/fallback запрещены. Native вызовы
+сохраняют receiver/arguments/result/exceptions; checker не переписывает DOM игры.
+Видимый iframe/object/embed — запрещённая не-Canvas поверхность, даже
 если вложенный документ same-origin; скрытый технический документ не получает
 автоматического запрета по одному факту существования. Анализ ограничен 4096
 элементами: превышение — NOT_VERIFIED, а не неподтверждённое обвинение игры.
