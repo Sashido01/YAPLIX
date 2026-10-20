@@ -1,6 +1,7 @@
 // Pure validators shared by the API and the browser bridge. No Node dependencies.
 import type { EvidenceLevel, ValidationAspect } from './validation.ts';
 import {validBrowserProfiles,type BrowserScope} from './browser-profiles.ts';
+import {LIVE_JOB_TIMEOUT_MS} from './generation-limits.ts';
 export interface BrowserChecks { checks?:{aspect:ValidationAspect;level:EvidenceLevel}[]; elapsedMs?:number }
 // Historical full-html evidence predates landscape. Preserve its exact profiles;
 // the current checker emits 320/390/844, while startup-input-pause uses 320/390.
@@ -93,7 +94,7 @@ export function parseArtifact(value: unknown, source:'generation'|'saved-metadat
   if(o.generation!==undefined){
     const g=object(o.generation,['attempts','fallback','elapsedMs','browser']);
     // Persist the full supported job duration; dispatch deadlines remain independently enforced.
-    const timing=(v:unknown)=>{if(!Number.isSafeInteger(v)||(v as number)<0||(v as number)>35*60_000)throw new Fault('INVALID_GENERATION_METADATA');return v as number;};
+    const timing=(v:unknown)=>{if(!Number.isSafeInteger(v)||(v as number)<0||(v as number)>LIVE_JOB_TIMEOUT_MS)throw new Fault('INVALID_GENERATION_METADATA');return v as number;};
     if(!Array.isArray(g.attempts)||!g.attempts.length||g.attempts.length>9||typeof g.fallback!=='boolean')throw new Fault('INVALID_GENERATION_METADATA');
     const attempts=g.attempts.map(v=>{const a=object(v,['route','provider','requestedModel','model','outcome','errorCode','elapsedMs','requestMs','validationMs','outputTokens','reasoningTokens']);const tokens:Partial<GenerationAttempt>={};for(const name of ['requestMs','validationMs'] as const){if(a[name]!==undefined)tokens[name]=timing(a[name]);}for(const name of ['outputTokens','reasoningTokens'] as const){if(a[name]!==undefined){if(!Number.isSafeInteger(a[name])||(a[name] as number)<0||(a[name] as number)>1000000)throw new Fault('INVALID_GENERATION_METADATA');tokens[name]=a[name] as number;}}return{route:choice(a.route,['primary','secondary','local'] as const),provider:string(a.provider,128),requestedModel:string(a.requestedModel,128),model:a.model===null?null:string(a.model,128),outcome:choice(a.outcome,['accepted','rejected','failed'] as const),errorCode:a.errorCode===null?null:string(a.errorCode,128),elapsedMs:timing(a.elapsedMs),...tokens};});
     const b=object(g.browser,['profiles','offline','errors','scope','levels','checks','elapsedMs']);
