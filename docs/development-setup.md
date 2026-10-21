@@ -181,7 +181,7 @@ production cloud repair по умолчанию выключен и ограни
 Draft без известного/настроенного origin сохраняется с
 `CHECKPOINT_ORIGIN_UNAVAILABLE` без нового dispatch. Буквальное resume с токена
 не обещается. Дополнительные recoveryState:
-retry_scheduled / waiting_for_provider / failed_permanent при прежней schema v2.
+retry_scheduled / waiting_for_provider / failed_permanent в SQLite; текущая schema v3.
 Static/browser gate обязателен;
 playable version и completed job записываются одной SQLite transaction. Черновик
 не может получить passed сам по себе. Готовность не меняет активный iframe;
@@ -200,28 +200,13 @@ Retry-After (если отсутствует — 60 s). Исчерпание aut
 
 ## Backup, восстановление, обновление
 
-npm run backup: согласованная SQLite online copy даже при WAL, integrity/FK/schema
-v2/SHA-256, до 20 обычных backup-файлов, без перезаписи. .env/модель не входят в backup.
-Это backup game DB, включая jobs; отдельный per-bot consumer/offset state из
-`.local/telegram` и локальные control/access keys в него не входят. Не удаляйте
-эти существующие файлы при update и не подменяйте unknown state пустым.
-`verify:backup` читает проверенные схемы v1 и v2, сообщает фактическую версию.
+`npm run backup` создаёт согласованную SQLite online copy даже при WAL, проверяет integrity/FK/точную schema и SHA-256. Хранится до 20 обычных backup-файлов без перезаписи. Текущая schema — **v3**: games/versions/sessions/events, generation jobs и Arena rooms/players/attempts. `.env`, модель, `.local/telegram` и локальные control/access keys в backup не входят; сохраняйте их отдельно.
 
-Новая пустая база создаётся сразу с schema v2, без before-v2 snapshot.
-Первый запуск нового backend на исправной существующей v1 добавляет generation_jobs,
-generation_worker и индексы в transaction, затем выставляет user_version=2. До миграции файловой базы
-создаётся уникальный `.local/backups/before-v2-UUID.sqlite` через VACUUM INTO;
-копия read-only проверяется по integrity/FK/точной v1 schema. Неизвестная/неисправная
-схема блокирует переход. В memory DB snapshot не создаётся. Старые games/versions/
-sessions/events и HTML не переписываются. Protective snapshots не удаляются
-автоматически и не входят в предел обычных backup-UUID файлов.
+`verify:backup` читает точные схемы v1, v2 и v3, сообщает фактическую версию. Пустая база сразу создаётся с v3. Существующая исправная v1 сначала проходит v1 → v2, затем v2 → v3; v2 переходит в v3. Перед каждым переходом файловой базы `VACUUM INTO` создаёт уникальный проверенный read-only snapshot: `.local/backups/before-v2-UUID.sqlite` или `before-v3-UUID.sqlite`. Изменение схемы выполняется транзакцией. Неизвестная/неисправная схема блокирует миграцию. В memory DB snapshots не создаются.
 
-У before-v2 snapshot нет автоматически сохранённого SHA-256 sidecar: для ручного
-использования зафиксируйте его hash и выполните verify:backup; не угадывайте hash
-и не удаляйте неизвестные `.local` recovery-файлы. Ранее созданные v1 backup допустимы
-для восстановления на новой версии, которая снова выполнит защищённую миграцию.
-Откат к старому v1 runtime не читает v2; восстановление before-v2 теряет более новые
-jobs/изменения после snapshot. Сначала сохраните текущую базу целиком отдельно.
+Прежние игры, HTML, версии и задания не переписываются. Protective snapshots автоматически не удаляются и не входят в лимит обычных backups. SHA-256 sidecar для них не создаётся: зафиксируйте hash и проверьте `verify:backup` перед ручным восстановлением. Не удаляйте неизвестные recovery-файлы.
+
+Старый runtime со schema v2 не читает v3. Для отката нужна отдельно сохранённая совместимая база (например, before-v3); она не содержит новые игры/задания/результаты после snapshot. Сначала сохраните текущую базу целиком. Сохранность пользовательской БД не подтверждается тестами на временных данных.
 
 После успешного bind сервер получает exclusive DB worker lease; второй backend
 с той же базой блокируется (`JOB_WORKER_BUSY`), даже при другом порте. Graceful stop
@@ -254,7 +239,7 @@ npm run app
 
 Git/npm не заменяют .local/.env. Dirty/ff-only failure: сохраните свою ветку,
 без reset/clean/force. Проверьте прежние game/history/export hashes и задания.
-TASK-009 переводит schema v1 → v2 с protective snapshot; сохранность конкретной
+Кандидат доводит schema до v3 с protective snapshots; сохранность конкретной
 пользовательской базы проверяйте отдельно.
 
 MICRO-024: обычный `YAPLIX.cmd` слушает loopback. «Подключить телефон» в UI
@@ -271,8 +256,8 @@ refresh/disable/shutdown отзывают listener и cookie. QR encoder/server 
 На LAN listener нет proxy к owner API: разрешены только оболочка, bounded login
 и выбранная версия. Host/Origin/forwarded checks и opaque sandbox/CSP сохранены.
 Телефон не пишет sessions/events, не меняет версии и не запускает LLM. Owner
-продолжает работать через localhost с теми же jobs/SQLite. Port/firewall/router
-автоматически не настраиваются. Первый запуск выполняет read-only диагностику.
+продолжает работать через localhost с теми же jobs/SQLite. Порты и роутер
+автоматически не меняются. Первый запуск выполняет read-only диагностику.
 Настройка Windows Firewall доступна через точный план, явное согласие и UAC
 ограниченного helper; программа/адаптер/порты/подсеть фиксированы, чужие правила
 сохраняются. VPN LAN access/client isolation проверяются отдельно.
