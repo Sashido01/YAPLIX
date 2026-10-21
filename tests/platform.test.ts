@@ -156,7 +156,7 @@ test('browser runtime ESM graph is served as JavaScript through the exact module
     }
   }
   await visit('/runtime/runtime.js');
-  assert.deepEqual([...seen].sort(), ['/runtime/browser-profiles.js', '/runtime/contracts.js', '/runtime/runtime.js']);
+  assert.deepEqual([...seen].sort(), ['/runtime/browser-profiles.js', '/runtime/contracts.js', '/runtime/generation-limits.js', '/runtime/runtime.js']);
   for (const path of ['/runtime/unknown.js', '/runtime/store.js', '/runtime/browser-profiles.ts',
     '/runtime/%2e%2e%2fsrc%2fstore.js', '/runtime/%2e%2e%5csrc%5cstore.js',
     '/runtime/../src/store.ts', '/runtime/%252e%252e%252fsrc%252fstore.ts']) {

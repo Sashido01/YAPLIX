@@ -6,13 +6,14 @@ import type { Artifact, GameSpec, GameVersion } from './contracts.ts';
 import type { GenerationAttempt } from './contracts.ts';
 import type { ValidationDiagnostic, FormatRepair } from './validation.ts';
 export type TokenUsage={outputTokens?:number;reasoningTokens?:number};
-export type ProviderMode='auto'|'ollama-cloud'|'openrouter';
+export type ProviderMode='auto'|'ollama-cloud'|'openrouter'|'chatgpt';
 export function providerMode(value:unknown):ProviderMode {
   if(value===undefined)return 'auto';
-  if(value!=='auto'&&value!=='ollama-cloud'&&value!=='openrouter')throw new Fault('INVALID_PROVIDER_MODE');
+  if(value!=='auto'&&value!=='ollama-cloud'&&value!=='openrouter'&&value!=='chatgpt')throw new Fault('INVALID_PROVIDER_MODE');
   return value;
 }
 export interface GenerationContext {
+  durableJob?:true;
   trace?(event:string,data?:TraceData):void;
   providerMode?:ProviderMode;
   manualContinuation?:boolean;
@@ -35,6 +36,7 @@ export interface GenerationContext {
 }
 
 export interface Generator {
+  readonly timeouts?:{responseMs:number;jobMs:number};
   generate(spec: GameSpec, previous?: GameVersion, method?: 'llm_code', signal?: AbortSignal, context?:GenerationContext): Promise<Artifact>;
   close?(): void;
 }

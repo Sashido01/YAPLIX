@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { Fault, object, parseArtifact, parseEvent, parseSpec, uuid, MAX_EVENT_BYTES } from './contracts.ts';
 import { boundedText, requiredMethod, providerMode } from './transport.ts';
 import type { Generator } from './transport.ts';
-import { GenerationFailure } from './live.ts';
+import { GenerationFailure,GenerationEngine } from './live.ts';
+import {generationTimeouts} from './generation-timeouts.ts';
 import { demoArtifact } from './demo.ts';
 import type { Store } from './store.ts';
 import { AccessSessions } from './access.ts';
@@ -20,10 +21,11 @@ import { RUNTIME_PROTOCOL } from './runtime-control.ts';
 import { GenerationJobs } from './jobs.ts';
 import {gallery,openGallery} from './gallery.ts';
 import type { PhoneConnection } from './phone.ts';
+import type {ChatGptSession} from './chatgpt.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs, phone?:PhoneConnection) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs, phone?:PhoneConnection,chatgpt?:ChatGptSession) {
   const app = new Hono();
   if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
   const staticFile = staticAssets();
@@ -101,7 +103,23 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return artifact;
   }
   app.get('/api/health', c => c.json({ ok: store.integrity(), schemaVersion: 2 }));
+  app.get('/api/providers', c => c.json({timeouts:adapter instanceof GenerationEngine?adapter.timeouts:generationTimeouts(),providers:(['ollama-cloud','openrouter','chatgpt'] as const).map(mode=>{
+    let configured=false;try{configured=adapter instanceof GenerationEngine&&Boolean(adapter.routesFor(mode).length);}catch{/* Missing route is configuration, not a network failure. */}
+    return{mode,configured,state:configured?'needs_verification':'not_configured'};
+  })}));
   app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: 2, ...(await diagnostics() as object) }));
+  const chatgptOwner=(c:{req:{url:string;header(name:string):string|undefined}},sensitive=true)=>{
+    const url=new URL(c.req.url);
+    if(!chatgpt||policy?.mode!=='local'||policy.host!=='127.0.0.1'||url.hostname!=='127.0.0.1'||c.req.header('X-Yaplix-Telegram-Session')||telegram.user(c.req.header('Cookie')))throw new Fault('CHATGPT_LOCAL_ONLY',403);
+    if(sensitive&&(c.req.header('Origin')!==url.origin||c.req.header('X-Yaplix-ChatGPT')!=='owner'))throw new Fault('ORIGIN_FORBIDDEN',403);
+    return chatgpt;
+  };
+  app.get('/api/chatgpt/status',c=>{
+    try{return c.json(chatgptOwner(c,false).status());}
+    catch{return c.json({available:false,state:'DISCONNECTED',connected:false,model:'gpt-6.1-sol',reauthorizationRequired:false,error:'CHATGPT_LOCAL_ONLY'});}
+  });
+  app.post('/api/chatgpt/connect',async c=>{const manager=chatgptOwner(c);object(await json(c.req.raw,32),[]);return c.json(manager.connect(),202);});
+  app.post('/api/chatgpt/disconnect',async c=>{const manager=chatgptOwner(c);object(await json(c.req.raw,32),[]);return c.json(manager.disconnect());});
   const localPhone = () => {
     if (!phone || policy && policy.mode !== 'local') throw new Fault('PHONE_LOCAL_ONLY', 403);
     return phone;
@@ -121,12 +139,13 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.get('/api/jobs/:jobId',c=>c.json(jobManager().get(owner(c),c.req.param('jobId'))));
   app.post('/api/jobs',async c=>{
     const body=object(await json(c.req.raw,12000),['spec','mode','providerMode','previousVersionId','idempotencyKey','telegramConsent']);
+    if(body.providerMode==='chatgpt')chatgptOwner(c);
     const consent=body.telegramConsent===true;if(body.telegramConsent!==undefined&&typeof body.telegramConsent!=='boolean')throw new Fault('INVALID_JOB_REQUEST');
     if(consent&&!telegram.user(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session')))throw new Fault('TELEGRAM_CONSENT_REQUIRES_SESSION',403);
     return c.json(jobManager().create(owner(c),body.idempotencyKey,{spec:parseSpec(body.spec),mode:mode(body.mode)??'live',providerMode:providerMode(body.providerMode),...(body.previousVersionId?{previousVersionId:uuid(body.previousVersionId)}:{}),telegramConsent:consent}),202);
   });
   app.post('/api/jobs/:jobId/cancel',async c=>{object(await json(c.req.raw,32),[]);return c.json(jobManager().cancel(owner(c),c.req.param('jobId')));});
-  app.post('/api/jobs/:jobId/continue',async c=>{object(await json(c.req.raw,32),[]);return c.json(jobManager().continue(owner(c),c.req.param('jobId')));});
+  app.post('/api/jobs/:jobId/continue',async c=>{if(jobManager().get(owner(c),c.req.param('jobId')).providerMode==='chatgpt')chatgptOwner(c);object(await json(c.req.raw,32),[]);return c.json(jobManager().continue(owner(c),c.req.param('jobId')));});
   app.post('/api/jobs/:jobId/notification',async c=>{object(await json(c.req.raw,32),[]);return c.json({claimed:jobManager().claim(owner(c),c.req.param('jobId'))});});
   app.get('/api/connection/qr.svg', async c => {
     if (!['lan','https'].includes(policy?.mode??'') || !policy?.origin) throw new Fault('LAN_QR_UNAVAILABLE', 409);
@@ -212,7 +231,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });
-  for (const file of ['runtime', 'contracts', 'browser-profiles']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['runtime', 'contracts', 'browser-profiles', 'generation-limits']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/src/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });

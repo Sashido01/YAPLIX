@@ -23,4 +23,4 @@ export interface GenerationJob {
   diagnosticsUnavailable?:boolean;
   manualContinuation?:boolean;
 }
-export type JobSummary = Omit<GenerationJob,'checkpoint'|'originalCheckpoint'|'ownerId'|'idempotencyKey'> & {checkpointBytes:number};
+export type JobSummary = Omit<GenerationJob,'checkpoint'|'originalCheckpoint'|'ownerId'|'idempotencyKey'> & {checkpointBytes:number;canContinue:boolean};

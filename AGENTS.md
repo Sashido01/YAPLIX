@@ -42,6 +42,14 @@ FREE ONLY. MICRO-019 supersedes TASK-010 model selection: production LIVE routes
 are only gemma4:31b at https://ollama.com/v1 with an explicit server credential,
 and openrouter/free at exactly https://openrouter.ai/api/v1. No concrete :free
 selection, generic provider, local route, paid or hidden fallback. MICRO-023: UI providers are ollama-cloud (default) and openrouter (manual only).
+MICRO-029 Stage A1 owner exception: `chatgpt` is an additional manual-only
+local/loopback route to `https://api.openai.com/v1/responses`, pinned
+`gpt-6.1-sol`, reasoning medium, store false, stream true. In-memory personal
+server OAuth only; no LAN/HTTPS/Telegram access, automatic refresh or token
+persistence. Each durable job may spend at most one POST, including failures,
+restart and Continue; no automatic retry, fallback or LLM repair. Auto never
+selects ChatGPT. This exception does not authorize real OAuth/model GET/inference
+or publication during A1. See [ChatGPT setup](docs/chatgpt-setup.md).
 Legacy auto aliases Ollama Cloud and never falls back to OpenRouter. This applies
 to creation, editing, continuation and authorized repair. Full HTML is the core
 contract; preserve current full source on edits, older versions and validator/CSP.
