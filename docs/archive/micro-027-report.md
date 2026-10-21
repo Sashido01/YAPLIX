@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-027 — Reliability, diagnostics and delivery
 
 2026-10-17 (Europe/Moscow). Baseline main/origin/main:

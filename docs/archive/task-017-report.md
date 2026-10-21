@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # TASK-017 — Rules-Aware Gameplay Verification
 
 Решение: **ITERATE** для дальнейшей экспериментальной интеграции. В неизменённой
@@ -91,12 +93,12 @@ score_changed/финальные 50 — отдельное подтвержде�
 
 ## Реализация и пределы
 
-- [rules-probe.ts](../src/orchestrator/rules-probe.ts): ограниченная интерпретация
+- [rules-probe.ts](../../src/orchestrator/rules-probe.ts): ограниченная интерпретация
   одной cumulative цели score/items/lines/waves с положительным целым порогом;
   проверка согласованности rules/HUD, chronology, прогресса от исходного
   состояния до порога, real-input записей, terminal/end и двух устойчивых
   наблюдений. Порог/метрика не берутся из loss или примеров objective.
-- [rules-gameplay.ts](../src/orchestrator/rules-gameplay.ts): реальное управление
+- [rules-gameplay.ts](../../src/orchestrator/rules-gameplay.ts): реальное управление
   через Playwright keyboard/pointer. Адаптер змейки использует только пиксели
   нарисованного canvas: явно заданные геометрия/палитра, BFS до видимого яблока,
   избегание стен/тела/врагов. Каждый шаг выбирается заново; контакты с яблоками

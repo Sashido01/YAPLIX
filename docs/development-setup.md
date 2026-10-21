@@ -50,6 +50,8 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 
 ## Конфигурация
 
+Личный ChatGPT — дополнительный ручной local/loopback маршрут; [настройка и one-POST guard](chatgpt-setup.md). Общие LIVE deadlines определяет [generation-timeouts.ts](../src/generation-timeouts.ts).
+
 .env.example безопасен; process variables имеют приоритет над .env.
 
 | Параметр | Значение / ограничение |
@@ -57,10 +59,10 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
 | LIVE_PROVIDER | ollama-cloud default; auto aliases Ollama only; openrouter manual; none disables LIVE |
 | CLOUD_BASE_URL / CLOUD_API_KEY | только https://openrouter.ai/api/v1 / secret; model фиксирован openrouter/free |
-| LLM_TIMEOUT_MS | 1000..300000, default 180000, один запуск engine |
-| LLM_REQUEST_TIMEOUT_MS | 1000..LLM_TIMEOUT_MS, default min(60000, LLM_TIMEOUT_MS), один transport request |
+| LLM_TIMEOUT_MS | Legacy alias для job deadline; при отсутствии LLM_MAX_DURATION_MS, 1000..2100000, default 2100000 |
+| LLM_REQUEST_TIMEOUT_MS | 1000..1800000 и не больше job deadline; default min(1800000, job deadline), один response |
 | LLM_MAX_ATTEMPTS | 1..12, default 4, provider-call budget автоматического цикла; lifetime ≤12/job |
-| LLM_MAX_DURATION_MS | 1000..1800000, default 300000, durable deadline цикла включая ожидание |
+| LLM_MAX_DURATION_MS | 1000..2100000, default 2100000 (35 минут), durable deadline включая очередь; DEMO default 300000 |
 | LLM_RETRY_MS | 10..60000, default 2000, exponential backoff с cap 60000 |
 | LLM_MAX_TOKENS | 256..32000, default 12000; доступный completion cap из models API может снизить бюджет |
 | LLM_TOKEN_FIELD | max_tokens default или max_completion_tokens |
@@ -76,7 +78,7 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | TELEGRAM_AUTH_MAX_AGE | 30..900 s, default 300; session TTL 1 h |
 | TELEGRAM_UPDATES | token + single owner включают одного poller; off явно отключает |
 
-MICRO-019 ограничивает production LIVE двумя фиксированными маршрутами:
+Основные облачные маршруты production LIVE:
 `gemma4:31b` на `https://ollama.com/v1` и `openrouter/free` на
 `https://openrouter.ai/api/v1`. Никаких concrete `:free` IDs, generic providers,
 локальной модели или платного OpenRouter fallback. [Ollama Cloud](https://docs.ollama.com/cloud).
@@ -156,8 +158,8 @@ Job idempotencyKey — 8..100 букв/цифр/`_`/`-`, уникален вну
 Telegram consent принимается только с signed Telegram session. Один worker,
 pending ≤20 глобально/≤3 на владельца, total ≤1000 jobs, checkpoints/originals
 ≤100 MB суммарно и ≤200000 bytes на каждый draft/original. Default автоматический цикл — до 4 provider calls,
-до 4 запусков worker и 300 s суммарно с ожиданием; lifetime limit 12 calls/job.
-`Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
+до 4 запусков worker и 35 минут LIVE суммарно с ожиданием; lifetime limit 12 calls/job.
+`Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts и не продлевает LIVE deadline. ChatGPT допускает только локальную перепроверку полного checkpoint, без второго POST.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
 Отдельный лимит фактических вызовов генерации к провайдерам — 6/min owner и 12/min
 global, включая repair и Continue. Recoverable ошибки Ollama получают bounded retry
@@ -324,7 +326,7 @@ SQLite. Настройки, Auto/NO_PROXY, VPN/PAC ограничения и TLS
 
 ## Full HTML contract и размер ответа (MICRO-023)
 
-[Контракт/процедура LIVE](micro-023-report.md). Envelope ≤300000 bytes без усечения
+[Контракт/процедура LIVE](archive/micro-023-report.md). Envelope ≤300000 bytes без усечения
 current HTML; известный context cap проверяется консервативно по UTF-8 bytes.
 HTML ≤200000 bytes; JSON/SSE response ≤1210000 bytes. HTTP/API input limits
 не увеличены. LLM_RESPONSE_BODY_TOO_LARGE — локальный response cap,
@@ -348,4 +350,4 @@ prune7days/16MiB при запуске и периодических запис�
 TTL30min, private IP, capability в fragment, owner API недоступен с listener.
 Firewall/VPN/маршруты автоматически не изменяются. Это не physical-device PASS.
 Сохранённый полный checkpoint можно продолжить с локальной revalidation без POST;
-неполный или ошибочный результат не становится Ready. [Факты](micro-027-report.md).
+неполный или ошибочный результат не становится Ready. [Факты](archive/micro-027-report.md).

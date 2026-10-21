@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-018 — GitHub Actions CI Economy
 
 Аудит 16 октября 2026. Работа локальная: push, PR, merge, удаление веток и новые
@@ -106,7 +108,7 @@ cancellation использует PR number и event, не отменяет manu
 выгоды. FAST не устанавливает browsers; FULL сохраняет все engines/profiles.
 Убраны два повторных build на ОС из цепочки test/browser/performance: теперь
 один build и прямые команды. Timeouts и pinned actions сохранены/ограничены.
-Полная [policy, команды и покрытие](ci-economy.md).
+Полная [policy, команды и покрытие](../ci-economy.md).
 
 ## TESTED / локальные результаты
 

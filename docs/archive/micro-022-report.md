@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-022 — Production Game Validation & Automatic Recovery
 
 16 октября 2026. FACT: baseline main/origin/main
@@ -33,7 +35,7 @@ pinning восстановленного OpenRouter checkpoint при новом
 неполного checkpoint при disabled production repair, missing/unconfigured origin
 и отсутствие provider fallback после failure repair transport.
 
-[Подробные границы, diagnostics и budgets](game-validation.md).
+[Подробные границы, diagnostics и budgets](../game-validation.md).
 
 ## GAMEPLAY
 
@@ -104,7 +106,7 @@ Staged/commit secret scan, PR/merge receipt и post-merge actual SHA прове�
 публикации; итоговые hashes доступны в Git и финальном отчёте, не предсказываются здесь.
 
 Обновлены README, architecture, development setup, known errors, этот отчёт,
-[validation guide](game-validation.md) и SESSION_HANDOFF.
+[validation guide](../game-validation.md) и SESSION_HANDOFF.
 
 VERDICT: Technical local PASS; Gameplay PASS в перечисленном scope; LIVE NOT_TESTED.
 Публикация/merge не являются доказательством новой успешной LLM игры. Следующее

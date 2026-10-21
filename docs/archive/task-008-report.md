@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # TASK-008 — Runtime & Tunnel Reliability
 
 Дата проверки: 2026-10-14. Исходная main: d5b678a70567208261131c6f912c121bc3d9d00d.
@@ -64,4 +66,4 @@ MVP DEMO/versions/restart/export/backup проверены; arbitrary LLM game p
 
 GitHub delivery фиксируется по actual PR head/Windows/Ubuntu/secret-scan и merge SHA;
 local/post-merge proof не заменяет внешнюю Telegram приёмку. Настройка и диагностика:
-[Telegram](telegram.md), [development setup](development-setup.md).
+[Telegram](../telegram.md), [development setup](../development-setup.md).

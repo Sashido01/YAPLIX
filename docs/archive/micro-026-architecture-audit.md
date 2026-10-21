@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-026 — Architecture audit and offline constructor experiment
 
 ## Audit completed before implementation (2026-10-16)

@@ -43,7 +43,7 @@ unit обеих ОС, runtime/config/неизвестный diff требует 
 Объём FAST/FULL и файлы workflow сохранены. [Состояние и восстановление](docs/ci-economy.md).
 Перед release вручную выполните FULL на точном release commit. Повторного
 полного Actions run на push main нет; post-merge smoke выполняется локально.
-Текущие ограничения server protection описаны в [аудите](docs/micro-018-report.md).
+Текущие ограничения server protection описаны в [аудите](docs/archive/micro-018-report.md).
 
 Владелец разрешает самостоятельно выполнить стандартный merge обычной задачи
 после успешных проверок (в период MICRO-019 — указанных локальных проверок).
