@@ -156,6 +156,8 @@ for(const [name,markup] of [
  ['marker image','<li style="position:fixed;left:160px;top:5px;list-style-type:none;list-style-image:linear-gradient(red,blue)"></li>'],
  ['zero content with visible padding paint','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;padding:20px;overflow:hidden;color:white;font-size:20px}</style><div id="probe"></div>'],
  ['expanded overflow clip','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:clip;overflow-clip-margin:30px;color:white;font-size:20px}</style><div id="probe"></div>'],
+ ['content-box expanded clip','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:clip;overflow-clip-margin:content-box 30px;color:white;font-size:20px}</style><div id="probe"></div>'],
+ ['border-box expanded clip','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:clip;overflow-clip-margin:border-box 30px;color:white;font-size:20px}</style><div id="probe"></div>'],
  ['clipped host escapes fixed pseudo','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white}</style><div id="probe" style="width:0;height:0;overflow:hidden"></div>'],
 ] as const)test('A1.8.8 refuses ambiguous CSS paint: '+name,async({browser})=>{
  await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});

@@ -140,8 +140,10 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
       const decoration=area&&(color(p.backgroundColor)||p.backgroundImage!=='none'||p.borderStyle!=='none')||p.boxShadow!=='none'||p.outlineStyle!=='none';
       // A zero content box is not a zero text paint box. Own overflow can
       // suppress text; shadows/decoration still need independent evidence.
-      const clipMargin=parseFloat(p.overflowClipMargin)||0;
-      const clipped=(w===0&&horizontal===0&&p.overflowX!=='visible'||h===0&&vertical===0&&p.overflowY!=='visible')&&clipMargin===0;
+      // Computed serialization may start with content-box/padding-box/border-box.
+      // Only a known zero expansion certifies an empty clip; unknown stays closed.
+      const zeroClipMargin=p.overflowClipMargin.trim().split(/\s+/).at(-1)==='0px';
+      const clipped=(w===0&&horizontal===0&&p.overflowX!=='visible'||h===0&&vertical===0&&p.overflowY!=='visible')&&zeroClipMargin;
       if(text&&!clipped||decoration){
        // Only a clip covering the entire possible viewport proves no paint.
        if(visibleRect(el,new DOMRect(0,0,innerWidth,innerHeight),p.position))return -1;
