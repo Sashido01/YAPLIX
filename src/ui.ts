@@ -79,25 +79,25 @@ async function api(path: string, body?: unknown, token?: string, signal?: AbortS
     throw error;
   } finally {clearTimeout(timer);}
 }
-function lock(value: boolean) {
+function lock(value: boolean,revealGame=true) {
   busy=value; el<HTMLButtonElement>('generate').disabled=value; el<HTMLButtonElement>('improve').disabled=value||!current; el<HTMLSelectElement>('provider-mode').disabled=value;el<HTMLSelectElement>('edit-provider-mode').disabled=value;
   el<HTMLSelectElement>('versions').disabled=value||!current;el<HTMLButtonElement>('replay').disabled=value||!current;
   el('cancel').hidden=!value; document.body.classList.toggle('waiting',value);
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.disabled=value||button.dataset.view==='play'&&!current);
-  if(!value&&current&&document.body.dataset.screen==='play'){
+  if(!value&&revealGame&&current&&document.body.dataset.screen==='play'){
     const mobile=matchMedia('(max-width:760px)').matches;
     const scroller=(mobile?document.querySelector('body>main'):document.scrollingElement) as HTMLElement;
     const bottom=mobile?scroller.getBoundingClientRect().bottom:innerHeight;
     scroller.scrollTop+=Math.max(0,el('game').getBoundingClientRect().bottom-bottom+8);
   }
 }
-async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false) {
+async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false,revealGame=true) {
   if (busy) return; lock(true); action=new AbortController(); const controller=action;
   const timeout=setTimeout(()=>controller.abort('timeout'), generating ? LIVE_JOB_TIMEOUT_MS : 15_000), began=performance.now();
   const progress=generating?setInterval(()=>{if(!controller.signal.aborted)message.textContent=`Модель создаёт игру… ${Math.floor((performance.now()-began)/1000)} с. Можно отменить ожидание.`;},1000):undefined;
   try { await work(controller.signal); }
   catch (error) { message.textContent=controller.signal.aborted ? controller.signal.reason==='timeout'?'Ожидание истекло. Повторите действие.':'Ожидание отменено. Проверьте список сохранённых игр.' : (error as Error).message; }
-  finally { clearTimeout(timeout); clearInterval(progress); if(action===controller)action=undefined; lock(false); }
+  finally { clearTimeout(timeout); clearInterval(progress); if(action===controller)action=undefined; lock(false,revealGame); }
 }
 el('cancel').addEventListener('click',()=>action?.abort('user'));
 const spec=(text:string):GameSpec=>({prompt:text,audience:'default',genre:'unknown',mechanics:[],controls:['keyboard','touch','pointer'],responsive:true,webview:true});
@@ -202,8 +202,8 @@ async function submitJob(buttonId:string,text:string,previousVersionId?:string){
 }
 el<HTMLFormElement>('create').addEventListener('submit',event=>{event.preventDefault();void submitJob('generate',prompt.value);});
 el<HTMLFormElement>('iterate').addEventListener('submit',event=>{event.preventDefault();if(current)void submitJob('improve',el<HTMLTextAreaElement>('change').value,current.versionId);});
-async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);el('phone').scrollIntoView({block:'start'});}finally{phoneOpening=false;}}
-el('phone-game').addEventListener('click',()=>{if(current)void attempt(()=>phoneFor(current!.versionId));});
+async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);el('phone-qr').scrollIntoView({block:'center'});}finally{phoneOpening=false;}}
+el('phone-game').addEventListener('click',()=>{if(current)void attempt(()=>phoneFor(current!.versionId),false,false);});
 el('arena-game').addEventListener('click',()=>{if(current)location.assign('/arena?versionId='+current.versionId);});
 el('edit-game').addEventListener('click',()=>{el('iterate').scrollIntoView({block:'center'});el('change').focus();});
 el('replay').addEventListener('click',()=>{if(current)void attempt(signal=>play(current!,signal));});
