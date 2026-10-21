@@ -135,10 +135,13 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
      const [x,y,w,h]=[p.left,p.top,p.width,p.height].map(parseFloat);
      if(![x,y,w,h].every(Number.isFinite))return -1;
      if(w===0||h===0){
-      const decoration=color(p.backgroundColor)||p.backgroundImage!=='none'||p.borderStyle!=='none'||p.boxShadow!=='none'||p.outlineStyle!=='none';
+      const horizontal=parseFloat(p.paddingLeft)+parseFloat(p.paddingRight),vertical=parseFloat(p.paddingTop)+parseFloat(p.paddingBottom);
+      const area=(w+horizontal+parseFloat(p.borderLeftWidth)+parseFloat(p.borderRightWidth))>0&&(h+vertical+parseFloat(p.borderTopWidth)+parseFloat(p.borderBottomWidth))>0;
+      const decoration=area&&(color(p.backgroundColor)||p.backgroundImage!=='none'||p.borderStyle!=='none')||p.boxShadow!=='none'||p.outlineStyle!=='none';
       // A zero content box is not a zero text paint box. Own overflow can
       // suppress text; shadows/decoration still need independent evidence.
-      const clipped=w===0&&p.overflowX!=='visible'||h===0&&p.overflowY!=='visible';
+      const clipMargin=parseFloat(p.overflowClipMargin)||0;
+      const clipped=(w===0&&horizontal===0&&p.overflowX!=='visible'||h===0&&vertical===0&&p.overflowY!=='visible')&&clipMargin===0;
       if(text&&!clipped||decoration){
        // Only a clip covering the entire possible viewport proves no paint.
        if(visibleRect(el,new DOMRect(0,0,innerWidth,innerHeight),p.position))return -1;

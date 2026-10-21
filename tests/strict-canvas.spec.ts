@@ -107,11 +107,13 @@ for(const [name,markup] of [
  ['no marker','<li style="list-style:none"></li>'],
  ['empty marker type',`<li style="list-style-type:''"></li>`],
  ['zero font marker','<li style="font-size:0"></li>'],
+ ['empty zero pseudo background','<style>#probe::before{content:"";position:fixed;left:0;top:0;width:0;height:0;background:red}</style><div id="probe"></div>'],
  ['suppressed marker','<style>li::marker{content:none}</style><li></li>'],
  ['transparent generated marker','<style>li::marker{content:"technical";color:transparent}</style><li></li>'],
  ['no pseudo content','<style>#probe::before{content:none}</style><div id="probe"></div>'],
  ['transparent zero pseudo','<style>#probe::before{content:"technical";position:fixed;left:0;top:0;width:0;height:0;color:transparent}</style><div id="probe"></div>'],
  ['clipped zero pseudo','<style>#probe::before{content:"technical";position:fixed;left:0;top:0;width:0;height:0;overflow:hidden}</style><div id="probe"></div>'],
+ ['ancestor clipped zero pseudo','<style>#probe::before{content:"technical";position:fixed;left:0;top:0;width:0;height:0;overflow:visible}</style><div id="probe" style="width:0;height:0;overflow:hidden;transform:translate(0)"></div>'],
  ['offscreen clipped pseudo','<style>#probe::before{content:"technical";position:fixed;left:-10000px;top:0;width:100px;height:30px;overflow:hidden}</style><div id="probe"></div>'],
 ] as const)test('A1.8.8 permits nonvisual CSS: '+name,async({browser})=>{
  await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contract:'canvas-webgl-strict-v2'}});
@@ -152,6 +154,8 @@ for(const [name,markup] of [
  ['inherited marker','<ul style="list-style-type:decimal"><li style="position:fixed;left:160px;top:5px;color:white"></li></ul>'],
  ['generated marker','<style>li::marker{content:"Score"}</style><li style="position:fixed;left:160px;top:5px;color:white;list-style:none"></li>'],
  ['marker image','<li style="position:fixed;left:160px;top:5px;list-style-type:none;list-style-image:linear-gradient(red,blue)"></li>'],
+ ['zero content with visible padding paint','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;padding:20px;overflow:hidden;color:white;font-size:20px}</style><div id="probe"></div>'],
+ ['expanded overflow clip','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:clip;overflow-clip-margin:30px;color:white;font-size:20px}</style><div id="probe"></div>'],
  ['clipped host escapes fixed pseudo','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white}</style><div id="probe" style="width:0;height:0;overflow:hidden"></div>'],
 ] as const)test('A1.8.8 refuses ambiguous CSS paint: '+name,async({browser})=>{
  await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});

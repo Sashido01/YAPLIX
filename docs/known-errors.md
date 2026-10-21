@@ -397,6 +397,9 @@ initData или необработанные журналы. [Запуск и о
   ancestor clip can suppress the whole viewport paint region, respecting fixed/
   absolute containing blocks. Otherwise ambiguous overflow stays NOT_VERIFIED.
   Transparent/no-content and demonstrably clipped technical cases remain valid.
+- Review reproduced a padded zero-content pseudo that still painted inside its
+  overflow clip. Clipping proof now includes padding and overflow-clip-margin;
+  an empty zero-area background is allowed because it has no painting area.
 - Both refusals block Save/Ready without repair/fallback. Authored production
   job tests retain checkpoint/draft and the last version across SQLite reopen;
   Continue revalidates locally without another dispatch. These are offline
