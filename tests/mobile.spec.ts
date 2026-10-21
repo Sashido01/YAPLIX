@@ -78,3 +78,12 @@ test('version and replay controls stay disabled until the displayed game finishe
     await expect(page.locator('#versions')).toBeEnabled();await expect(page.locator('#replay')).toBeEnabled();
   }finally{release();}
 });
+
+
+test('header brand and actions stay separate at mobile widths',async({page})=>{
+  await page.goto('/');
+  const brand=await page.locator('header .brand').boundingBox(),tools=await page.locator('.header-tools').boundingBox();
+  expect(brand!.x+brand!.width).toBeLessThanOrEqual(tools!.x);
+  await expect(page.locator('#jobs-toggle')).toBeVisible();
+  await expect(page.locator('#diagnostics')).toBeVisible();
+});
