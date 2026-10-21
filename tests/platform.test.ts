@@ -31,7 +31,7 @@ test('migration, persistence, lineage, integrity and project containment', t => 
   store.close();
   store = new Store(`${dir}/data.sqlite`);
   assert.deepEqual(store.getVersion(second.versionId), second);
-  store.db.exec('PRAGMA user_version=3');
+  store.db.exec('PRAGMA user_version=4');
   store.close();
   assert.throws(() => new Store(`${dir}/data.sqlite`), /SCHEMA_TOO_NEW/);
   assert.throws(() => new Store('../escape.sqlite'), /DB_PATH_OUTSIDE_PROJECT/);

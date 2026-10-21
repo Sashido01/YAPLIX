@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="yaplix-arena" content="score-v1"><title>Arena: Меткий бросок</title><style>html,body{margin:0;width:100%;height:100%;background:#101720}canvas{display:block;width:100%;height:100%;touch-action:manipulation}</style></head>
+<body><canvas aria-label="Меткий бросок: пять бросков по мишени. Коснитесь центра мишени; стрелки и пробел на клавиатуре."></canvas><script>
+// Independently authored playable offline demo. Score is earned by actual target hits.
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+let w=320,h=420,stage='ready',score=0,shots=0,aim={x:.5,y:.5},target={x:.5,y:.44},paused=false;
+let session=null,sequence=0,ended=false;
+function report(type,data={}){if(!session||ended)return;parent.postMessage({channel:'yaplix',event:{protocolVersion:1,eventId:crypto.randomUUID(),sessionId:session.sessionId,versionId:session.versionId,sequence:sequence++,timestamp:Date.now(),type,data}},'*');if(type==='session_ended')ended=true;}
+addEventListener('message',e=>{if(e.source===parent&&e.data?.channel==='yaplix_init'&&e.data.protocolVersion===1&&!session){session=e.data;report('game_ready');}});
+function resize(){const rect=canvas.getBoundingClientRect();w=Math.max(240,rect.width);h=Math.max(280,rect.height);const d=Math.min(devicePixelRatio||1,3);canvas.width=Math.round(w*d);canvas.height=Math.round(h*d);ctx.setTransform(d,0,0,d,0,0);draw();}
+function text(s,y,size=18,color='#e4eaf4'){ctx.fillStyle=color;ctx.font=size+'px system-ui';ctx.textAlign='center';ctx.fillText(s,w/2,y,w-24);}
+function button(s,y){ctx.fillStyle='#284e69';ctx.fillRect(w*.14,y-24,w*.72,48);text(s,y+6);}
+function draw(){ctx.fillStyle='#101720';ctx.fillRect(0,0,w,h);text('МЕТКИЙ БРОСОК',32,20);text('Счёт: '+score+'   Броски: '+shots+'/5',62,17,'#9cd8ff');
+ if(stage==='ready'){text('5 бросков. Попадите в центр.',h*.32);text('Центр — 30, край — 10 очков.',h*.39,15);text('Касание / стрелки + пробел',h*.46,15);button('Начать',h*.62);text('Промах тоже расходует бросок.',h*.79,14);return;}
+ if(stage==='ended'){text('Партия завершена',h*.32,24);text('Ваш счёт: '+score,h*.45,24,'#f5ce68');if(!session)button('Повторить',h*.62);else{text('Новая попытка — над полем',h*.62,16);text('Рекорд сохраняется ведущим',h*.72,14);}return;}
+ const x=target.x*w,y=target.y*h,r=Math.min(w,h)*.105;
+ ctx.fillStyle='#e4eaf4';ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ef8068';ctx.beginPath();ctx.arc(x,y,r*.65,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f5ce68';ctx.beginPath();ctx.arc(x,y,r*.3,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle='#9cd8ff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(aim.x*w-12,aim.y*h);ctx.lineTo(aim.x*w+12,aim.y*h);ctx.moveTo(aim.x*w,aim.y*h-12);ctx.lineTo(aim.x*w,aim.y*h+12);ctx.stroke();
+ text(paused?'Пауза':'Коснитесь мишени',h-78,16);button(paused?'Продолжить':'Пауза',h-34);
+}
+function start(){stage='playing';score=0;shots=0;target={x:.5,y:.44};aim={x:.5,y:.44};paused=false;report('game_started');report('score_changed',{score});draw();}
+function shoot(x,y){if(stage!=='playing'||paused)return;const distance=Math.hypot(x-target.x*w,y-target.y*h),r=Math.min(w,h)*.105;const points=distance<=r*.3?30:distance<=r?10:0;shots++;score+=points;report('score_changed',{score});if(shots===5){stage='ended';report(score>=90?'game_won':'game_lost');report('session_ended');}else{const positions=[[.25,.35],[.74,.53],[.32,.59],[.68,.30]];target={x:positions[shots-1][0],y:positions[shots-1][1]};}draw();}
+canvas.addEventListener('pointerdown',e=>{const b=canvas.getBoundingClientRect(),x=(e.clientX-b.left)*w/b.width,y=(e.clientY-b.top)*h/b.height;
+ if(stage==='ready'||stage==='ended'&&!session){if(x>=w*.14&&x<=w*.86&&Math.abs(y-h*.62)<=24)start();return;}
+ if(stage!=='playing')return;if(y>=h-58&&x>=w*.14&&x<=w*.86){paused=!paused;draw();return;}shoot(x,y);
+});
+addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();if(stage==='ready'&&e.key==='Enter'){start();return;}if(stage!=='playing')return;const delta=.025;if(e.key==='ArrowLeft')aim.x=Math.max(0,aim.x-delta);if(e.key==='ArrowRight')aim.x=Math.min(1,aim.x+delta);if(e.key==='ArrowUp')aim.y=Math.max(.15,aim.y-delta);if(e.key==='ArrowDown')aim.y=Math.min(.75,aim.y+delta);if(e.key===' ')shoot(aim.x*w,aim.y*h);draw();});
+addEventListener('resize',resize);document.addEventListener('visibilitychange',()=>{if(document.hidden&&stage==='playing'){paused=true;draw();}});resize();
+</script></body></html>

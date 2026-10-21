@@ -115,7 +115,7 @@ export async function runTunnel(options: TunnelOptions) {
     const nonce = randomBytes(32).toString('hex');
     const data = await request('/api/runtime/tunnel?nonce=' + nonce);
     if (data.app !== 'YAPLIX' || data.protocol !== RUNTIME_PROTOCOL || typeof data.instance !== 'string' || data.proof !== proof(controlKey, nonce, data.instance)) throw new Fault('BACKEND_NOT_READY');
-    if(data.buildId!==buildIdentity()||data.schemaVersion!==2)throw new Fault('BACKEND_UPDATE_RESTART_REQUIRED');
+    if(data.buildId!==buildIdentity()||data.schemaVersion!==3)throw new Fault('BACKEND_UPDATE_RESTART_REQUIRED');
     const health = await request('/healthz');
     if (health.instance !== data.instance || health.ready !== true) throw new Fault('BACKEND_NOT_READY');
     return data.instance as string;

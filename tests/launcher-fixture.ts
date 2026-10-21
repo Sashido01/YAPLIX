@@ -7,6 +7,6 @@ import {buildIdentity} from '../src/build-identity.ts';
 const key=runtimeKey(),instance=randomUUID();
 createServer((request,response)=>{
   const url=new URL(request.url!,'http://127.0.0.1');response.setHeader('Content-Type','application/json');
-  response.end(JSON.stringify(url.pathname==='/healthz'?{app:'YAPLIX',instance,ready:true}:{app:'YAPLIX',instance,mode:'local',protocol:RUNTIME_PROTOCOL,schemaVersion:2,buildId:buildIdentity(),proof:proof(key,url.searchParams.get('nonce')!,instance)}));
+  response.end(JSON.stringify(url.pathname==='/healthz'?{app:'YAPLIX',instance,ready:true}:{app:'YAPLIX',instance,mode:'local',protocol:RUNTIME_PROTOCOL,schemaVersion:3,buildId:buildIdentity(),proof:proof(key,url.searchParams.get('nonce')!,instance)}));
 }).listen(Number(process.env.PORT),'127.0.0.1');
 process.on('message',()=>{});process.on('SIGTERM',()=>{});

@@ -66,6 +66,7 @@ test('opaque runtime forwards validated events to SQLite and isolates platform s
   expect([stats.won, stats.meanScore]).toEqual([1, 3]);
   expect(await page.evaluate(() => (window as any).forwardErrors)).toEqual([]);
   const inner = page.frames()[1];
+  expect(await inner.evaluate('Object.keys(session).sort()')).toEqual(['channel','protocolVersion','sessionId','versionId']);
   expect(await inner.evaluate(() => { try { return (parent as any).testSession.token; } catch { return 'blocked'; } })).toBe('blocked');
   expect(await inner.evaluate(() => { try { localStorage.setItem('steal', 'x'); return 'allowed'; } catch { return 'blocked'; } })).toBe('blocked');
 });
