@@ -23,10 +23,11 @@ import {gallery,openGallery} from './gallery.ts';
 import type { PhoneConnection } from './phone.ts';
 import type {ChatGptSession} from './chatgpt.ts';
 import type { ArenaConnection } from './arena.ts';
+import type {LanSetup} from './lan-setup.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs, phone?:PhoneConnection,chatgpt?:ChatGptSession,arena?:ArenaConnection) {
+export function createApp(store: Store, adapter?: Generator, diagnostics: () => unknown | Promise<unknown> = () => ({ liveConfigured: Boolean(adapter) }), policy?: NetworkPolicy, telegram = new TelegramSessions(), control?: RuntimeControl, jobs?:GenerationJobs, phone?:PhoneConnection,chatgpt?:ChatGptSession,arena?:ArenaConnection,lan?:LanSetup) {
   const app = new Hono();
   if (policy && policy.mode !== 'local' && !policy.key) throw new Fault('ACCESS_KEY_REQUIRED');
   const staticFile = staticAssets();
@@ -109,6 +110,22 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return{mode,configured,state:configured?'needs_verification':'not_configured'};
   })}));
   app.get('/api/diagnostics', async c => c.json({ ok: store.integrity(), schemaVersion: SCHEMA_VERSION, ...(await diagnostics() as object) }));
+  const localLan=(c:{req:{url:string;header(name:string):string|undefined}},write=false)=>{
+    const url=new URL(c.req.url);
+    if(!lan||policy?.mode!=='local'||policy.host!=='127.0.0.1'||url.hostname!=='127.0.0.1'||c.req.header('X-Yaplix-Telegram-Session')||telegram.user(c.req.header('Cookie')))throw new Fault('LAN_LOCAL_ONLY',403);
+    if(write&&(c.req.header('Origin')!==url.origin||c.req.header('X-Yaplix-LAN-Setup')!=='owner'))throw new Fault('ORIGIN_FORBIDDEN',403);
+    return lan;
+  };
+  app.get('/api/lan-setup',async c=>c.json(await localLan(c).diagnose(c.req.query('address'))));
+  app.post('/api/lan-setup/plan',async c=>{
+    const manager=localLan(c,true),body=object(await json(c.req.raw,512),['action','address']);
+    if(!['configure','remove'].includes(body.action as string)||typeof body.address!=='string')throw new Fault('LAN_INVALID_PLAN');
+    return c.json(await manager.plan(body.action as 'configure'|'remove',body.address));
+  });
+  app.post('/api/lan-setup/apply',async c=>{
+    const manager=localLan(c,true),body=object(await json(c.req.raw,512),['id','consent']);
+    return c.json(await manager.apply(uuid(body.id),body.consent===true));
+  });
   const chatgptOwner=(c:{req:{url:string;header(name:string):string|undefined}},sensitive=true)=>{
     const url=new URL(c.req.url);
     if(!chatgpt||policy?.mode!=='local'||policy.host!=='127.0.0.1'||url.hostname!=='127.0.0.1'||c.req.header('X-Yaplix-Telegram-Session')||telegram.user(c.req.header('Cookie')))throw new Fault('CHATGPT_LOCAL_ONLY',403);
@@ -129,10 +146,11 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.post('/api/phone', async c => {
     const manager = localPhone(), body = object(await json(c.req.raw, 512), ['versionId','address']);
     if (body.address !== undefined && typeof body.address !== 'string') throw new Fault('HOST_NOT_AVAILABLE');
+    await lan?.beforeQr(body.address as string|undefined);
     return c.json(await manager.enable(uuid(body.versionId), body.address as string | undefined));
   });
   app.delete('/api/phone', async c => { object(await json(c.req.raw, 32), []); return c.json(await localPhone().disable()); });
-  app.get('/api/phone/qr.svg', c => c.body(localPhone().qr(), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' }));
+  app.get('/api/phone/qr.svg', async c => {const manager=localPhone(),state=manager.status();await lan?.beforeQr(state.enabled&&'url' in state&&state.url?new URL(state.url).hostname:undefined);return c.body(manager.qr(), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });});
   const localArena = (c:{req:{url:string;header(name:string):string|undefined}}) => {
     if (!arena || policy && policy.mode!=='local' || c.req.header('X-Yaplix-Telegram-Session') || telegram.user(c.req.header('Cookie'))) throw new Fault('ARENA_LOCAL_ONLY',403);
     return arena;
@@ -144,10 +162,11 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.post('/api/arena',async c=>{
     const manager=localArena(c),body=object(await json(c.req.raw,512),['versionId','address','roomId']);
     if(body.address!==undefined&&typeof body.address!=='string')throw new Fault('HOST_NOT_AVAILABLE');
+    await lan?.beforeQr(body.address as string|undefined);
     return c.json(await manager.enable(uuid(body.versionId),body.address as string|undefined,body.roomId===undefined?undefined:uuid(body.roomId)),201);
   });
   app.delete('/api/arena',async c=>{object(await json(c.req.raw,32),[]);return c.json(await localArena(c).disable());});
-  app.get('/api/arena/qr.svg',c=>c.body(localArena(c).qr(),200,{'Content-Type':'image/svg+xml; charset=utf-8'}));
+  app.get('/api/arena/qr.svg',async c=>{const manager=localArena(c),state=manager.status();await lan?.beforeQr(state.enabled&&'url' in state&&state.url?new URL(state.url).hostname:undefined);return c.body(manager.qr(),200,{'Content-Type':'image/svg+xml; charset=utf-8'});});
   app.get('/api/arena/rooms/:roomId',c=>c.json(localArena(c).records.board(uuid(c.req.param('roomId')))));
   const owner=(c:{req:{header(name:string):string|undefined}})=>principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session'));
   app.get('/api/jobs',c=>c.json({jobs:jobManager().list(owner(c))}));
@@ -246,7 +265,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.get('/ui/style.css', c => staticFile(c, 'assets/style.css', 'text/css; charset=utf-8'));
   app.get('/arena',c=>{if(policy&&policy.mode!=='local')throw new Fault('ARENA_LOCAL_ONLY',403);c.header('Content-Security-Policy',UI_CSP);return staticFile(c,'assets/arena-host.html','text/html; charset=utf-8',false);});
   app.get('/arena/style.css',c=>staticFile(c,'assets/arena.css','text/css; charset=utf-8',false));
-  for (const file of ['ui', 'access-ui', 'connection-ui','phone-connect-ui','telegram-ui','arena-host-ui']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['ui', 'access-ui', 'connection-ui','phone-connect-ui','telegram-ui','arena-host-ui','lan-setup-ui']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });

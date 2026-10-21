@@ -253,6 +253,7 @@ el('jobs-toggle').addEventListener('click',()=>{el('jobs-panel').hidden=!el('job
 document.addEventListener('visibilitychange',()=>{clearTimeout(pollTimer);if(!document.hidden)void pollJobs();});
 window.addEventListener('pagehide',()=>{closed=true;clearTimeout(pollTimer);unmount?.();unmount=undefined;});window.addEventListener('pageshow',()=>{if(closed){closed=false;void pollJobs();}});
 async function boot(){
+  if(document.body.dataset.entry!=='telegram'&&location.hostname==='127.0.0.1'){const path='/runtime/lan-setup-ui.js';void import(path).then(module=>module.mountLanSetup(document.querySelector('main')!)).catch(()=>{});}
   if(document.body.dataset.entry==='telegram'){const path='/runtime/telegram-ui.js';telegramToken=await (await import(path) as typeof import('./telegram-ui.ts')).initializeTelegram();el('telegram-notify-label').hidden=false;}
   await refreshProviderConfiguration();await list();void pollJobs();const params=new URL(location.href).searchParams,selected=params.get('game');if(params.get('view')==='create')view('create');if(selected&&/^[0-9a-f-]{36}$/.test(selected))await attempt(async signal=>{const history=await api('/api/games/'+selected,undefined,undefined,signal);const requested=params.get('version');const latest=requested?history.versions.find((v:GameVersion)=>v.versionId===requested):history.versions.at(-1);if(!latest)throw new Error('Версия отсутствует в этой игре.');await show(await readVersion(latest.versionId,signal),signal);},false);
 }
