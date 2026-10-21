@@ -1,6 +1,9 @@
 import {arenaDeclared} from './arena-contract.ts';
+import {mountLanSetup,selectLanAddress} from './lan-setup-ui.ts';
 import {arenaEl as el,arenaRequest as request,renderBoard} from './arena-view.ts';
 const versionId=new URL(location.href).searchParams.get('versionId');
+mountLanSetup(document.querySelector('main')!);
+el('network').addEventListener('change',()=>selectLanAddress(el<HTMLSelectElement>('network').value));
 let busy=false, image:string|undefined, timer:ReturnType<typeof setTimeout>|undefined, stopped=false, selected='';
 function release(){if(image)URL.revokeObjectURL(image);image=undefined;el<HTMLImageElement>('qr').removeAttribute('src');el('invite').hidden=true;}
 async function run(work:()=>Promise<void>){if(busy)return;busy=true;for(const id of ['start','stop','refresh','rooms','network'])el<HTMLButtonElement>(id).disabled=true;try{await work();}catch(error){el('status').textContent=(error as Error).message;}finally{busy=false;for(const id of ['start','refresh','rooms','network'])el<HTMLButtonElement>(id).disabled=false;}}
@@ -14,6 +17,7 @@ async function refresh(){
   network.replaceChildren();if(data.networks.length>1)network.add(new Option('Выберите частную сеть',''));
   for(const n of data.networks)network.add(new Option(n.name+' · '+n.address,n.address));
   if(data.networks.some((n:{address:string})=>n.address===previous))network.value=previous;
+  selectLanAddress(network.value);
   const state=data.status;el<HTMLButtonElement>('stop').disabled=!state.enabled;
   if(state.enabled&&state.versionId===versionId){
     selected=state.roomId;rooms.value=selected;

@@ -1,3 +1,4 @@
+import {selectLanAddress} from './lan-setup-ui.ts';
 type State = { enabled: boolean; url?: string; versionId?: string; expiresAt?: number; lastOpenedAt?: number; networks?: { name: string; address: string }[] };
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let image: string | undefined, pending = false, initialized = false, expiry: ReturnType<typeof setTimeout> | undefined;
@@ -15,7 +16,8 @@ const errors: Record<string,string> = {
 };
 function release() { clearTimeout(expiry); if (image) URL.revokeObjectURL(image); image = undefined; el<HTMLImageElement>('phone-qr').removeAttribute('src'); el('phone-ready').hidden = true; }
 async function api(path: string, method = 'GET', body?: object) {
-  const response = await fetch(path, { method, signal: AbortSignal.timeout(12000), cache:'no-store', ...(body ? {headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {}) });
+  const preflight=path==='/api/phone'&&method==='POST'||path==='/api/phone/qr.svg';
+  const response = await fetch(path, { method, signal: AbortSignal.timeout(preflight?45000:12000), cache:'no-store', ...(body ? {headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {}) });
   if (!response.ok) { const result = await response.json(); throw new Error(errors[result.error] ?? 'Подключение недоступно: '+result.error); }
   return response;
 }
@@ -57,6 +59,7 @@ async function enable() {
   const versionId=el<HTMLSelectElement>('phone-version').value;
   if (!versionId) throw new Error('Сначала создайте или откройте сохранённую игру на компьютере.');
   const address=el<HTMLSelectElement>('phone-network').value;
+  selectLanAddress(address);
   if(el<HTMLSelectElement>('phone-network').options.length>1&&!address)throw new Error(errors.PHONE_CHOOSE_NETWORK);
   const state=await(await api('/api/phone','POST',{versionId,...(address?{address}:{})})).json(); await render(state);
 }

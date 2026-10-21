@@ -459,3 +459,18 @@ initData или необработанные журналы. [Запуск и о
   Continue revalidates locally without another dispatch. These are offline
   synthetic checks, not real-provider or physical-device evidence.
 - Evidence is synthetic/offline only; real LLM/OAuth/model requests remain zero.
+## LAN Setup (#55): локальные проверки
+
+- Windows Firewall отдаёт `DisabledInterfaceAliases = null`, когда исключённых
+  интерфейсов нет. Это не запрет политики. Синтетический collector RED воспроизвёл
+  ложный UNVERIFIED; null теперь пропускается, реальный read-only Inspect прочитал
+  адаптер, профиль, 230 правил и listener'ы. Это не изменение Firewall и не phone PASS.
+- На Windows sandbox Firefox мог падать при создании страницы (`Target crashed`),
+  а Playwright оставлял собственный webServer в teardown (`taskkill: Access denied`).
+  Host-прогон той же LAN UI матрицы прошёл 24/24 за 22 s. Для offline browser checks
+  используйте scoped per-command исключение из MICRO-029 A1.7 выше; не отключайте
+  защиту или CSP. При очистке проверяйте точные PID/parent chain своего worktree.
+- Arena responsive test после очень быстрой второй игры нажимал третью попытку
+  раньше действующего секундного rate limit и получал «Подождите секунду».
+  Тест теперь выдерживает тот же 1100 ms перед keyboard-попыткой, как перед
+  предыдущей. Production rate limit, счёт и игровое поведение не менялись.

@@ -20,7 +20,8 @@ export const arenaErrors: Record<string,string> = {
 };
 export const arenaEl = <T extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as T;
 export async function arenaRequest(path:string,method='GET',body?:unknown,token?:string) {
-  const response=await fetch(path,{method,cache:'no-store',signal:AbortSignal.timeout(8000),headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
+  const preflight=path==='/api/arena'&&method==='POST'||path==='/api/arena/qr.svg';
+  const response=await fetch(path,{method,cache:'no-store',signal:AbortSignal.timeout(preflight?45000:8000),headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   if(!response.ok){const data=await response.json();throw new Error(arenaErrors[data.error]??'Действие не выполнено: '+data.error);}
   return response;
 }

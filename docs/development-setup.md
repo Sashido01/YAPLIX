@@ -257,7 +257,8 @@ TASK-009 переводит schema v1 → v2 с protective snapshot; сохра�
 
 MICRO-024: обычный `YAPLIX.cmd` слушает loopback. «Подключить телефон» в UI
 включает отдельный Hono listener в том же процессе/Store на выбранном физическом
-private IPv4 и автоматически назначенном свободном порту. Windows использует
+private IPv4 и фиксированном TCP 52604 (`YAPLIX_PHONE_PORT`). Arena использует
+отдельный TCP 52605 (`YAPLIX_ARENA_PORT`); занятый порт не заменяется случайным. Windows использует
 активные `Get-NetAdapter -Physical`; при ошибке проверки fail-closed. Несколько
 подходящих адресов требуют выбора. После bind self-probe получает фактическую
 страницу; неуспех не выдаёт QR. Токен 256 bit находится во fragment QR и передаётся
@@ -269,9 +270,11 @@ refresh/disable/shutdown отзывают listener и cookie. QR encoder/server 
 и выбранная версия. Host/Origin/forwarded checks и opaque sandbox/CSP сохранены.
 Телефон не пишет sessions/events, не меняет версии и не запускает LLM. Owner
 продолжает работать через localhost с теми же jobs/SQLite. Port/firewall/router
-автоматически не настраиваются. Разрешение Node.js в Windows Firewall только для
-доверенных частных сетей выполняет владелец; VPN LAN access/client isolation
-проверяются отдельно.
+автоматически не настраиваются. Первый запуск выполняет read-only диагностику.
+Настройка Windows Firewall доступна через точный план, явное согласие и UAC
+ограниченного helper; программа/адаптер/порты/подсеть фиксированы, чужие правила
+сохраняются. VPN LAN access/client isolation проверяются отдельно.
+[Установка, развёртывание в LAN, DHCP, просмотр и откат правил](lan-network-setup.md).
 
 Служебная диагностика LIVE — GET models, время/код/источник отдельно от последней
 сохранённой генерации выбранного provider. Она не проверяет inference-квоту или

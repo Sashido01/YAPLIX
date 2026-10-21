@@ -92,7 +92,7 @@ test('Arena responsive touch or keyboard game, no fabricated score, version isol
     // Restarting outer attempt abandons only this client's unfinished round.
     await page.waitForTimeout(1100);await play(client,3,isMobile);
     await expect(page.locator('#scores tr')).toContainText('90');
-    if(!isMobile){await client.locator('#attempt').click();await expect(client.locator('#attempt-status')).toContainText('Игра подключена');await client.frameLocator('#game iframe').locator('canvas').click({position:{x:10,y:10}});await client.keyboard.press('Enter');await client.keyboard.press('Space');for(let i=0;i<4;i++)await client.keyboard.press('Space');await expect(client.locator('#attempt-status')).toContainText('Завершённый результат сохранён');}
+    if(!isMobile){await page.waitForTimeout(1100);await client.locator('#attempt').click();await expect(client.locator('#attempt-status')).toContainText('Игра подключена');await client.frameLocator('#game iframe').locator('canvas').click({position:{x:10,y:10}});await client.keyboard.press('Enter');await client.keyboard.press('Space');for(let i=0;i<4;i++)await client.keyboard.press('Space');await expect(client.locator('#attempt-status')).toContainText('Завершённый результат сохранён');}
     await client.screenshot({path:info.outputPath('arena-responsive.png'),fullPage:true});
     const version=await(await page.request.get(server.origin+'/api/versions/'+id)).json();expect(version.html).toContain('yaplix-arena');
     const unsupported=await(await page.request.post(server.origin+'/api/games',{data:{mode:'demo',spec:{...version.spec,prompt:'Ж'.repeat(500)}}})).json();
