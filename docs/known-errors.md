@@ -478,3 +478,10 @@ initData или необработанные журналы. [Запуск и о
   раньше действующего секундного rate limit и получал «Подождите секунду».
   Тест теперь выдерживает тот же 1100 ms перед keyboard-попыткой, как перед
   предыдущей. Production rate limit, счёт и игровое поведение не менялись.
+
+
+## RELEASE-INTEGRATION-001: ошибки объединённого кандидата
+
+- Два `network.test.ts` shutdown/restart test завершались timeout (15/20 s), в том числе изолированно. Фоновый `LanSetup.diagnose` оставлял referenced PowerShell Inspect до 30 s; закрытие SQLite не завершало Node. `closeDiagnostics()` теперь прерывает только Inspect через AbortSignal при shutdown. Elevated Apply не отменяется этим механизмом. Профильный повтор прошёл без увеличения таймаутов.
+- Незакрытый desktop `@media` в UI-001 поглощал следующий CSS, включая мобильный game-focus/keyboard/safe-area. Esbuild parser test воспроизвёл `Expected "}" to go with "{"`; закрывающая скобка и browser assertion fixed position устраняют проблему. Успешный TypeScript build сам по себе CSS не проверяет.
+- Выбор сохранённой Arena-комнаты или ошибка refresh оставляли Stop disabled; историческая закрытая комната также ошибочно влияла на активный listener. Stop теперь отражает известное состояние активного listener и временно блокируется только на операцию. Browser regression проверяет выбор, failed refresh и фактическое отключение.

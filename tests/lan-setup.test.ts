@@ -97,3 +97,12 @@ test('automatic rules never widen a private IP into a subnet containing public a
 test('an existing correct manual phone Allow is not duplicated when only Arena needs access',async()=>{
  const current=structuredClone(snapshot);current.rules=[allow({ports:['52604']})];const plan=await make(current).plan('configure','192.168.10.12');assert.deepEqual(plan.add[0].ports,[52605]);assert.equal(plan.remove.length,0);
 });
+
+
+test('shutdown cancels a pending read-only collector without invoking elevation',async()=>{
+  let observed:AbortSignal|undefined,elevations=0;
+  const setup=new LanSetup({collect:signal=>new Promise((resolve,reject)=>{observed=signal;signal.addEventListener('abort',()=>reject(new Error('cancelled')),{once:true});}),elevate:async()=>{elevations++;return {code:'applied'};}});
+  const pending=setup.diagnose();assert.equal(observed?.aborted,false);
+  setup.closeDiagnostics();assert.equal(observed?.aborted,true);
+  assert.equal((await pending).status,'UNVERIFIED');assert.equal(elevations,0);
+});

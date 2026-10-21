@@ -13,7 +13,7 @@ type RuleSpec={name:string;group:string;description:string;program:string;ports:
 export type LanPlan={id:string;expiresAt:number;action:'configure'|'remove';installation:string;nodePath:string;ports:number[];adapter:LanAdapter;subnet:string;add:RuleSpec[];remove:LanRule[]};
 type Result={code:string};
 export type LanProbe={kind:string;state:'NOT_STARTED'|'SELF_GET_PASS'|'SELF_GET_FAILED';address?:string;port?:number};
-type Options={nodePath?:string;ports?:number[];installation?:string;platform?:string;collect?:()=>Promise<LanSnapshot>;elevate?:(plan:LanPlan)=>Promise<Result>;now?:()=>number;probe?:()=>Promise<LanProbe[]>};
+type Options={nodePath?:string;ports?:number[];installation?:string;platform?:string;collect?:(signal:AbortSignal)=>Promise<LanSnapshot>;elevate?:(plan:LanPlan)=>Promise<Result>;now?:()=>number;probe?:()=>Promise<LanProbe[]>};
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const same=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
 const any=(values:string[])=>values.some(v=>same(v,'Any')||v==='*');
@@ -42,7 +42,8 @@ function covers(rule:LanRule,adapter:LanAdapter,nodePath:string,port:number){
 }
 export class LanSetup {
   readonly nodePath:string;readonly ports:number[];readonly installation:string;
-  private collect:()=>Promise<LanSnapshot>;private elevate:(plan:LanPlan)=>Promise<Result>;private now:()=>number;
+  private collect:()=>Promise<LanSnapshot>;
+  private diagnostics=new AbortController();private elevate:(plan:LanPlan)=>Promise<Result>;private now:()=>number;
   private plans=new Map<string,{plan:LanPlan;fingerprint:string}>();private busy=false;
   private probe:()=>Promise<LanProbe[]>;private collecting?:Promise<LanSnapshot>;
   constructor(options:Options={}){
@@ -50,10 +51,12 @@ export class LanSetup {
     this.ports=[...new Set(options.ports??[configuredPort('YAPLIX_PHONE_PORT',52604),configuredPort('YAPLIX_ARENA_PORT',52605)])];
     if(this.ports.some(p=>!Number.isInteger(p)||p<1||p>65535))throw new Fault('LAN_INVALID_PORT');
     this.installation=options.installation??hash(PROJECT_ROOT.toLowerCase()).slice(0,20);
-    this.collect=options.collect??(()=>collectWindows(options.platform??process.platform));
+    this.collect=()=>options.collect?options.collect(this.diagnostics.signal):collectWindows(options.platform??process.platform,this.diagnostics.signal);
     this.elevate=options.elevate??elevateWindows;this.now=options.now??Date.now;
     this.probe=options.probe??(async()=>[]);
   }
+  // Cancel only read-only Inspect; an elevated mutation keeps its own outcome handling.
+  closeDiagnostics(){this.diagnostics.abort();}
   private owned(rule:LanRule){return rule.group==='YAPLIX LAN '+this.installation&&rule.description==='YAPLIX managed LAN v1 '+this.installation&&new RegExp('^YAPLIX-LAN-'+this.installation+'-[a-f0-9]{20}$').test(rule.name);}
   private async snapshot(){
     if(this.collecting)return this.collecting;
@@ -120,10 +123,10 @@ export class LanSetup {
 function configuredPort(name:string,fallback:number){const value=process.env[name];if(value!==undefined&&!/^\d+$/.test(value))throw new Fault('LAN_INVALID_PORT');return value===undefined?fallback:Number(value);}
 const powershell=()=>join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
 const helper=()=>resolve(PROJECT_ROOT,'scripts/windows-lan-setup.ps1');
-function execute(args:string[],timeout:number):Promise<string>{return new Promise((done,fail)=>{execFile(powershell(),['-NoProfile','-NonInteractive','-File',helper(),...args],{windowsHide:true,timeout,maxBuffer:2_000_000},(error,stdout)=>error?fail(error):done(stdout.replace(/^\uFEFF/,'')));});}
-async function collectWindows(platform:string):Promise<LanSnapshot>{
+function execute(args:string[],timeout:number,signal?:AbortSignal):Promise<string>{return new Promise((done,fail)=>{execFile(powershell(),['-NoProfile','-NonInteractive','-File',helper(),...args],{windowsHide:true,timeout,signal,maxBuffer:2_000_000},(error,stdout)=>error?fail(error):done(stdout.replace(/^\uFEFF/,'')));});}
+async function collectWindows(platform:string,signal:AbortSignal):Promise<LanSnapshot>{
   if(platform!=='win32')return {platform,complete:false,adapters:[],rules:[],listeners:[]};
-  return JSON.parse(await execute(['-Mode','Inspect'],30000)) as LanSnapshot;
+  return JSON.parse(await execute(['-Mode','Inspect'],30000,signal)) as LanSnapshot;
 }
 async function elevateWindows(plan:LanPlan):Promise<Result>{
   if(process.platform!=='win32')throw new Fault('LAN_WINDOWS_ONLY',409);

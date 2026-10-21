@@ -40,6 +40,8 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
     for(const button of await frame.locator('.controls button').all()){const rect=await button.boundingBox();expect(rect!.width).toBeGreaterThanOrEqual(44);expect(rect!.height).toBeGreaterThanOrEqual(44);}
   }
   mark('focus');await page.setViewportSize(original);await page.getByRole('button',{name:'Игровой экран',exact:true}).click();
+  await expect(page.locator('.player')).toHaveCSS('position','fixed');
+  await expect(page.locator('.player')).toHaveCSS('top','0px');
   await action('Вправо');await expect(frame.locator('#score')).toHaveText('2');
   await page.screenshot({path:info.outputPath('mobile-game.png')});
   await page.getByRole('button',{name:'Обычный экран',exact:true}).click();

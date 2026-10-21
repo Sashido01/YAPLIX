@@ -99,3 +99,23 @@ test('Arena responsive touch or keyboard game, no fabricated score, version isol
     await page.goto(server.origin+'/arena?versionId='+unsupported.versionId);await expect(page.locator('#status')).toContainText('Рейтинг недоступен');await expect(page.locator('#setup')).toBeHidden();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }finally{await context.close();await stop(server.child);rmSync(dir,{recursive:true});}
 });
+
+
+test('Arena host keeps Stop available after room selection and a failed refresh',async({page},info)=>{
+  test.skip(info.project.name!=='chromium-desktop','Host action lifecycle runs once.');
+  test.skip(!lanAddresses().length,'Private IPv4 required; no loopback bypass.');
+  const dir=mkdtempSync('.local/arena-controls-'),server=await backend(resolve(dir,'arena.sqlite'));
+  try{
+    const {url}=await openDemo(page,server.origin),roomId=new URL(url).pathname.split('/').at(-1)!;
+    await expect(page.locator('#stop')).toBeEnabled();
+    await page.locator('#rooms').selectOption(roomId);
+    await expect(page.locator('#refresh')).toBeEnabled();
+    await expect(page.locator('#stop')).toBeEnabled();
+    await page.route('**/api/arena?versionId=*',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'DEMO_REFRESH_FAILURE'})}));
+    await page.locator('#refresh').click();
+    await expect(page.locator('#status')).toContainText('DEMO_REFRESH_FAILURE');
+    await expect(page.locator('#stop')).toBeEnabled();
+    await page.locator('#stop').click();
+    await expect(page.locator('#stop')).toBeDisabled();
+  }finally{await stop(server.child);rmSync(dir,{recursive:true});}
+});

@@ -163,3 +163,11 @@ test('browser runtime ESM graph is served as JavaScript through the exact module
     assert.equal((await app.request(path)).status, 404, path);
   }
 });
+
+
+test('production CSS has no parser warnings that can swallow mobile rules',async()=>{
+  const {transform}=await import('esbuild');
+  const {readFile}=await import('node:fs/promises');
+  const parsed=await transform(await readFile('assets/style.css','utf8'),{loader:'css',logLevel:'silent'});
+  assert.deepEqual(parsed.warnings.map(w=>w.text),[]);
+});

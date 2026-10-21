@@ -54,7 +54,7 @@ const server = serve({ fetch: app.fetch, hostname: policy.host, port }, () => {
   }
 });
 server.on('error', (error: NodeJS.ErrnoException) => {
-  chatgpt.disconnect();adapter?.close?.(); void jobs.close().then(()=>store.close());
+  lan.closeDiagnostics();chatgpt.disconnect();adapter?.close?.(); void jobs.close().then(()=>store.close());
   console.error(`${portError(error)}: ${policy.host}:${port}. Проверьте адрес; для занятого порта выберите другой PORT/--port.`);
   process.exitCode = 1;
 });
@@ -64,6 +64,7 @@ let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  lan.closeDiagnostics();
   await phone.shutdown();
   await arena.shutdown();
   chatgpt.disconnect();adapter?.close?.();
