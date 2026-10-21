@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {checkFullHtml} from '../src/full-html-check.ts';
 import {strictCanvas} from './strict-canvas-fixtures.ts';
 import {canvasGame} from './canvas-fixtures.ts';
+import {observeCanvas,canvasSnapshot,requireCanvas} from '../src/canvas-check.ts';
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Production validator uses Chromium.'));
 test('strict Canvas rejects a visible HTML HUD',async({browser})=>{
  const source=canvasGame(); // Previously accepted visible HTML Start/Move/HUD.
@@ -98,4 +99,60 @@ for(const [name,markup] of [
  ['zero-size positioned pseudo text','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white;font-size:20px}</style><div id="probe"></div>'],
 ] as const)test('A1.8.7 refuses visible DOM paint: '+name,async({browser})=>{
  await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).rejects.toMatchObject({code:expect.stringMatching(/BROWSER_DOM_GAME_UI|BROWSER_CANVAS_DOM_UNVERIFIED/)});
+});
+
+for(const [name,markup] of [
+ ['hidden list','<li hidden>technical</li>'],
+ ['invisible marker','<li style="position:fixed;left:160px;top:5px;color:transparent"></li>'],
+ ['no marker','<li style="list-style:none"></li>'],
+ ['empty marker type',`<li style="list-style-type:''"></li>`],
+ ['zero font marker','<li style="font-size:0"></li>'],
+ ['suppressed marker','<style>li::marker{content:none}</style><li></li>'],
+ ['transparent generated marker','<style>li::marker{content:"technical";color:transparent}</style><li></li>'],
+ ['no pseudo content','<style>#probe::before{content:none}</style><div id="probe"></div>'],
+ ['transparent zero pseudo','<style>#probe::before{content:"technical";position:fixed;left:0;top:0;width:0;height:0;color:transparent}</style><div id="probe"></div>'],
+ ['clipped zero pseudo','<style>#probe::before{content:"technical";position:fixed;left:0;top:0;width:0;height:0;overflow:hidden}</style><div id="probe"></div>'],
+ ['offscreen clipped pseudo','<style>#probe::before{content:"technical";position:fixed;left:-10000px;top:0;width:100px;height:30px;overflow:hidden}</style><div id="probe"></div>'],
+] as const)test('A1.8.8 permits nonvisual CSS: '+name,async({browser})=>{
+ await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).resolves.toMatchObject({rendering:{contract:'canvas-webgl-strict-v2'}});
+});
+
+const marker='<li style="position:fixed;left:160px;top:5px;list-style-type:decimal;color:white"></li>';
+const pseudo='<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white}</style><div id="probe"></div>';
+for(const [paint,markup] of [['marker',marker],['pseudo',pseudo]] as const){
+ test('A1.8.8 '+paint+' refuses at each production viewport with rendered Canvas',async({browser})=>{
+  for(const viewport of [{width:320,height:700},{width:390,height:700},{width:844,height:390}]){
+   const context=await browser.newContext({viewport,offline:true});
+   try{
+    const source=insert(markup),key='cssPaintProbe';
+    await context.addInitScript(observeCanvas,{key,html:source});
+    await context.route('**/*',r=>r.request().url()==='https://css-probe.invalid/'?r.fulfill({contentType:'text/html',body:source}):r.abort());
+    const page=await context.newPage();await page.goto('https://css-probe.invalid/');
+    const snapshot=await canvasSnapshot(page.mainFrame(),key);
+    expect(snapshot.dom).toBe(-1);expect(snapshot.canvases).toEqual([expect.objectContaining({context:'2d',meaningful:true,fits:true,draws:expect.any(Number)})]);
+    expect(snapshot.canvases[0].draws).toBeGreaterThan(0);
+    expect(()=>requireCanvas([snapshot],false)).toThrow('BROWSER_CANVAS_DOM_UNVERIFIED');
+   }finally{await context.close();}
+  }
+ });
+ test('A1.8.8 refuses '+paint+' revealed by real scrolling',async({browser})=>{
+  const source=insert('<div id="scroll" style="position:fixed;inset:0;overflow:auto"><div style="height:2000px"></div></div>')
+   .replace('let active=false',`document.querySelector('#scroll').addEventListener('scroll',()=>document.body.insertAdjacentHTML('afterbegin',${JSON.stringify(markup)}),{once:true});let active=false`);
+  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});
+ });
+ for(const [phase,trigger] of [['Start','active=true;'],['input','step++;'],['Game Over','step++;'],['Restart','step=0;paused=false;']] as const){
+  const source=strictCanvas().replace(trigger,trigger+(phase==='Game Over'?'if(step===4)':'')+`document.body.insertAdjacentHTML('afterbegin',${JSON.stringify(markup)});`);
+  test('A1.8.8 refuses '+paint+' after '+phase,async({browser})=>{
+   await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});
+  });
+ }
+}
+
+for(const [name,markup] of [
+ ['inherited marker','<ul style="list-style-type:decimal"><li style="position:fixed;left:160px;top:5px;color:white"></li></ul>'],
+ ['generated marker','<style>li::marker{content:"Score"}</style><li style="position:fixed;left:160px;top:5px;color:white;list-style:none"></li>'],
+ ['marker image','<li style="position:fixed;left:160px;top:5px;list-style-type:none;list-style-image:linear-gradient(red,blue)"></li>'],
+ ['clipped host escapes fixed pseudo','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white}</style><div id="probe" style="width:0;height:0;overflow:hidden"></div>'],
+] as const)test('A1.8.8 refuses ambiguous CSS paint: '+name,async({browser})=>{
+ await expect(checkFullHtml(browser,insert(markup),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});
 });

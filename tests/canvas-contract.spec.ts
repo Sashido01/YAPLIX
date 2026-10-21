@@ -71,6 +71,31 @@ test('A1.8 production job edit, SQLite restart, historical export and offline re
   expect(calls).toBe(2);expect(store.history(historical.gameId)).toHaveLength(2);
  }finally{await jobs.close();engine.close();store.close();}
 });
+
+for(const [name,markup] of [
+ ['marker',`<li style="position:fixed;left:160px;top:5px;width:1px;height:25px;list-style-type:'Score 100';color:white;font-size:20px"></li>`],
+ ['zero pseudo','<style>#probe::before{content:"Pause";position:fixed;left:0;top:0;width:0;height:0;overflow:visible;color:white;font-size:20px}</style><div id="probe"></div>'],
+] as const)test('A1.8.8 production CSS refusal preserves draft/version/Continue: '+name,async()=>{
+ test.setTimeout(45000);
+ const path=mkdtempSync('.local/css-refusal-')+'/test.sqlite';
+ const source=strictCanvas().replace('<body>','<body>'+markup);let calls=0,fallbacks=0;
+ const route={route:'primary' as const,provider:'offline-fixture',model:'authored',readiness:async()=>'ready' as const,complete:async()=>{calls++;return{code:source,model:'authored'};}};
+ const engine=new GenerationEngine([route,{...route,route:'secondary',complete:async()=>{fallbacks++;throw Error('UNEXPECTED_FALLBACK');}}],{allowLlmRepair:true,repairs:1});
+ let store=new Store(path),jobs=new GenerationJobs(store,engine);
+ const settled=async(id:string)=>{await expect.poll(()=>jobs.get('owner',id).stage,{timeout:25000}).toBe('needs_attention');return jobs.get('owner',id);};
+ try{
+  const old=store.save(spec,{html:strictCanvas(),method:'mock',provider:'authored',model:null,generationStatus:'succeeded',validationStatus:'unverified'});
+  const refused=await settled(jobs.create('owner','css-'+name.replaceAll(' ','-'),{spec,mode:'live',previousVersionId:old.versionId,telegramConsent:false}).jobId);
+  expect(refused).toMatchObject({versionId:null,errorCode:'BROWSER_CANVAS_DOM_UNVERIFIED',checkpoint:source,originalCheckpoint:source,attempts:1,validation:{level:'NOT_VERIFIED'}});
+  expect(store.history(old.gameId)).toHaveLength(1);expect(store.getVersion(old.versionId)).toEqual(old);expect(calls).toBe(1);expect(fallbacks).toBe(0);
+  await jobs.close();store.close();store=new Store(path);jobs=new GenerationJobs(store,engine);
+  expect(jobs.get('owner',refused.jobId).originalCheckpoint).toBe(source);
+  jobs.continue('owner',refused.jobId);
+  expect(await settled(refused.jobId)).toMatchObject({versionId:null,errorCode:'BROWSER_CANVAS_DOM_UNVERIFIED',validation:{level:'NOT_VERIFIED'}});
+  expect(calls).toBe(1);expect(fallbacks).toBe(0);expect(store.history(old.gameId)).toHaveLength(1);
+  expect(await(await createApp(store).request('/api/versions/'+old.versionId+'/export')).text()).toBe(old.html);
+ }finally{await jobs.close();engine.close();store.close();}
+});
 for(const [name,source] of [
  ['SVG only',domGame.replace('<button','<svg width="300" height="180"><rect width="100" height="100"/></svg><button'),'BROWSER_DOM_GAME_WORLD'],
  ['empty',domGame.replace('<button','<canvas></canvas><button'),'BROWSER_CANVAS_RENDER_UNVERIFIED'],

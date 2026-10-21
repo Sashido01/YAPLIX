@@ -380,4 +380,25 @@ initData или необработанные журналы. [Запуск и о
 - No verified remedy is implemented in this audit. Keep publication NO-GO until
   a focused correction and fresh regression/full integration checks pass. Do not
   remove the refusal assertions or count this false acceptance as Canvas-only proof.
+
+## A1.8.8: CSS marker and zero-box pseudo paint
+
+- On `da7b40a`, both production-checker regressions resolved with strict-v2
+  evidence instead of refusing. Offline screenshots at 320x700, 390x700 and
+  844x390 confirmed visible marker text and overflowing `Pause` text; Canvas
+  rendering itself passed. The original RED commit remains in history.
+- The bounded DOM scan now examines computed `::marker`, inherited
+  list-style-type/image and generated marker content. Invisible/empty markers
+  and hidden technical lists remain allowed. Native APIs do not expose a marker
+  paint rect: potentially visible markers remain `BROWSER_CANVAS_DOM_UNVERIFIED`,
+  even if the host appears clipped/offscreen, rather than earning strict PASS.
+- Positioned `::before`/`::after` with a zero content dimension no longer proves
+  absent text paint. Own overflow clipping can certify suppressed text; a real
+  ancestor clip can suppress the whole viewport paint region, respecting fixed/
+  absolute containing blocks. Otherwise ambiguous overflow stays NOT_VERIFIED.
+  Transparent/no-content and demonstrably clipped technical cases remain valid.
+- Both refusals block Save/Ready without repair/fallback. Authored production
+  job tests retain checkpoint/draft and the last version across SQLite reopen;
+  Continue revalidates locally without another dispatch. These are offline
+  synthetic checks, not real-provider or physical-device evidence.
 - Evidence is synthetic/offline only; real LLM/OAuth/model requests remain zero.

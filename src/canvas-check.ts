@@ -109,6 +109,17 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
   for(const el of nodes){
    if(el.matches('canvas,canvas *')||!rendered(el))continue;
    const s=getComputedStyle(el);
+   if(s.display.split(' ').includes('list-item')){
+    const marker=getComputedStyle(el,'::marker');
+    const generated=marker.content!=='none'&&marker.content!=='\"\"'&&marker.content!=="''";
+    const normal=marker.content==='normal';
+    const image=normal?s.listStyleImage!=='none':marker.content.includes('url(');
+    const type=!['none','\"\"',"''"].includes(s.listStyleType);
+    const text=(!normal||type)&&parseFloat(marker.fontSize)>0&&(color(marker.color)||marker.textShadow!=='none');
+    // Marker boxes have no native Range/rect API. Host clipping/offscreen rects
+    // cannot certify outside markers (including inherited types/images).
+    if(generated&&(image||text)&&marker.visibility==='visible'&&Number(marker.opacity)!==0)return -1;
+   }
    // A generated box can be visible even when its host has zero dimensions.
    for(const pseudo of ['::before','::after']){
     const p=getComputedStyle(el,pseudo);
@@ -123,6 +134,17 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
      }
      const [x,y,w,h]=[p.left,p.top,p.width,p.height].map(parseFloat);
      if(![x,y,w,h].every(Number.isFinite))return -1;
+     if(w===0||h===0){
+      const decoration=color(p.backgroundColor)||p.backgroundImage!=='none'||p.borderStyle!=='none'||p.boxShadow!=='none'||p.outlineStyle!=='none';
+      // A zero content box is not a zero text paint box. Own overflow can
+      // suppress text; shadows/decoration still need independent evidence.
+      const clipped=w===0&&p.overflowX!=='visible'||h===0&&p.overflowY!=='visible';
+      if(text&&!clipped||decoration){
+       // Only a clip covering the entire possible viewport proves no paint.
+       if(visibleRect(el,new DOMRect(0,0,innerWidth,innerHeight),p.position))return -1;
+      }
+      continue;
+     }
      if(visibleRect(el,new DOMRect(origin.left+x,origin.top+y,w,h),p.position))return 1;
     }else if(visible(el))return 1;
     else return -1; // In-flow generated paint has no DOM Range/box to certify.

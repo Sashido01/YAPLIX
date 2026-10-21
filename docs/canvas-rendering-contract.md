@@ -58,6 +58,17 @@ transparent text не считается видимым. Роли status/dialog,
 автоматического запрета по одному факту существования. Анализ ограничен 4096
 элементами: превышение — NOT_VERIFIED, а не неподтверждённое обвинение игры.
 
+Computed `::marker` учитывает inherited list-style-type/image и generated
+content. Для потенциально видимого marker нет надёжного native paint rect:
+его геометрия, включая outside marker за host/clipping, остаётся NOT_VERIFIED
+и блокирует Save/Ready. Hidden lists, suppressed/empty markers, полностью
+transparent text без image/shadow и нулевой font-size без image не отклоняются.
+Нулевая width/height позиционированного pseudo — только content box, а не
+доказательство отсутствия текстового overflow. Собственный overflow clip может
+подавлять текст; ancestor clipping учитывает containing blocks. Иначе zero-box
+paint остаётся NOT_VERIFIED. Эти проверки работают в прежнем bounded scan после
+Start/input/Game Over/Restart и реального scroll; deadline не увеличен.
+
 Нативные draw/getContext сохраняют receiver, аргументы, результат и exceptions.
 32×24 readback не считает clear рисованием. WebGL evidence снимается microtask
 после синхронных draw/clear; `preserveDrawingBuffer:false` устаревает после
