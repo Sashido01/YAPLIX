@@ -2,6 +2,8 @@
 
 На 21 октября 2026 Arena, LAN Setup, оформление UI-001 и документация объединены в `codex/release-integration-001`. База — main `a56fe00adc8ee215998cc1da3a9c4d6b92408f95`. Это кандидат для ревью, без merge в main. [Точные исходные SHA и проверки](release-integration.md).
 
+ARENA-UNIVERSAL-001 — отдельное stacked-расширение от проверенного PR #58 / f0625a4. Оно добавляет универсальные метрики и подготовку старых игр; сам PR #58 и main не меняются. Его исторический полный browser-run не переносится на расширение; новые проверки приводятся в отдельном Draft PR.
+
 ## Что входит в кандидат
 
 | Возможность | Реализация | Граница доказательства |
@@ -12,7 +14,7 @@
 | Три авторские офлайн-игры | [gallery](../src/gallery.ts), [HTML](../assets/games/) | Authored/unverified, не LIVE |
 | Экспорт и backup | [API](../src/api.ts), [Store](../src/store.ts) | Schema v3; старому runtime нужна совместимая база |
 | Локальный QR одной версии | [phone](../src/phone.ts), [инструкция](phone.md) | Частная LAN, TCP52604, не Интернет |
-| Arena и сохраняемый рейтинг | [Arena](arena.md), [E2E](../tests/arena.spec.ts) | TCP52605, score-v1, доверенный клиент; не античит |
+| Arena и сохраняемый рейтинг | [Arena](arena.md), [E2E](../tests/arena.spec.ts) | TCP52605, score-v1/result-v1, подготовка старых версий; доверенный клиент, не античит |
 | Подготовка Windows LAN | [LAN Setup](lan-network-setup.md), [helper](../scripts/windows-lan-setup.ps1) | Автоматически только диагностика; Apply требует плана, согласия, UAC |
 | Оформление и мобильный интерфейс | [CSS](../assets/style.css), [снимки](media/README.md) | Браузерные профили не доказывают работу физического устройства |
 | Ollama Cloud / OpenRouter | [transport](../src/transport.ts), [policy](../tests/provider-policy.test.ts) | Только разрешённые маршруты; квоты внешние |

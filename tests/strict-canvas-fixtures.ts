@@ -1,6 +1,6 @@
 /** Authored offline fixture. Hitboxes use CSS/backing conversion, no DOM UI. */
 export function strictCanvas(kind='2d') {
- return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+ return `<!doctype html><html><head><meta name="yaplix-arena" content="goal-required-v1"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden}canvas{display:block;width:100%;height:100%;touch-action:none}#hud{position:absolute;inset:0;pointer-events:none}
 </style></head><body><canvas aria-label="Game"></canvas>${kind==='2d'?'':'<canvas id="hud" aria-label="Game interface"></canvas>'}<script>
 const surface=document.querySelector('canvas'),hud=document.querySelector('#hud')||surface,ctx=hud.getContext('2d');

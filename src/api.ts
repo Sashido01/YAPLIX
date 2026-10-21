@@ -24,6 +24,8 @@ import type { PhoneConnection } from './phone.ts';
 import type {ChatGptSession} from './chatgpt.ts';
 import type { ArenaConnection } from './arena.ts';
 import type {LanSetup} from './lan-setup.ts';
+import {localArenaHtml,prepareLocalArena,arenaPreparationPrompt} from './arena-prepare.ts';
+import {arenaMetric,arenaGoalRequired} from './arena-contract.ts';
 
 const UI_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
@@ -158,6 +160,20 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.get('/api/arena',async c=>{
     const manager=localArena(c), versionId=uuid(c.req.query('versionId'));
     return c.json({status:manager.status(),rooms:manager.records.rooms(versionId),networks:await manager.networks()});
+  });
+  app.get('/api/arena/compatibility/:versionId',c=>{
+    localArena(c);const v=store.getVersion(uuid(c.req.param('versionId')));
+    return c.json({metric:arenaMetric(v.html),localPreparation:localArenaHtml(v.html)!==null,goalRequired:arenaGoalRequired(v.html)});
+  });
+  app.post('/api/arena/prepare',async c=>{
+    localArena(c);
+    const body=object(await json(c.req.raw,2048),['versionId','mode','goal','consent','providerMode','idempotencyKey']);
+    const v=store.getVersion(uuid(body.versionId));
+    if(body.mode==='local')return c.json(prepareLocalArena(store,v.versionId),201);
+    if(body.mode!=='llm'||body.consent!==true)throw new Fault('ARENA_PREPARATION_CONSENT',409);
+    if(!['ollama-cloud','openrouter'].includes(String(body.providerMode)))throw new Fault('PROVIDER_MODE_INVALID');
+    const prompt=arenaPreparationPrompt(body.goal);
+    return c.json(jobManager().create(principal(c.req.header('Cookie')),body.idempotencyKey,{spec:{...v.spec,prompt},mode:'live',providerMode:providerMode(body.providerMode),previousVersionId:v.versionId,telegramConsent:false}),202);
   });
   app.post('/api/arena',async c=>{
     const manager=localArena(c),body=object(await json(c.req.raw,512),['versionId','address','roomId']);

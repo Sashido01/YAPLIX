@@ -162,7 +162,7 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
           let event;try{event=parseEvent(events[i]);}catch{throw new Fault('BROWSER_EVENT_CONTRACT',502);}
           if(event.sessionId!==session.sessionId||event.versionId!==session.versionId||event.sequence!==i||ended||i===0&&event.type!=='game_ready')throw new Fault('BROWSER_EVENT_ORDER',502);
           if(event.type==='game_started'){if(started)throw new Fault('BROWSER_DUPLICATE_START',502);started=true;}
-          if(['score_changed','game_won','game_lost','session_ended'].includes(event.type)&&!started)throw new BrowserFailure('BROWSER_EVENT_ORDER','Received '+event.type+' before game_started. Initial setup/reset must not emit score or terminal events. In the first Start handler report game_started BEFORE initializing any state that emits events. Keep restart after session_ended silent.');
+          if(['score_changed','result_changed','game_won','game_lost','session_ended'].includes(event.type)&&!started)throw new BrowserFailure('BROWSER_EVENT_ORDER','Received '+event.type+' before game_started. Initial setup/reset must not emit score or terminal events. In the first Start handler report game_started BEFORE initializing any state that emits events. Keep restart after session_ended silent.');
           if(event.type==='game_won'||event.type==='game_lost'){if(result)throw new Fault('BROWSER_DUPLICATE_END',502);result=true;}
           if(event.type==='session_ended'){if(!result)throw new Fault('BROWSER_EVENT_ORDER',502);ended=true;}
           if(event.type==='game_error')throw new Fault('BROWSER_GAME_ERROR',502);

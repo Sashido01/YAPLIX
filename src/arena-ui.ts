@@ -1,6 +1,7 @@
 import {mountGame} from './runtime.ts';
 import type {GameEvent} from './contracts.ts';
 import {arenaEl as el,arenaRequest as request,renderBoard} from './arena-view.ts';
+import {arenaMetric} from './arena-contract.ts';
 const base=location.pathname, invite=location.hash.slice(1);
 history.replaceState(null,'',base);
 let unmount:(()=>void)|undefined, timer:ReturnType<typeof setTimeout>|undefined, expiry:ReturnType<typeof setTimeout>|undefined, watchdog:ReturnType<typeof setTimeout>|undefined;
@@ -19,7 +20,7 @@ async function flush(expectedEpoch:number){
     if(event.type==='game_started')el('attempt-status').textContent='Партия идёт. Результат появится после завершения.';
     if(event.type==='session_ended'){completed=true;clearTimeout(expiry);expiry=setTimeout(()=>stop('Доступ к комнате истёк. Завершённый результат сохранён.',true),Math.max(0,version!.expiresAt-Date.now()));el('attempt-status').textContent='Завершённый результат сохранён. Личный рекорд меняется только при улучшении.';el<HTMLButtonElement>('attempt').textContent='Новая попытка';void request(base+'/results').then(r=>r.json()).then(renderBoard).catch(()=>{});}
     if(event.type==='game_error'){stop('Игра сообщила об ошибке. Попытка не засчитана.');break;}
-  }}catch(error){if(expectedEpoch===epoch){failed=true;el('attempt-status').textContent='Событие не подтверждено. Проверьте рейтинг или повторите отправку: '+(error as Error).message;el('retry-event').hidden=false;}}
+  }}catch(error){if(expectedEpoch===epoch){if((error as {code?:string}).code==='ARENA_OBJECTIVE_INCOMPLETE'){stop((error as Error).message);return;}failed=true;el('attempt-status').textContent='Событие не подтверждено. Проверьте рейтинг или повторите отправку: '+(error as Error).message;el('retry-event').hidden=false;}}
   finally{posting=false;if(expectedEpoch!==epoch&&queue.length&&!failed)void flush(epoch);}
 }
 async function start(){
@@ -30,13 +31,13 @@ async function start(){
     const result=await(await request(base+'/attempts','POST',{})).json();if(stopped||current!==epoch)return;
     if(result.versionId!==version.versionId||result.sha256!==version.sha256)throw new Error('Версия игры не совпадает с комнатой.');
     session=result;
-    unmount=mountGame(el('game'),version.html,{sessionId:result.sessionId,versionId:result.versionId},event=>{
+    unmount=mountGame(el('game'),version.html,{sessionId:result.sessionId,versionId:result.versionId,arena:true},event=>{
       if(current!==epoch||stopped)return;
       if(queue.length>=128){stop('Слишком много событий игры. Попытка не подтверждена.');return;}
       queue.push(event);void flush(current);
     });
     el('attempt-status').textContent='Ожидание игрового bridge…';
-    watchdog=setTimeout(()=>{if(!ready&&!completed&&current===epoch)el('attempt-status').textContent='Контракт этой игры не подтверждён: нет game_ready. Рейтинг недоступен, очки не засчитаны.';},10_000);
+    watchdog=setTimeout(()=>{if(!ready&&!completed&&current===epoch)el('attempt-status').textContent='Контракт этой игры не подтверждён: нет game_ready. Рейтинг недоступен, результат не засчитан.';},10_000);
     expiry=setTimeout(()=>stop('Время попытки истекло. Незавершённая партия не засчитана.'),Math.max(0,result.expiresAt-Date.now()));
   }catch(error){el('attempt-status').textContent=(error as Error).message;}
   finally{starting=false;if(!stopped)el<HTMLButtonElement>('attempt').disabled=false;}
@@ -46,7 +47,8 @@ async function enter(identity:{nickname:string}){
   el('identity').textContent=identity.nickname;el('title').textContent=version!.title;
   el('status').textContent='В комнате используется одна неизменяемая версия игры. Каждая партия независима.';
   el('join').hidden=true;el('play').hidden=false;el('leaderboard').hidden=false;
-  el('attempt-status').textContent='Заявлен контракт score-v1. Счёт ещё не подтверждён. Нажмите «Начать попытку».';
+  const metric=arenaMetric(version!.html)!;
+  el('attempt-status').textContent=metric.label+' · '+(metric.direction==='lower'?'Меньше — лучше.':'Больше — лучше.')+' Результат ещё не подтверждён. Нажмите «Начать попытку».';
   void board();
 }
 el<HTMLFormElement>('join').addEventListener('submit',event=>{event.preventDefault();if(starting)return;starting=true;const button=el<HTMLFormElement>('join').querySelector('button')!;button.disabled=true;void(async()=>{try{const me=await(await request(base+'/join','POST',{invite,nickname:el<HTMLInputElement>('nickname').value})).json();await enter(me);}catch(error){el('status').textContent=(error as Error).message;}finally{starting=false;button.disabled=false;}})();});

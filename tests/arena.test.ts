@@ -72,14 +72,15 @@ test('completion and best record are atomic even if SQLite rejects the record up
   }finally{store.close();}
 });
 
-test('score-v1 opt-in keeps ordinary generation and strict Canvas intact without extra inference', () => {
+test('universal Arena generation preserves legacy score-v1 and strict Canvas without extra inference', () => {
   const store=new Store(':memory:');try{
-    assert.equal(arenaDeclared(artifact.html),false);
-    assert.ok(!generationMessages(spec)[0].content.includes('Arena score-v1 is explicitly requested'));
+    const historical={...artifact,html:artifact.html.replace('<meta name="yaplix-arena" content="score-v1">','')};
+    assert.equal(arenaDeclared(historical.html),false);
+    assert.match(generationMessages(spec)[0].content,/Arena is automatic/);
     const messages=generationMessages({...spec,prompt:'Arena: точная игра с пятью бросками'});
-    assert.equal(messages.length,2);assert.match(messages[0].content,/ALL visible game UI inside Canvas/);assert.match(messages[0].content,/score_changed/);
-    const v=openGallery(store,'arena-target');assert.ok(arenaDeclared(v.html));assert.match(generationMessages({...spec,prompt:'Ускорить игру'},v)[0].content,/Arena score-v1 is explicitly requested/);
-    assert.throws(()=>new ArenaStore(store).create(store.save(spec,artifact).versionId),/ARENA_UNSUPPORTED/);
+    assert.equal(messages.length,2);assert.match(messages[0].content,/ALL visible game UI inside Canvas/);assert.match(messages[0].content,/result_changed/);
+    const v=openGallery(store,'arena-target');assert.ok(arenaDeclared(v.html));assert.match(generationMessages({...spec,prompt:'Ускорить игру'},v)[0].content,/preserve the existing metric\/score-v1 bridge/);
+    assert.throws(()=>new ArenaStore(store).create(store.save(spec,historical).versionId),/ARENA_UNSUPPORTED/);
   }finally{store.close();}
 });
 

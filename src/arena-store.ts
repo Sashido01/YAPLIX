@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Fault, parseEvent, uuid } from './contracts.ts';
 import type { GameEvent } from './contracts.ts';
 import type { Store } from './store.ts';
-import { arenaDeclared } from './arena-contract.ts';
+import { arenaDeclared, arenaMetric } from './arena-contract.ts';
 
 export const ARENA_TTL = 2 * 3600_000;
 export const ATTEMPT_TTL = 10 * 60_000;
@@ -100,21 +100,28 @@ export class ArenaStore {
     if (previous) return this.store.event(e,token); // Exact retries only; conflicting payload still fails.
     if (a.state !== 'playing') throw new Fault('ARENA_ATTEMPT_ENDED',409);
     const s = db.prepare('SELECT * FROM sessions WHERE session_id=?').get(e.sessionId)!;
+    const metric=arenaMetric(this.store.getVersion(r.version_id).html)!;
+    if(e.type==='result_changed'&&metric.protocol!=='result-v1'||e.type==='score_changed'&&metric.protocol!=='score-v1')throw new Fault('ARENA_METRIC_MISMATCH',409);
+    if(e.type==='result_changed'&&metric.unit==='ms'&&e.data.value===0)throw new Fault('INVALID_RESULT');
     if (e.sequence === 0 && e.type !== 'game_ready' || e.type === 'game_ready' && e.sequence !== 0 || e.type === 'game_started' && e.sequence !== 1) throw new Fault('ARENA_EVENT_STATE',409);
     if (e.type === 'score_changed' && (!Number.isSafeInteger(e.data.score) || e.data.score! < 0)) throw new Fault('INVALID_SCORE');
     if (e.type === 'session_ended' && (s.score === null || s.started_at === null)) throw new Fault('ARENA_SCORE_MISSING',409);
+    if(e.type==='session_ended'&&metric.id==='completion-time'&&s.outcome!=='game_won')throw new Fault('ARENA_OBJECTIVE_INCOMPLETE',409);
     return this.store.event(e as GameEvent,token,() => {
       if (e.type === 'game_error') db.prepare("UPDATE arena_attempts SET state='abandoned' WHERE session_id=?").run(e.sessionId);
       if (e.type !== 'session_ended') return;
       db.prepare("UPDATE arena_attempts SET state='completed',completed_at=?,score=? WHERE session_id=?").run(Date.now(),s.score,e.sessionId);
-      db.prepare('UPDATE arena_players SET best_score=?,best_at=? WHERE player_id=? AND (best_score IS NULL OR best_score<?)').run(s.score,Date.now(),p.player_id,s.score);
+      const comparison=metric.direction==='lower'?'>':'<';
+      db.prepare(`UPDATE arena_players SET best_score=?,best_at=? WHERE player_id=? AND (best_score IS NULL OR best_score${comparison}?)`).run(s.score,Date.now(),p.player_id,s.score);
     });
   }
   board(id: string) {
     const r = this.room(id);
-    const rows = this.store.db.prepare('SELECT nickname,best_score,best_at FROM arena_players WHERE room_id=? ORDER BY best_score DESC,best_at,player_id').all(id);
+    const metric=arenaMetric(this.store.getVersion(r.version_id).html)!;
+    const direction=metric.direction==='lower'?'ASC':'DESC';
+    const rows = this.store.db.prepare(`SELECT nickname,best_score,best_at FROM arena_players WHERE room_id=? ORDER BY best_score IS NULL,best_score ${direction},best_at,player_id`).all(id);
     let rank = 0, last: unknown = null;
-    return { roomId:r.room_id, versionId:r.version_id, sha256:r.sha256, state:r.state, expiresAt:r.expires_at, open:r.state==='open'&&r.expires_at>Date.now(), trust:'client_game_events' as const,
+    return { roomId:r.room_id, versionId:r.version_id, sha256:r.sha256, metric,state:r.state, expiresAt:r.expires_at, open:r.state==='open'&&r.expires_at>Date.now(), trust:'client_game_events' as const,
       players:rows.map((p,i) => { if (p.best_score !== null && p.best_score !== last) rank=i+1; last=p.best_score; return { place:p.best_score===null?null:rank, nickname:String(p.nickname), bestScore:p.best_score as number|null }; }) };
   }
 }

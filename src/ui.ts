@@ -2,6 +2,7 @@ import {LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
 import { mountGame } from './runtime.ts';
 import type { GameVersion, GameSpec, GameEvent } from './contracts.ts';
 import type { JobSummary } from './job-contracts.ts';
+import {formatArenaValue} from './arena-contract.ts';
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const prompt = el<HTMLTextAreaElement>('prompt'), message = el('message');
 let current: GameVersion | null = null, unmount: (() => void) | undefined, busy = false, action: AbortController | undefined;
@@ -120,7 +121,8 @@ async function list(signal?:AbortSignal) {
 }
 async function stats(version: GameVersion) {
   const data=await api('/api/versions/'+version.versionId+'/analytics');if(current?.versionId!==version.versionId)return;
-  el('analytics').textContent=`Начато: ${data.startedCount}. Завершено: ${data.completedCount}. Победы: ${data.won}. Поражения: ${data.lost}. Средний счёт: ${data.meanScore??'нет данных'}.`;
+  const result=data.resultMetric&&data.resultMetric.id!=='score'?`Средний результат · ${data.resultMetric.label}: ${data.meanResult===null?'нет данных':formatArenaValue(data.meanResult,data.resultMetric)}`:`Средний счёт: ${data.meanScore??'нет данных'}`;
+  el('analytics').textContent=`Начато: ${data.startedCount}. Завершено: ${data.completedCount}. Победы: ${data.won}. Поражения: ${data.lost}. ${result}.`;
   el('comparison').textContent='';
   if(version.previousVersionId){const comparison=await api(`/api/versions/${version.versionId}/analytics?baselineVersionId=${version.previousVersionId}`);if(current?.versionId!==version.versionId)return;
     el('comparison').textContent=comparison.evidence==='insufficient_data'?'Для сравнения нужно минимум пять завершённых сессий на каждой версии.':`Разница доли побед: ${comparison.winRateDelta??'нет данных'}. Это наблюдение по клиентской статистике.`;}

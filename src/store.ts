@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { Fault, parseArtifact, parseEvent, parseSpec, uuid } from './contracts.ts';
 import type { Artifact, GameEvent, GameSpec, GameVersion } from './contracts.ts';
 import { SCHEMA_V3 } from './arena-schema.ts';
+import {arenaMetric} from './arena-contract.ts';
 
 export const SCHEMA_VERSION = 3;
 
@@ -199,10 +200,10 @@ export class Store {
       if (duplicate) { if (duplicate.payload !== payload) throw new Fault('EVENT_ID_CONFLICT', 409); return { duplicate: true }; }
       if (s.ended_at !== null || event.sequence !== s.last_sequence + 1) throw new Fault('EVENT_ORDER', 409);
       if (Math.abs(event.timestamp - Date.now()) > 300_000 || s.last_timestamp !== null && event.timestamp < s.last_timestamp) throw new Fault('EVENT_TIME', 409);
-      if (event.type === 'game_started' && s.started_at !== null || ['score_changed', 'game_won', 'game_lost', 'session_ended'].includes(event.type) && s.started_at === null || ['game_won', 'game_lost'].includes(event.type) && s.outcome !== null || event.type === 'score_changed' && s.outcome !== null || event.type === 'game_ready' && s.started_at !== null) throw new Fault('EVENT_STATE', 409);
+      if (event.type === 'game_started' && s.started_at !== null || ['score_changed', 'result_changed', 'game_won', 'game_lost', 'session_ended'].includes(event.type) && s.started_at === null || ['game_won', 'game_lost'].includes(event.type) && s.outcome !== null || ['score_changed','result_changed'].includes(event.type) && s.outcome !== null || event.type === 'game_ready' && s.started_at !== null) throw new Fault('EVENT_STATE', 409);
       if (Number(this.db.prepare('SELECT COUNT(*) n FROM events').get()?.n) >= 100_000) throw new Fault('EVENT_QUOTA', 507);
       this.db.prepare('INSERT INTO events VALUES (?,?,?,?)').run(event.eventId, event.sessionId, event.sequence, payload);
-      this.db.prepare('UPDATE sessions SET last_sequence=?,last_timestamp=?,started_at=?,ended_at=?,outcome=?,score=? WHERE session_id=?').run(event.sequence, event.timestamp, event.type === 'game_started' ? event.timestamp : s.started_at, event.type === 'session_ended' ? event.timestamp : s.ended_at, ['game_won', 'game_lost'].includes(event.type) ? event.type : s.outcome, event.type === 'score_changed' ? event.data.score! : s.score, event.sessionId);
+      this.db.prepare('UPDATE sessions SET last_sequence=?,last_timestamp=?,started_at=?,ended_at=?,outcome=?,score=? WHERE session_id=?').run(event.sequence, event.timestamp, event.type === 'game_started' ? event.timestamp : s.started_at, event.type === 'session_ended' ? event.timestamp : s.ended_at, ['game_won', 'game_lost'].includes(event.type) ? event.type : s.outcome, event.type === 'result_changed' ? event.data.value! : event.type === 'score_changed' ? event.data.score! : s.score, event.sessionId);
       // Arena finalization shares this transaction: no completed event without its record.
       onAccepted?.();
       return { duplicate: false };
@@ -214,7 +215,8 @@ export class Store {
       COALESCE(SUM(outcome='game_won'),0) won,COALESCE(SUM(outcome='game_lost'),0) lost,
       AVG(CASE WHEN ended_at>=started_at THEN ended_at-started_at END) meanDurationMs,AVG(score) meanScore
       FROM sessions WHERE version_id=?`).get(versionId) as Metrics;
-    return { versionId, ...row, winRate: row.startedCount ? row.won! / row.startedCount : null, trust: 'untrusted_client' as const };
+    const resultMetric=arenaMetric(this.getVersion(versionId).html);
+    return { versionId, ...row,meanScore:resultMetric&&resultMetric.id!=='score'?null:row.meanScore,meanResult:row.meanScore,resultMetric,winRate: row.startedCount ? row.won! / row.startedCount : null, trust: 'untrusted_client' as const };
   }
   compare(versionId: string, baselineId: string) {
     const v = this.getVersion(versionId), b = this.getVersion(baselineId);

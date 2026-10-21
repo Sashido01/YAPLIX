@@ -1,4 +1,5 @@
-import {arenaDeclared} from './arena-contract.ts';
+import {arenaMetric} from './arena-contract.ts';
+import {mountPreparation} from './arena-preparation-ui.ts';
 import {mountLanSetup,selectLanAddress} from './lan-setup-ui.ts';
 import {arenaEl as el,arenaRequest as request,renderBoard} from './arena-view.ts';
 const versionId=new URL(location.href).searchParams.get('versionId');
@@ -41,6 +42,9 @@ void run(async()=>{
   if(!versionId)throw new Error('Откройте сохранённую игру в YAPLIX и нажмите «Общий рейтинг».');
   const version=await(await request('/api/versions/'+encodeURIComponent(versionId))).json();
   el('title').textContent=version.spec.prompt;el('version').textContent='versionId: '+version.versionId+' · SHA256: '+version.sha256;
-  if(!arenaDeclared(version.html))throw new Error('Рейтинг недоступен для этой версии. Нужна Arena-совместимая версия. Для локального демо откройте авторскую игру «Arena: Меткий бросок» в библиотеке.');
+  if(await mountPreparation(version))return;
+  const metric=arenaMetric(version.html)!;
+  el('metric-description').textContent=metric.label+' · '+(metric.direction==='lower'?'Меньше — лучше.':'Больше — лучше.')+' Критерий закреплён этой версией. Клиентские игровые события; без серверного античита.';
+  el('metric-heading').textContent=metric.label;
   el('setup').hidden=false;await refresh();void poll();
 });

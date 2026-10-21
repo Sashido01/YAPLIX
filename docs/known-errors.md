@@ -10,7 +10,7 @@ initData или необработанные журналы. [Запуск и о
 | --- | --- |
 | Изолированный worktree: browser suite падает до первого действия с Executable doesn't exist | `scripts/browser-tests.mjs` принудительно задаёт cache `.local/playwright` своего worktree, даже при внешнем PLAYWRIGHT_BROWSERS_PATH. Установите браузеры через `npm run browsers:install` именно в этой копии. Для использования уже проверенного cache без повторного скачивания задайте абсолютный PLAYWRIGHT_BROWSERS_PATH и запустите `node node_modules/@playwright/test/cli.js test ...` напрямую; на Windows при необходимости также задайте TEMP/TMP в локальную папку. Отсутствующий executable не является дефектом приложения. |
 | Arena: `LAN_QR_UNAVAILABLE` при новом URL комнаты | QR телефона допускает только `/phone`. Arena использует отдельный узкий QR-формат `/arena/<UUID>#<secret>` с частным IPv4; не расширяйте общий QR до произвольных URL. Browser E2E декодирует QR и проходит реальные касания десяти clients, без подстановки score. В тесте нужен частный IPv4, loopback QR запрещён. [Демо и ограничения](arena.md). |
-| Arena: версия не выдаёт score/завершение | Маркер score-v1 — заявление контракта, не gameplay PASS. Без него UI показывает недоступность, без числового score и session_ended рекорд не создаётся. Создайте отдельную совместимую версию вручную; не подставляйте очки по Start, DOM/Canvas или таймеру и не запускайте inference без бюджета. |
+| Arena: версия не выдаёт score/завершение | Декларация score-v1/result-v1 — заявление контракта, не gameplay PASS. Без неё UI предлагает «Подготовить для Arena»: известный authored HTML локально, неизвестный — по отдельному LLM-согласию. Без корректного результата и session_ended рекорд не создаётся. Не подставляйте очки по Start, DOM/Canvas или таймеру; inference требует бюджета. |
 | UI-001: долгоживущий локальный сервер отдаёт устаревший CSS/HTML после правки ассетов | `staticAssets()` кэширует файлы навсегда по назначению продакшн-сервера; после правки `assets/*.css` перезапустите сервер (`Ctrl+C` и повторный запуск), иначе браузер видит предыдущую версию с прежним ETag, а свежий playwright webServer всегда её обновляет. Наблюдение UI-001 в worktree, правки кода не требуются. |
 | UI-001: Playwright `ENOENT …/traces/*-recording46.trace` или zip при сборке артефактов (webkit-tablet `phone.spec`) | Не assertion-отказ: сборка trace-артефакта оборвалась в файловой системе. Чистый повтор того же теста прошёл. При единичном таком отказе перезапустите конкретную спеку/profile, не внося правок в код. |
 | UI-001: unit-тесты transport падают с `LLM_PROXY_CONNECTION` на машине с системным `HTTPS_PROXY` | Оболочка экспортирует `HTTPS_PROXY=http://127.0.0.1:10809`; mock-failure тесты ожидают прямые DNS/TLS коды, а undici уходит в прокси. Локально очищайте `HTTP_PROXY`/`HTTPS_PROXY` для `npm test`. На CI переменных нет. Это окружение хоста, не регрессия кода. |
@@ -489,3 +489,19 @@ initData или необработанные журналы. [Запуск и о
 - При реальном просмотре screenshot 390px бренд пересекался с header-tools (правый край 274px, кнопки начинались на 209px). В HTML два дочерних элемента, а CSS оставлял три grid columns. Header теперь имеет две колонки, подпись бренда до 430px переносится под название. Regression сверяет реальные bounding boxes, отдельно от общего overflow.
 
 - Полная RELEASE-INTEGRATION-001 матрица дала 604 PASS / 2119 SKIP / 1 FAIL: Chromium tablet не декодировал screenshot QR. Три повтора сохранили реальное перекрытие верхней части QR sticky header (768px, DPR2.75). Причина: `attempt.finally → lock(false)` после открытия телефона возвращал viewport к игре; один центрирующий scroll этого не исправлял. Действие «На телефон» теперь сохраняет собственную цель прокрутки, QR центрируется, остальные действия сохраняют game reveal. Тот же screenshot→jsQR и настоящая игра на телефоне прошли 3/3; в regression дополнительно проверяется, что QR целиком в viewport ниже header. SVG, decoder, QR secret и протокол не менялись. Исходный FAIL/trace сохранён, он не объявляется PASS.
+
+## ARENA-UNIVERSAL-001: режим попытки и обязательная декларация
+
+- Обычная gallery-игра тоже получает `yaplix_init`/session. Проверка одного
+  `telemetry.session` ошибочно блокировала Restart обеих authored игр. Старые
+  arcades browser tests дали RED 2/2; ограничение теперь проверяет только
+  `init.arena===true`, который задаёт Arena parent. Те же tests дали GREEN 2/2.
+- Инструкция модели сама по себе не обеспечивает совместимость нового HTML.
+  Synthetic ответ без декларации раньше сохранялся как completed. Локальный
+  `ARENA_CONTRACT_REQUIRED` теперь оставляет checkpoint в needs_attention;
+  чувствительный durable test подтвердил один dispatch, без repair/fallback.
+- Сырые mouse coordinates на середине высокого iframe могли попасть за
+  viewport после длинного заголовка. Screenshot воспроизвёл Gate 1 без ввода.
+  Обычный locator click прокручивает цель; тест по-прежнему реально проходит
+  ворота и ждёт подтверждённый рекорд. Force-click, score POST и state injection нет.
+- Универсальные значения используют прежнюю колонку sessions.score, но время/дистанция не являются очками. Analytics теперь возвращает resultMetric/meanResult; nonscore meanScore=null. Unit RED 5000 как очки → GREEN 5.000 с и 30 м, UI browser regression проверяет единицы.
