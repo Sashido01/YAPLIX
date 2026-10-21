@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-029 — ChatGPT Plus / Sign in with ChatGPT feasibility
 
 19 октября 2026. База: main `05b7a59a545497fc04246245a016c64b95d25e87`.
@@ -247,8 +249,8 @@ git push origin codex/micro-029-chatgpt-feasibility
 проектов описан public-client flow без API key/client secret; paid/remote варианты
 требуют отдельного допуска. См. [официальный cookbook](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt).
 
-Исследованы текущие [генератор](../src/live.ts), [durable jobs](../src/jobs.ts),
-[сетевой транспорт](../src/llm-network.ts) и [архитектура](architecture.md).
+Исследованы текущие [генератор](../../src/live.ts), [durable jobs](../../src/jobs.ts),
+[сетевой транспорт](../../src/llm-network.ts) и [архитектура](../architecture.md).
 Они остаются без изменений. Новый модуль не импортируется API/server/UI,
 не реализует Generator/CodeTransport и не читает SQLite/checkpoints/.env.
 
@@ -289,16 +291,16 @@ git push origin codex/micro-029-chatgpt-feasibility
 
 ## CHANGED
 
-- [Изолированный модуль](../src/experimental/siwc.ts): стабильный host ID,
+- [Изолированный модуль](../../src/experimental/siwc.ts): стабильный host ID,
   одноразовый loopback listener, PKCE/state/nonce, discovery с pin endpoints,
   dynamic registration и reuse issued client ID, проверка подписи JWT через JWKS,
   issuer/audience/expiry/iat/nonce/sub/azp и granted scopes. Подмена аккаунта при
   reauthorization отклоняется. Initial registration ID может сохраняться как
   pending с `subject:null`; это не доверенная identity и не grant.
-- [Ручной CLI](../scripts/siwc-auth.ts): только `--prepare` / `--authorize`.
+- [Ручной CLI](../../scripts/siwc-auth.ts): только `--prepare` / `--authorize`.
   Открывает системный браузер, не автоматизирует его и не печатает OAuth URL.
   Нет inference, model discovery, repair или автоматических повторов.
-- [Тесты](../tests/siwc.test.ts): реальные локальные callback sockets,
+- [Тесты](../../tests/siwc.test.ts): реальные локальные callback sockets,
   синтетически подписанные JWT и подменённая только HTTP-граница OpenAI.
 - Единственная новая dependency — JOSE 6.2.12 с lockfile. Production-провайдеры,
   jobs, network policy, frontend и пользовательские данные не менялись.

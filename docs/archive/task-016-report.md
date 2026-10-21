@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # TASK-016 — Полноценные игровые правила в Game Orchestrator — report
 
 Статус: **ITERATE**. Гипотеза подтверждена: orchestrator теперь carries и
@@ -12,24 +14,24 @@ ollama-cloud, частые 429/quota cooldowns) снова недостаточ�
 
 ## Что изменилось
 
-- [spec.ts](../src/orchestrator/spec.ts): OrchestratorGameSpec несёт обязательный
+- [spec.ts](../../src/orchestrator/spec.ts): OrchestratorGameSpec несёт обязательный
   блок `rules` — objective, actions[], interactions[], progress, win, loss,
   restart, mobile, userRulesPriority. Win/loss по умолчанию выводятся из
   резолведного space (lives→loss жизней, enemies→захват, grid→переполнение
   …), никогда не выдумываются на unresolved; дословные условия пользователя
   из промпта всегда выигрывают (sentence-level regex). userRulesPriority
   фиксирует, были ли условия заданы пользователем.
-- [engine.ts](../src/orchestrator/engine.ts): user message содержит дословный
+- [engine.ts](../../src/orchestrator/engine.ts): user message содержит дословный
   промпт + derived spec + MANDATORY RULES block (JSON) + «win и loss должны
   быть оба достижимы»; run metadata включает rules. Видимый rules banner
   (Goal | Lose | Win | Controls) строится из rules и попадает в артефакт.
-- [html-builder.ts](../src/orchestrator/html-builder.ts): ORCHESTRATOR_SYSTEM_PROMPT
+- [html-builder.ts](../../src/orchestrator/html-builder.ts): ORCHESTRATOR_SYSTEM_PROMPT
   требует обязательных правил: RULES ARE MANDATORY AND REAL — `_game.win()`
   из заявленного win-условия, `_game.lose()` из заявленного loss-условия,
   никогда loss-only games, HUD несёт прогресс к win-цели, restart начинает
   свежий run. Скелет получает видимый `<p id="yapBanner">`; BuildTask
   требует `rulesBanner`.
-- [gameplay-check.ts](../src/orchestrator/gameplay-check.ts) (новый): evidence
+- [gameplay-check.ts](../../src/orchestrator/gameplay-check.ts) (новый): evidence
   checker уровня gameplay — real Chromium-сессия (дисциплина browser-check.ts:
   OS sandbox, offline, opaque iframe, GAME_CSP), которая честно играет в игру:
   Start → ввод (клавиши/экранные кнопки) → управляемые ходы или scripted
@@ -40,7 +42,7 @@ ollama-cloud, частые 429/quota cooldowns) снова недостаточ�
   state-level доказательства (distinct HUD states/score events). Чистая
   функция summarizeSession тестируется unit-уровнем; игровой driver — уже
   real-browser, не LLM.
-- [scripts/orchestrator-gameplay-audit.ts](../scripts/orchestrator-gameplay-audit.ts) (новый):
+- [scripts/orchestrator-gameplay-audit.ts](../../scripts/orchestrator-gameplay-audit.ts) (новый):
   аудит существующих артефактов (.local/task-016/*.html) — static validation +
   gameplay evidence per aspect. Не LLM.
 - tests/orchestrator.test.ts: unit-тесты на правила (priority user дословных

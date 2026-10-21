@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # TASK-001 — локальный аудит YAPLIX
 
 Дата: 12 октября 2026. Все изменения, инструменты и тестовые репозитории размещены внутри рабочего клона; внешние сервисы использовались только для чтения. Push и merge в GitHub не выполнялись.
@@ -47,6 +49,6 @@ Hook обходится --no-verify, переопределением hooksPath 
 
 ## NEXT
 
-После разрешения владельца отправить только рабочую ветку: `git push -u origin chore/yaplix-repository-setup`. Открыть PR в main, получить review и успешные `repository-checks (ubuntu-24.04)`, `repository-checks (windows-latest)`, `secret-scan` на актуальной версии. Merge — отдельный шаг по регламенту. Каждому участнику установить hooks по [инструкции](development-setup.md). Затем выбрать узкий MVP и стек, проверить основу на Ubuntu 24.04.
+После разрешения владельца отправить только рабочую ветку: `git push -u origin chore/yaplix-repository-setup`. Открыть PR в main, получить review и успешные `repository-checks (ubuntu-24.04)`, `repository-checks (windows-latest)`, `secret-scan` на актуальной версии. Merge — отдельный шаг по регламенту. Каждому участнику установить hooks по [инструкции](../development-setup.md). Затем выбрать узкий MVP и стек, проверить основу на Ubuntu 24.04.
 
 Источники проверки CI и ограничений: [GitHub rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets), [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1), [Gitleaks Action](https://github.com/gitleaks/gitleaks-action), [протокол hooks](https://git-scm.com/docs/githooks).

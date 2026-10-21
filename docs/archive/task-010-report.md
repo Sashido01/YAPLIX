@@ -1,8 +1,10 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # TASK-010 — автономное восстановление, аркады и Telegram
 
 ## Как запустить YAPLIX сейчас
 
-Windows: двойной щелчок [YAPLIX.cmd](../YAPLIX.cmd). Ubuntu: `npm run app` из
+Windows: двойной щелчок [YAPLIX.cmd](../../YAPLIX.cmd). Ubuntu: `npm run app` из
 корня клона. Нужен Node 24.18+ (24.x) с npm. Каталог → игра → «Играть»/«Старт».
 DEMO и две собственные reserve-игры работают без LLM; authored/unverified явно
 отличается от LIVE. Авторская игра сохраняется только по явному нажатию пользователя.
@@ -132,7 +134,7 @@ controlled tests. Evidence: `.local/task-010/telegram-live.json`, без token/u
 
 LAN/QR не равны публичному HTTPS. При сетевом блокере Quick Tunnel описан
 отдельно подготовленный Caddy/reverse-proxy host; Caddy не устанавливался и
-production deployment не выполнялся. [Настройка и границы](telegram.md).
+production deployment не выполнялся. [Настройка и границы](../telegram.md).
 Один bounded реальный HTTP/2 smoke с существующим pinned cloudflared и изолированной
 DB завершился PUBLIC_HEALTH_FAILED после 61791 ms. Внешний health и menu не
 подтверждены, URL не сохранён; собственные backend/connector закрыты. Firewall/TLS
@@ -209,4 +211,4 @@ Copy audit `.local/task-010/data-proof/evidence.json` сравнил содер�
 несекретные provider/prompt-style настройки `.env`; ключи и посторонние строки
 сохранены, gemma4:31b уже присутствовала. Это отдельное изменение конфигурации,
 поэтому полный `.env` за всю задачу не объявляется неизменным. Правила backup/update прежние:
-[development setup](development-setup.md), [известные решения](known-errors.md).
+[development setup](../development-setup.md), [известные решения](../known-errors.md).

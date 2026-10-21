@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # TASK-013 — Game Orchestrator (architecture B) — report
 
 Статус: эксперимент завершён, решение **ITERATE** (ни авто GO: единственная
@@ -7,7 +9,7 @@
 ## Методы
 
 Эксперимент изолирован: `src/orchestrator/` — пять новых модулей (spec, selector,
-primitives, html-builder, engine), production generator ([src/live.ts](../src/live.ts))
+primitives, html-builder, engine), production generator ([src/live.ts](../../src/live.ts))
 не изменён, UI/API/jobs не затронуты. A — текущий pipeline (LLM пишет полный HTML),
 B — orchestrator (выведенный без LLM spec → выбор примитивов → LLM пишет только
 новую игровую логику → сборка из проверенных примитивов → существующий checker).
@@ -119,5 +121,5 @@ Windows shared runners три прогона подряд упирались в 
 два падения на разных тяжёлых e2e-тестах и одно снятие шага performance при
 пройденных 218 браузерных тестах; за сутки до задачи main падал так же дважды
 (разные тесты). Бюджет поднят до 30 минут (repository-checks.yml); исправление
-занесено в [known-errors](known-errors.md). Локальная верификация независимо
+занесено в [known-errors](../known-errors.md). Локальная верификация независимо
 зелёная: typecheck, 137 Node, browser suite (218), build, repo checks.

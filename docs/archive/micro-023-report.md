@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-023 — Full HTML core
 
 16 октября 2026. Baseline main/origin/main:
@@ -27,7 +29,7 @@ timeout не установлен; сетевые гипотезы не выда
 
 ## Реализация
 
-- [generation.ts](../src/generation.ts): компактный GAME_GENERATION_CONTRACT,
+- [generation.ts](../../src/generation.ts): компактный GAME_GENERATION_CONTRACT,
   один полный offline HTML с inline CSS/JS, механиками идеи, desktop/touch,
   понятной целью, уместными win/loss, restart и оформлением. Модель выбирает
   Canvas/DOM; нет жанровых шаблонов, line cap или обязательных telemetry IDs.
@@ -44,7 +46,7 @@ timeout не установлен; сетевые гипотезы не выда
 - UI: два одинаковых выбора в создании/редакторе; DEMO убран из основной формы.
   Fixtures/API совместимость сохранены. Model IDs и attempt details остаются
   в diagnostics; технический PASS отделён от gameplay NOT_VERIFIED.
-- [full-html-check.ts](../src/full-html-check.ts): bounded technical probe без
+- [full-html-check.ts](../../src/full-html-check.ts): bounded technical probe без
   fixed IDs. Старый instrumented checker сохранён. Sandbox/CSP, runtime/Promise
   errors, startup, доступные restart controls, deterministic fixes, original
   checkpoint и durable one-repair cap сохранены. Новые реальные repairs запрещены.
@@ -107,7 +109,7 @@ Hosted Windows/Ubuntu/FULL не заявляются. Production baseline и п�
 успешны, desktop сбор20/20/win/loss/restart подтверждены, но mobile touch FAILED
 в Chromium emulation из-за `'ontouchstart' in window` feature detection.
 **LIVE PARTIAL; editing NOT_RUN** по owner stop condition. Исходник не исправлялся
-вручную; все private evidence в `.local/micro023l/`, факты — [handoff](SESSION_HANDOFF.md).
+вручную; все private evidence в `.local/micro023l/`, факты — [handoff](session-handoff.md).
 Процедура ниже описывает подготовку приёмки; её не следует автоматически повторять
 или расходовать неиспользованный второй POST без нового разрешения.
 

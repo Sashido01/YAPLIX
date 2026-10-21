@@ -1,3 +1,5 @@
+> Исторический документ. Статусы и результаты относятся к указанным в нём дате и SHA. Актуальное состояние: [обзор документации](../README.md).
+
 # MICRO-036.2 — docs audit и физическая приёмка
 
 18 октября 2026 (Europe/Moscow). База main:
@@ -42,11 +44,11 @@
 
 ## Блокер контракта Full HTML
 
-FACT: [checkFullHtml](../src/full-html-check.ts) проверяет 320×700, 390×700,
+FACT: [checkFullHtml](../../src/full-html-check.ts) проверяет 320×700, 390×700,
 844×390 и возвращает `profiles:[320,390,844]`. Legacy scope возвращает два.
-[parseArtifact](../src/contracts.ts) принимает только точный `[320,390]`.
-[GenerationEngine](../src/live.ts) вызывает parseArtifact для нового accepted
-result и revalidated checkpoint; [Store](../src/store.ts) повторяет parseArtifact
+[parseArtifact](../../src/contracts.ts) принимает только точный `[320,390]`.
+[GenerationEngine](../../src/live.ts) вызывает parseArtifact для нового accepted
+result и revalidated checkpoint; [Store](../../src/store.ts) повторяет parseArtifact
 перед insert. Следовательно, successful Full HTML evidence на этой границе
 отклоняется ещё до принятой версии. Это отдельный blocker свежего Full HTML
 create/edit/Continue, не доказательство сетевой недоступности облака.
