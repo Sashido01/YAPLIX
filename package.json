@@ -29,7 +29,8 @@
     "test:browser": "npm run build && node scripts/browser-tests.mjs test",
     "browsers:install": "node scripts/browser-tests.mjs install chromium webkit firefox",
     "performance:smoke": "npm run build && node scripts/browser-tests.mjs performance",
-    "check": "npm run typecheck && npm test && npm run test:browser"
+    "check": "npm run typecheck && npm test && npm run test:browser",
+    "doctor:providers": "node --env-file-if-exists=.env scripts/provider-configuration.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",

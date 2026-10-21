@@ -141,10 +141,14 @@ export class Store {
   saveAndCompleteJob(jobId:string,ownerId:string,spec:GameSpec,artifact:Artifact,previousId?:string,workerInstance?:string):GameVersion {
     return this.transaction(()=>{
       if(workerInstance&&!this.db.prepare('SELECT 1 FROM generation_worker WHERE slot=1 AND instance=? AND expires_at>?').get(workerInstance,Date.now()))throw new Fault('JOB_WORKER_BUSY',409);
-      const row=this.db.prepare('SELECT status,version_id FROM generation_jobs WHERE job_id=? AND owner_id=?').get(uuid(jobId),ownerId);
+      const row=this.db.prepare('SELECT status,version_id,metadata FROM generation_jobs WHERE job_id=? AND owner_id=?').get(uuid(jobId),ownerId);
       if(!row||!['generating','validating','repairing'].includes(String(row.status)))throw new Fault('JOB_STATE',409);
+      const deadline=JSON.parse(String(row.metadata)).deadlineAt;
+      const withinDeadline=()=>{if(typeof deadline==='number'&&Date.now()>=deadline)throw new Fault('JOB_DURATION_LIMIT',409);};
+      withinDeadline();
       const version=this.insertVersion(spec,artifact,previousId);
       this.db.prepare("UPDATE generation_jobs SET status='completed',version_id=?,updated_at=? WHERE job_id=? AND owner_id=?").run(version.versionId,new Date().toISOString(),jobId,ownerId);
+      withinDeadline(); // Roll back the version and completion together if SQLite used the remaining budget.
       return version;
     });
   }

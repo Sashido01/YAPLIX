@@ -61,3 +61,18 @@ secret key для изменений. Перед отправкой ключа l
 После потери supervisor lease закрывает public access; local mode отвергает
 forwarded traffic. Journal фильтрует secrets до записи и ограничивает объём.
 Невозможность подтвердить внешний health блокирует menu button.
+
+## MICRO-029 Stage A1: личный ChatGPT
+
+Исключение владельца к MICRO-019 добавляет ручной `chatgpt` только local/loopback:
+`https://api.openai.com/v1/responses`, `gpt-6.1-sol`, reasoning medium,
+store false, stream true. Серверная SIWC-сессия хранит токены только в памяти;
+LAN/HTTPS/Telegram запрещены. Connect/disconnect требуют точного Origin и
+отдельного заголовка действия владельца. Worker проверяет доступ перед POST.
+Один durable job допускает максимум один inference POST, включая ошибку или
+crash; retry, fallback, LLM repair и повторный POST через Continue запрещены.
+Полный подтверждённый checkpoint разрешено повторно проверить локально.
+Серверный OAuth lock живёт в памяти; locks standalone CLI не изменяются.
+A1 проверяется offline; реальные OAuth, model GET и inference требуют отдельного
+разрешения. Техническая доступность не доказывает право коммерческого или
+многопользовательского использования. [Подробности](docs/chatgpt-setup.md).
