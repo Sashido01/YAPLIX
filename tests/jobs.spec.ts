@@ -1,3 +1,4 @@
+import {strictCanvas} from './strict-canvas-fixtures.ts';
 import {test,expect} from '@playwright/test';
 import {createAndOpen} from './ui-jobs-helper.ts';
 import {spec,html} from './helpers.ts';
@@ -10,7 +11,7 @@ import {GenerationJobs} from '../src/jobs.ts';
 test('MICRO-023 create, edit with Ollama, old version, reopen and export (mocked inference)',async({page,context,baseURL},info)=>{
  test.setTimeout(30000);
  const store=new Store(':memory:');const messages:any[]=[];
- const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async m=>{messages.push(structuredClone(m));return{code:messages.length===1?html:html.replace('Synthetic test game','Edited game'),model:'gemma4:31b'};}}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html'})});
+ const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async m=>{messages.push(structuredClone(m));return{code:messages.length===1?html:html.replace('Synthetic test game','Edited game'),model:'gemma4:31b'};}}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}})});
  const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
  try{
@@ -44,7 +45,7 @@ test('controlled LIVE worker runs while touch round continues; completed checked
   test.setTimeout(35000);
   test.skip(!['chromium-320','webkit-390'].includes(info.project.name),'Controlled LIVE worker on small Chromium/WebKit; other profiles run key-free background scenario.');
   const store=new Store(':memory:');let release!:()=>void;const held=new Promise<void>(done=>release=done);
-  const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'fixture-model',readiness:async()=>'ready',complete:async()=>{await held;return{code:html,model:'actual-fixture-model'};}}],{timeoutMs:15000});
+  const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'fixture-model',readiness:async()=>'ready',complete:async()=>{await held;return{code:strictCanvas(),model:'actual-fixture-model'};}}],{timeoutMs:15000});
   const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);const previous=store.save(spec,demoArtifact(spec));
   await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
   try{await page.goto('/?game='+previous.gameId);const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Старт',exact:true}).tap();await game.getByRole('button',{name:'Вправо',exact:true}).tap();const realm=await page.locator('iframe').elementHandle();await page.getByRole('button',{name:'Создать',exact:true}).click();const createdResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
@@ -85,7 +86,7 @@ import {BrowserFailure} from '../src/browser-check.ts';
 test('ChatGPT A1.5 elapsed minutes persist during wait and closing a tab leaves the durable job active',async({page,context,baseURL})=>{
  let posts=0,release!:(value:Response)=>void;
  const {session}=offlineChatGpt(async()=>{posts++;return new Promise<Response>(resolve=>{release=resolve;});});await connected(session);
- const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html'})}),jobs=new GenerationJobs(store,engine);
+ const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}})}),jobs=new GenerationJobs(store,engine);
  const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
  let reopened:typeof page|undefined;
@@ -104,7 +105,7 @@ test('ChatGPT A1.5 elapsed minutes persist during wait and closing a tab leaves 
 test('ChatGPT A1 UI -> API -> durable job -> mock SSE -> real browser validation -> SQLite -> reopen',async({page,context,baseURL})=>{
  test.setTimeout(60000);
  let posts=0;const bodies:any[]=[];
- const {session}=offlineChatGpt(async(_input,init)=>{posts++;bodies.push(JSON.parse(String(init?.body)));return sse([completed(posts===1?html:html.replaceAll('Synthetic test game','Edited game'))]);});
+ const {session}=offlineChatGpt(async(_input,init)=>{posts++;bodies.push(JSON.parse(String(init?.body)));return sse([completed(posts===1?strictCanvas():strictCanvas().replaceAll('#4c8290','#7c4290'))]);});
  const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{allowLlmRepair:true}),jobs=new GenerationJobs(store,engine);
  const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
@@ -124,7 +125,7 @@ test('ChatGPT A1 UI -> API -> durable job -> mock SSE -> real browser validation
 test('ChatGPT A1.2 Continue follows server eligibility and revalidates offline without another POST',async({page,context,baseURL})=>{
  let posts=0,accept=false;
  const {session}=offlineChatGpt(async()=>sse([completed(++posts===1?'<!DOCTYPE html><html><body>':html)]));await connected(session);
- const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:async()=>{if(!accept)throw new BrowserFailure('BROWSER_START_CONTROL','synthetic validation refusal');return{profiles:[320,390,844],offline:true,errors:0,scope:'full-html'};}}),jobs=new GenerationJobs(store,engine);
+ const store=new Store(':memory:'),engine=new GenerationEngine([new ChatGptTransport(session)],{check:async()=>{if(!accept)throw new BrowserFailure('BROWSER_START_CONTROL','synthetic validation refusal');return{profiles:[320,390,844],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}};}}),jobs=new GenerationJobs(store,engine);
  const app=createApp(store,engine,undefined,localPolicy,undefined,undefined,jobs,undefined,session);
  const settle=async(id:string)=>{await expect.poll(()=>jobs.get('owner',id).stage).toBe('needs_attention');};
  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
@@ -142,7 +143,7 @@ test('ChatGPT A1.2 Continue follows server eligibility and revalidates offline w
 
 
 test('A1.7 provider statuses, shared budgets and selection survive create/edit/reload without external requests',async({page,context,baseURL})=>{
- const store=new Store(':memory:');const engine=new GenerationEngine([{route:'primary',provider:'openrouter',model:'openrouter/free',readiness:async()=>'ready',complete:async()=>({code:html,model:'synthetic-free'})}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html'})});
+ const store=new Store(':memory:');const engine=new GenerationEngine([{route:'primary',provider:'openrouter',model:'openrouter/free',readiness:async()=>'ready',complete:async()=>({code:html,model:'synthetic-free'})}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}})});
  const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
  await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
  try{

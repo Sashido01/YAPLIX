@@ -208,6 +208,7 @@ export class OrchestratorEngine implements Generator {
             const feedback = error instanceof BrowserFailure ? error.feedback : error instanceof CloudOutputFailure ? 'The output token budget was exhausted. Return concise complete game logic with no commentary.' : '';
             attempts.push({ route: route.route, provider: route.provider, requestedModel: route.model, model: actual ?? null, outcome: actual ? 'rejected' : 'failed', errorCode: lastCode, elapsedMs: Math.round(performance.now() - begin), requestMs: requestMs || Math.round(performance.now() - begin), validationMs, ...tokens });
             context?.attempt(attempts.at(-1)!);
+            if(lastCode==='INVALID_GENERATION_METADATA'||/^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(lastCode))throw new OrchestratorFailure(lastCode,attempts);
             if (context && ['RATE_LIMIT', 'JOB_ATTEMPT_LIMIT'].includes(lastCode)) throw new OrchestratorFailure(lastCode, attempts, 429);
             if (context && STOP_COOLDOWN.includes(lastCode)) { context.cooldownRoute?.(route, Date.now() + 900000, lastCode); context.blockRoute?.(route, lastCode); break; }
             if (context && lastCode === 'LLM_RATE_LIMIT') {

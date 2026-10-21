@@ -1,3 +1,4 @@
+import {strictCanvas} from './strict-canvas-fixtures.ts';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {createAndOpen} from './ui-jobs-helper.ts';
@@ -62,7 +63,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
     calls++;if(scenario==='timeout')return;
     if(scenario==='http-error'){res.statusCode=500;res.end('{}');return;}
     const unsafe= scenario==='unsafe'||scenario==='repair'&&calls===1;
-    const content=unsafe?html.replace('</html>','<script>alert("win")</script></html>'):html;res.end('data: '+JSON.stringify({model,choices:[{delta:{content},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n');
+    const content=unsafe?strictCanvas().replace('</html>','<script>alert("win")</script></html>'):strictCanvas();res.end('data: '+JSON.stringify({model,choices:[{delta:{content},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n');
   });
   await new Promise<void>(done=>mock.listen(0,'127.0.0.1',done));const port=(mock.address() as {port:number}).port;
   if(scenario==='unavailable')await new Promise<void>(done=>mock.close(()=>done()));
@@ -73,7 +74,7 @@ for(const scenario of ['success','repair','unsafe','http-error','timeout','unava
       // The real server-side checker is included in the synthetic job
       // budget above. Keep the browser assertion bounded separately.
       await expect(page.locator('#message')).toContainText('Игра сохранена',{timeout:16000});await expect(page.locator('#provenance')).toContainText('Ollama Cloud');
-      const game=page.frameLocator('#game iframe');await game.getByRole('button',{name:'Start',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).click();await expect(game.locator('#score')).toHaveText('1');
+      const game=page.frameLocator('#game iframe');const canvas=game.locator('canvas');await canvas.click();const before=await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL());await canvas.click();expect(await canvas.evaluate(c=>(c as HTMLCanvasElement).toDataURL())).not.toBe(before);
       expect(calls).toBe(scenario==='repair'?2:1);
     } else {
       await expect(page.locator('#jobs-list')).toContainText({unsafe:'проверку безопасности', 'http-error':'LLM вернула ошибку',timeout:'не ответила вовремя',unavailable:'Не удалось подключиться к модели'}[scenario]);

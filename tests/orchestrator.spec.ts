@@ -195,15 +195,14 @@ YAPtouchPad([{action:'left',label:'<'},{action:'right',label:'>'},{action:'up',l
 YAPscan();
 hud();`;
 
-test('real checker accepts orchestrator-assembly falling-blocks artifact at 320/390 offline',async()=>{
+test('strict checker rejects historical orchestrator DOM interface',async()=>{
  test.setTimeout(60000);
  const os=orchestratorSpec('Тетрис: стрелки влево-вправо, пробел — сброс, поворот. Линии исчезают со счётом.');
  const selection=selectMechanics(os);
  expect(selection.decision).toBe('use-library');
  const chosen=(selection.decision==='use-library')?selection.chosen:[];
  const html=buildHtml({title:'Falling blocks',rules:'Move with arrows or buttons, rotate with R, drop with space. Clear 2 lines to win.',derivation:JSON.stringify({space:os.spaceType,win:'2 lines'}),chosen,code:TETRIS_LOGIC,rulesBanner:'Goal: clear 2 lines | Lose: blocks reach the top | Win: 2 lines cleared'});
- const evidence=await browserCheck(html,AbortSignal.timeout(30000));
- expect(evidence).toMatchObject({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED']});
+ await expect(browserCheck(html,AbortSignal.timeout(30000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
 
 // --- TASK-016 controlled gameplay probes (two control genres) ------------------

@@ -11,7 +11,7 @@ import { CloudOutputFailure } from '../src/transport.ts';
 import type { CodeTransport, GenerationContext } from '../src/transport.ts';
 import { html, spec } from './helpers.ts';
 
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
+const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
 const route=(complete:CodeTransport['complete']):CodeTransport=>({route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete});
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<300;i++){const job=jobs.get('owner',id);if(['completed','needs_attention','cancelled'].includes(job.stage))return job;await new Promise(r=>setTimeout(r,10));}throw Error('TEST_JOB_TIMEOUT');}
 

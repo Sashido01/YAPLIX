@@ -205,7 +205,10 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
       }catch(error){if(errors.length)throw new BrowserFailure(errors[0],exception?'JavaScript error in generated code: '+exception:'A forbidden browser operation or console error occurred.');if(!(error instanceof Fault))throw new BrowserFailure(phaseBudgetExceeded||(error as Error).name==='TimeoutError'?'BROWSER_TIMEOUT_'+phase.toUpperCase():'BROWSER_CHECK_INCONCLUSIVE','NOT_VERIFIED: '+phase+' could not be completed.');throw error;}
       finally{await context.close().catch(()=>{});}
     }
-    return {profiles:[...BROWSER_PROFILES['startup-input-pause']],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],checks,elapsedMs:Math.round(performance.now()-began)};
+    // Lifecycle markers must never bypass the rendering contract for a new
+    // candidate. Historical preview/export do not invoke this generation gate.
+    const rendering=(await checkFullHtml(browser,html,deadline)).rendering;
+    return {profiles:[...BROWSER_PROFILES['startup-input-pause']],offline:true,errors:0,scope:'startup-input-pause',rendering,levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],checks,elapsedMs:Math.round(performance.now()-began)};
   }catch(error){if(deadline.aborted)throw new Fault(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT_'+phase.toUpperCase(),signal.aborted?499:504);if(error instanceof Fault)throw error;throw new Fault('BROWSER_STARTUP_FAILED',502);}
   finally{deadline.removeEventListener('abort',abort);await browser.close();}
 }

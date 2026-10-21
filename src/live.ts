@@ -76,7 +76,7 @@ export class GenerationEngine implements Generator {
           context?.preserveOriginal?.(raw);
           const code=error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';
           context?.trace?.(/JAVASCRIPT_EXCEPTION|CONSOLE_ERROR/.test(code)?'browser.runtime_error':code.startsWith('BROWSER_')?'browser.validation_completed':'html.validated',{errorCode:code,durationMs:Math.round(performance.now()-(browserBegan??formatBegan)),validationPhase:(error as {validationPhase?:string})?.validationPhase,profileWidth:(error as {profileWidth?:number})?.profileWidth,next:'needs_attention'});
-          context?.validation?.({level:/TIMEOUT|CANCELLED|SANDBOX|INSTALL_REQUIRED|STARTUP_FAILED|INCONCLUSIVE/.test(code)?'NOT_VERIFIED':'FAILED',code,phase:'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
+          context?.validation?.({level:/TIMEOUT|CANCELLED|SANDBOX|INSTALL_REQUIRED|STARTUP_FAILED|INCONCLUSIVE|^BROWSER_CANVAS_(?:RENDER|ACTIVITY|DOM)_UNVERIFIED$/.test(code)?'NOT_VERIFIED':'FAILED',code,phase:'validation',feedback:error instanceof BrowserFailure?error.feedback:code});
           throw error;
         }
       };
@@ -87,7 +87,7 @@ export class GenerationEngine implements Generator {
             context.stage('validating');
             try{const checked=await checkDocument(partial),evidence=checked.evidence;complete=checked.code;if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);const attempt:GenerationAttempt={route:route.route,provider:origin.provider,requestedModel:origin.requestedModel,model:origin.model,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-started),requestMs:0,validationMs:Math.round(performance.now()-started)};context.attempt(attempt);
               return parseArtifact({html:complete,method:'llm_code',provider:origin.provider,model:origin.model,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[attempt],fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
-            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='chatgpt'||route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE|^INVALID_GENERATION_METADATA$/.test(error.code)))throw error;
+            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='chatgpt'||route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE|^INVALID_GENERATION_METADATA$|^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(error.code)))throw error;
               context?.trace?.('repair.started');context?.claimRepair?.();repairUsed=true;recoveryRoute=route;}
           }else{
             context.preserveOriginal?.(partial);
@@ -146,7 +146,7 @@ export class GenerationEngine implements Generator {
               const until=Date.now()+5000;this.cooldowns.set(key,{until,code:lastCode});context.cooldownRoute?.(route,until,lastCode);context.retryAt?.(until);break;
             }
             // A local contract failure cannot be repaired by another provider.
-            if(lastCode==='INVALID_GENERATION_METADATA')throw new GenerationFailure(lastCode,attempts);
+            if(lastCode==='INVALID_GENERATION_METADATA'||/^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(lastCode))throw new GenerationFailure(lastCode,attempts);
             if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
             const repairable=error instanceof BrowserFailure||/^(?:BROWSER_|JAVASCRIPT_EXCEPTION|LLM_INVALID_HTML|LLM_UNSAFE_ARTIFACT|LLM_OUTPUT_TRUNCATED)/.test(lastCode);
             if(!actual||!repairable)break;

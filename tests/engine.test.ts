@@ -9,7 +9,7 @@ import {Store} from '../src/store.ts';
 import {createApp} from '../src/api.ts';
 import {Fault} from '../src/contracts.ts';
 import {html,spec} from './helpers.ts';
-const evidence=async()=>({profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
+const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390],offline:true as const,errors:0 as const,scope:'startup-input-pause' as const});
 function route(complete:CodeTransport['complete'],name:'primary'|'secondary'|'local'='primary'):CodeTransport{return{route:name,provider:'synthetic',model:name==='secondary'?'backup-requested':'requested-model',complete,readiness:async()=>'ready'};}
 
 test('independent specification preserves arbitrary mechanics, audience and previous code without classification',()=>{

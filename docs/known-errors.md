@@ -14,6 +14,16 @@ initData или необработанные журналы. [Запуск и о
 | A1.8.4: длинная генерация отклонена с `INVALID_GENERATION_METADATA` | На PR #49 `07e42a5` parser принимал timings только до 5 минут при job budget 35 минут. RED на 29/30/35 min для всех timing fields; metadata cap теперь 35 min, включая saved metadata. Целые конечные неотрицательные значения и исторические profiles сохранены. Inference POST deadlines и durable budgets не увеличены; проверки synthetic, без реального ожидания upstream. |
 | MICRO-029 A1.7: `npm run check` в ограниченном Windows executor получает 20 s timeout вложенного Chromium | Три последовательных MICRO-030 landscape case не завершились вовремя; тот же `direct` case в host-контексте прошёл за 1.9 s без изменения кода checker. Это сравнение окружений, не доказательство конкретного механизма блокировки. Запускайте offline browser checks через разрешённое per-command исключение; не ослабляйте sandbox/CSP или validation budgets. Пользовательский сервер и LIVE-базы для этого не нужны. |
 | MICRO-029 A1.7: провайдер не настроен / длинная генерация прервана | Synthetic env-file probe подтвердил: inherited empty key перекрывает `.env`; пустой/whitespace ключ не создаёт route. `npm run doctor:providers` показывает только presence/configuration и бюджеты, без сети и SQLite. Причина прежнего LIVE отказа Ollama/OpenRouter NOT_VERIFIED. Общие defaults: response 30 min / durable job 35 min для всех трёх провайдеров; меньшие явные настройки видны в UI. Restart/Continue не продлевают deadline, ChatGPT сохраняет one-POST guard. Headers/body/SSE/AbortSignal конечны; SQLite completion откатывается при выходе за deadline. [Настройки и безопасный запуск](chatgpt-setup.md#длительная-генерация--stage-a17). |
+| A1.8.5: отсутствие свежего render/activity evidence ошибочно отмечалось FAILED | `BROWSER_CANVAS_RENDER_UNVERIFIED` и `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` теперь сохраняются как NOT_VERIFIED, при том же отказе Save/Ready и запрете repair/fallback. Два level regressions RED→GREEN; Canvas required и DOM world остаются FAILED. Положительная анимируемая WebGL/WebGL2 mini-game отдельно проверяет score/win/Restart и native false buffer. Это authored offline proof, не качество реальной LLM-игры. |
+| A1.8.5: terminal clear отклонён или остановленный WebGL принят по старому draw | Game Over overlay теперь требует changing exposed Canvas history до перехода; до/после Restart evidence разделено, пустой активный или post-Restart Canvas отклоняется. WebGL readback выполняется microtask после синхронного draw/clear; native rAF heartbeat истекает evidence non-preserved buffer за текущий/предыдущий кадр. RED: cleared terminal overlay и stale WebGL/WebGL2; свежий rendering/terminal semantics разделены. 18 s deadline, CSP/opaque sandbox и no-repair не ослаблены. [Сценарии и NOT_VERIFIED](canvas-rendering-contract.md). |
+| A1.8.4: MICRO-022 repeat/format-repair positive fixtures отклонены после Restart | Полный integration run обнаружил: synthetic fixture рисовал только полосу score и при корректном Restart (`score=0`) оставлял пустой Canvas. Финальный rendering gate корректно отказывал. Authored restart fixture теперь рисует поле и цель независимо от score; no-op/crashing Restart по-прежнему обязаны отклоняться. Production gate и его пороги не ослаблены. |
+| A1.8.4: поздний clear/backing reset получает ложный Canvas PASS | На PR #51 `a43a005` RED воспроизводит приём пустого конечного кадра после накопленного rendering evidence для 2D/WebGL/WebGL2. Gate теперь проверяет последний Canvas, activity history только того же ID/context, кадр после Restart и offline keyboard. Краткий clear → redraw допускает до 100 ms повторного наблюдения внутри прежнего browser deadline. Старые draw counters не заменяют meaningful image. Sandbox/CSP/offline и gameplay NOT_VERIFIED сохранены. |
+| A1.8.2: ответ после 5 минут отклоняется как `INVALID_GENERATION_METADATA` при defaults 30/35 min | Публичный parser и GenerationEngine с synthetic `performance.now()` воспроизвели отказ для 29-minute response: прежний metadata cap был 300000 ms. Cap сохранения timings согласован с максимальными 35 min job; отрицательные, дробные, нечисловые и превышающие предел значения по-прежнему отклоняются. Dispatch deadlines, provider routes и one-POST guard не расширялись. |
+| A1.8.2: WebGL draw → clear/reset ошибочно получает rendering PASS | Offline regression через `checkFullHtml` воспроизвёл PASS для кадра, немедленно стёртого `gl.clear()` или присваиванием `canvas.width`. Observer теперь переснимает явные WebGL clear и сбрасывает evidence при установке backing dimensions; оба negative fixtures отклоняются, положительный WebGL сохраняется. Это проверка рендеринга, не игровых правил. |
+| A1.8: русский Start не распознаётся в локальном validation document без собственного charset | При `Content-Type: text/html` Unicode-текст декодировался неверно; общий probe открывал overlay, но не успевал проверить игру. Локальный fulfill теперь явно задаёт `text/html; charset=utf-8`. MICRO-027 fixture дополнен реальным Canvas draw/touch, сохранив исходный русский Start и opaque overlay; все 12 профилей проходят. Пустой Canvas по-прежнему отклоняется отдельным negative fixture. |
+| A1.8: falling-blocks проходит lifecycle, но получает `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` | Наблюдённый probe сначала нажимал Pause и затем проверял движение в паузе. Общий Full HTML probe теперь пропускает служебные Pause/Resume/Restart в игровых действиях и снимает Canvas после каждого реального игрового нажатия, прежде чем противоположное направление отменит изменение. Исходный Orchestrator fixture проходит без изменения правил, Canvas gate и его порогов. |
+| A1.8: нарисованный Canvas имеет нулевые наблюдённые draw-вызовы | В Chromium для `srcdoc` наблюдалась гонка: game inline script получил контекст до init instrumentation. Gate теперь загружает HTML через точный локально fulfilled document URL, до parsing устанавливая observer. Внешнего GET нет; opaque `allow-scripts` и CSP сохранены. Реальные Canvas 2D/WebGL fixtures и production job проверяются offline. Не отключайте gate и не добавляйте instrumentation в сохраняемый HTML. |
+| `BROWSER_CANVAS_REQUIRED`, `BROWSER_CANVAS_LAYOUT`, `BROWSER_CANVAS_RENDER_UNVERIFIED`, `BROWSER_CANVAS_ACTIVITY_UNVERIFIED`, `BROWSER_DOM_GAME_WORLD` | Новая версия не получила достаточного Canvas/WebGL evidence или обнаружен DOM/SVG world. Draft и причина остаются в job, новая версия не сохраняется; автоматического repair/fallback нет. Continue перепроверяет полный checkpoint локально. Исправление требует нового явного запроса владельца. Старые HTML продолжают открываться и экспортироваться. [Границы проверки](canvas-rendering-contract.md). |
 | MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
 | NL-004: обе змейки теряют управление при 844×390 | Сохранённые DEV HTML рассчитывают поле без достаточного учёта высоты, body overflow:hidden блокирует прокрутку. Общее требование landscape не обеспечило адаптацию. MICRO-030 отклоняет подтверждённо недоступные controls; MICRO-031 уточняет общий prompt: три размера, все основные состояния, CSS shrink/reflow либо настоящая прокрутка без глобальной блокировки жестов. Offline tests проверяют подготовку сообщений; улучшение новых игр NOT_VERIFIED до отдельного разрешённого A/B. Исходные HTML не исправляются. [Контракт и границы](nl-game-intent.md#micro-031-доступность-управления). |
 | MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](micro-028n-phone-connectivity.md). |
@@ -338,3 +348,112 @@ initData или необработанные журналы. [Запуск и о
   и JOB_RETRY_AFTER. Регрессии отдельно проверяют Ollama и OpenRouter.
 - Все новые reproductions используют synthetic OAuth/Responses и тестовые SQLite;
   реальные OAuth, models GET и inference не выполняются.
+## A1.8.6: Canvas с видимым DOM UI и неполное rendering evidence
+
+- RED на `7660afb`: production checkFullHtml принимал авторскую Canvas-игру
+  с HTML Start/Move/HUD как canvas-webgl-v1. Новый negative-тест требовал отказа,
+  но promise resolved. GREEN: тот же HTML получает BROWSER_DOM_GAME_UI.
+- Новый контракт запрещает DOM HUD/controls/Game Over. Проверка реального DOM
+  включает текст, computed styles/pseudo-elements, SVG и open/closed Shadow DOM;
+  ARIA роли не служат allowlist. Превышение bounded DOM анализа даёт
+  BROWSER_CANVAS_DOM_UNVERIFIED (NOT_VERIFIED), не FAILED.
+- Отдельный RED показал, что parseArtifact принимал новую checked LLM-версию
+  без rendering evidence. Теперь Save требует canvas-webgl-strict-v2;
+  saved-metadata сохраняет возможность читать прежний v1/отсутствующее поле.
+- Финальный кадр после нескольких taps мог скрыть пустой кадр после Restart,
+  если следующая проба снова рисовала. Каждый input теперь проверяется до
+  следующего; clear→redraw ограничен прежними двумя 50 ms наблюдениями.
+- Tests с прежним DOM UI не удалены: новая генерация ожидает отказ, а исторические
+  версии остаются доступными через history/reopen/export. Rendering regressions
+  дополнительно исполняются на Canvas-only authored fixtures.
+- Offline/synthetic проверки не доказывают реальные provider calls, универсальные
+  правила gameplay и физические Android/iOS/WebView. Детали и границы:
+  [Strict Canvas contract](canvas-rendering-contract.md).
+
+- Независимый аудит A1.8.6 дал пять дополнительных RED: display:contents text,
+  текст за нулевым host, absolute pseudo UI, native audio controls и opaque Canvas
+  с pointer-events:none над меняющимся миром. Range paint проверяется независимо
+  от host rect (с overflow clipping); native audio controls запрещены. Canvas
+  exposure учитывает painted sibling layers независимо от pointer-events;
+  сложные неоднозначные ancestor stacking layouts остаются NOT_VERIFIED.
+- Старые Canvas negatives с DOM controls отдельно проверяют historical refusal;
+  новые Canvas-only reductions проверяют hidden/zero/no-draw/inert/landscape
+  своими конкретными кодами, чтобы DOM gate не маскировал rendering regression.
+
+- Follow-up audit: fixed/absolute controls могут выходить из обычного overflow
+  ancestor, а offscreen pseudo не является видимым UI. Три новых RED→GREEN
+  проверяют CSS containing blocks и computed pseudo geometry. Неизвестная
+  геометрия pseudo даёт NOT_VERIFIED вместо ложного доказательства FAILED.
+- Browser test artifacts из параллельных focused runs должны иметь разные
+  `--output` каталоги; общий каталог дал trace ENOENT при удалении артефактов
+  другим запуском. Desktop pointer probes используют click, touch — отдельный
+  hasTouch context; tap на обычном desktop page отвергается самим Playwright.
+
+- Full suite A1.8.6 воспроизвёл приём DOM controls внутри вложенного auto-scroll
+  контейнера: до прокрутки их Range корректно clipped, но пользователь мог
+  открыть HTML UI обычной прокруткой. Bounded scroll-ui probe теперь выполняет
+  реальные wheel inputs максимум в трёх видимых scroll контейнерах и проверяет
+  обнаруженный DOM после каждого. scrollTop/DOM не подменяются. RED полного
+  теста nested → GREEN; положительные Canvas и невидимые technical fixtures
+  сохранены. Это DOM inspection, не доказательство phone control reachability.
+
+- Итоговая paint матрица добавила четыре RED→GREEN: in-flow pseudo и shadow на
+  нулевом host, outline и SVG child за нулевым SVG viewport. Видимое outline/SVG
+  отвергается; неподтверждаемая геометрия generated paint/shadow даёт
+  BROWSER_CANVAS_DOM_UNVERIFIED. Полностью transparent pseudo text допускается.
+  Пять positive + четыре negative cases прошли 9/9.
+- Нулевой backing store прежде доходил до NaN координат и общего INCONCLUSIVE.
+  Теперь layout проверяется до probes: BROWSER_CANVAS_LAYOUT, без repair/fallback.
+  Отдельный RED→GREEN фиксирует именно Canvas classification.
+
+- CSS-visible head/title мог обходить body-only обход. Отдельный RED принимал
+  такой HUD. Observer теперь обходит весь document (с прежним bounded cap),
+  обычные head/meta/title/script/style остаются разрешены невидимыми. Новый
+  negative и два Canvas/technical positives прошли 3/3 GREEN.
+
+- Closed roots, созданные declarative/native HTML parser, обходят attachShadow.
+  Три RED принимали DOM HUD через shadowrootmode, setHTMLUnsafe и document.write.
+  Такие неподтверждаемые parsing paths теперь дают BROWSER_CANVAS_DOM_UNVERIFIED:
+  initial source проверяется inert DOMParser, native parsing calls отмечаются
+  без изменения их семантики. Programmatic attachShadow roots по-прежнему
+  анализируются по фактическому DOM. Canvas/WebGL и invisible technical positives
+  сохранены; ни одна unsupported ветка не получает строгий PASS по умолчанию.
+
+## A1.8.7: confirmed strict-v2 DOM paint false acceptance
+
+- On strict head `77cc4e6` and isolated integration `dc3bee9`, authored offline
+  Chromium fixtures with a visible CSS list marker (`list-style-type:'Score 100'`)
+  or zero-size positioned `::before` text (`overflow:visible`) were accepted as
+  `canvas-webgl-strict-v2` for profiles 320/390/844. Pixel comparisons independently
+  confirmed visible DOM text (538 and 332 changed pixels respectively).
+- `hasDom()` does not inspect list markers; positioned pseudo geometry considers
+  only its zero-size content box. The two A1.8.7 regression cases expect refusal
+  and expose these defects without changing production gates or budgets.
+- No verified remedy is implemented in this audit. Keep publication NO-GO until
+  a focused correction and fresh regression/full integration checks pass. Do not
+  remove the refusal assertions or count this false acceptance as Canvas-only proof.
+
+## A1.8.8: CSS marker and zero-box pseudo paint
+
+- On `da7b40a`, both production-checker regressions resolved with strict-v2
+  evidence instead of refusing. Offline screenshots at 320x700, 390x700 and
+  844x390 confirmed visible marker text and overflowing `Pause` text; Canvas
+  rendering itself passed. The original RED commit remains in history.
+- The bounded DOM scan now examines computed `::marker`, inherited
+  list-style-type/image and generated marker content. Invisible/empty markers
+  and hidden technical lists remain allowed. Native APIs do not expose a marker
+  paint rect: potentially visible markers remain `BROWSER_CANVAS_DOM_UNVERIFIED`,
+  even if the host appears clipped/offscreen, rather than earning strict PASS.
+- Positioned `::before`/`::after` with a zero content dimension no longer proves
+  absent text paint. Own overflow clipping can certify suppressed text; a real
+  ancestor clip can suppress the whole viewport paint region, respecting fixed/
+  absolute containing blocks. Otherwise ambiguous overflow stays NOT_VERIFIED.
+  Transparent/no-content and demonstrably clipped technical cases remain valid.
+- Review reproduced a padded zero-content pseudo that still painted inside its
+  overflow clip. Clipping proof now includes padding and overflow-clip-margin;
+  an empty zero-area background is allowed because it has no painting area.
+- Both refusals block Save/Ready without repair/fallback. Authored production
+  job tests retain checkpoint/draft and the last version across SQLite reopen;
+  Continue revalidates locally without another dispatch. These are offline
+  synthetic checks, not real-provider or physical-device evidence.
+- Evidence is synthetic/offline only; real LLM/OAuth/model requests remain zero.

@@ -12,7 +12,7 @@ import {chatGptRequest,CHATGPT_HTTP_OPTIONS} from '../src/chatgpt-http.ts';
 import {Agent,ProxyAgent} from 'undici';
 
 const minute=60000;
-const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
+const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const,rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]}});
 function context(mode:ProviderMode='chatgpt',durable=true){
  let calls=0;
  return {get calls(){return calls;},value:{...(durable?{durableJob:true as const}:{}),providerMode:mode,dispatch:()=>{calls++;},stage:()=>{},partial:()=>{},attempt:()=>{}} satisfies GenerationContext};

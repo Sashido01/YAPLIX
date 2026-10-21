@@ -33,7 +33,7 @@ import {once} from 'node:events';
 import {setImmediate} from 'node:timers/promises';
 import {writeFileSync} from 'node:fs';
 const request={spec,mode:'live' as const,providerMode:'chatgpt' as const,telegramConsent:false};
-const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
+const evidence=async()=>({profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const,rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]}});
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<300;i++){const job=jobs.get('owner',id);if(['completed','needs_attention','cancelled'].includes(job.stage))return job;await new Promise(r=>setTimeout(r,10));}throw Error('JOB_TIMEOUT');}
 function engineFor(session:ChatGptSession,check=evidence){return new GenerationEngine([new ChatGptTransport(session)],{allowLlmRepair:true,check,requestTimeoutMs:1000});}
 

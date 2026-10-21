@@ -6,7 +6,7 @@ import {generationTimeouts,LIVE_JOB_TIMEOUT_MS} from '../src/generation-timeouts
 
 function candidate(value:unknown,field:string){
  const attempt={route:'primary',provider:'offline',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0,requestMs:0,validationMs:0};
- const browser={scope:'full-html',profiles:[320,390,844],offline:true,errors:0,elapsedMs:0};
+ const browser={scope:'full-html',profiles:[320,390,844],offline:true,errors:0,elapsedMs:0,rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}};
  const generation={attempts:[attempt],fallback:false,elapsedMs:0,browser};
  if(field==='generation')generation.elapsedMs=value as number;
  else if(field==='browser')browser.elapsedMs=value as number;

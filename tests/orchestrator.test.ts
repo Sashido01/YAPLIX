@@ -73,8 +73,8 @@ test('orchestrator extraction: accepts fenced plain js, rejects empty, oversized
 function route(complete: CodeTransport['complete'], name: 'primary' | 'secondary' | 'local' = 'primary'): CodeTransport {
   return { route: name, provider: 'synthetic', model: 'requested-model', complete, readiness: async () => 'ready' };
 }
-function evidence(): Promise<{ profiles: number[]; offline: true; errors: 0; scope: 'startup-input-pause'; levels: string[] }> {
-  return Promise.resolve({ profiles: [320, 390], offline: true, errors: 0, scope: 'startup-input-pause', levels: ['HTML_VALID', 'JS_EXECUTABLE', 'UI_VISIBLE', 'MOBILE_VERIFIED'] });
+function evidence(): Promise<import('../src/contracts.ts').BrowserEvidence> {
+ return Promise.resolve({profiles:[320,390],offline:true,errors:0,scope:'startup-input-pause',levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}});
 }
 function specOf(prompt: string): GameSpec {
   return { prompt, audience: 'default', genre: 'custom/orchestrator', mechanics: [], controls: ['keyboard', 'touch'], responsive: true, webview: true };
