@@ -3,7 +3,7 @@ process.env.PLAYWRIGHT_BROWSERS_PATH ??= '.local/playwright';
 const testPort=Number(process.env.YAPLIX_PLAY_PORT??3210);
 if(!Number.isSafeInteger(testPort)||testPort<1024||testPort>65535)throw Error('INVALID_TEST_PORT');
 export default defineConfig({
-  testDir: './tests', testMatch: ['runtime.spec.ts', 'mvp.spec.ts', 'mobile.spec.ts', 'phone.spec.ts', 'production.spec.ts', 'generation.spec.ts', 'telegram.spec.ts','jobs.spec.ts','arcades.spec.ts','orchestrator.spec.ts','micro027.spec.ts','canvas-contract.spec.ts','strict-canvas.spec.ts','strict-offline.spec.ts','strict-providers.spec.ts'], outputDir: '.local/playwright-results',
+  testDir: './tests', testMatch: ['arena.spec.ts','runtime.spec.ts', 'mvp.spec.ts', 'mobile.spec.ts', 'phone.spec.ts', 'production.spec.ts', 'generation.spec.ts', 'telegram.spec.ts','jobs.spec.ts','arcades.spec.ts','orchestrator.spec.ts','micro027.spec.ts','canvas-contract.spec.ts','strict-canvas.spec.ts','strict-offline.spec.ts','strict-providers.spec.ts'], outputDir: '.local/playwright-results',
   fullyParallel: false, workers: 1, reporter: 'list', timeout: 20_000,
   use: { baseURL: 'http://127.0.0.1:'+testPort, trace: 'retain-on-failure' },
   webServer: { command: 'node tests/browser-server.ts', url: 'http://127.0.0.1:'+testPort+'/api/health', reuseExistingServer: false },

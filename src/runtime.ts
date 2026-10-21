@@ -34,7 +34,7 @@ export function mountGame(container: HTMLElement, html: string, session: Runtime
     if (event) { try { onEvent(event); } catch { /* UI callback cannot interrupt the game. */ } }
   };
   window.addEventListener('message', receive);
-  frame.addEventListener('load', () => frame.contentWindow?.postMessage({ channel: 'yaplix_init', protocolVersion: 1, ...session }, '*'));
+  frame.addEventListener('load', () => frame.contentWindow?.postMessage({ channel: 'yaplix_init', protocolVersion: 1, sessionId:session.sessionId, versionId:session.versionId }, '*'));
   container.append(frame);
   return () => { window.removeEventListener('message', receive); frame.remove(); };
 }

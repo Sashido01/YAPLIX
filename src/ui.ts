@@ -143,6 +143,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
   current=version;remember(version);
   el('phone').dataset.version = version.versionId;
+  el<HTMLButtonElement>('arena-game').disabled=false;
   const title=history.versions[0]?.spec.prompt??version.spec.prompt;
   el('game-title').textContent=title.length>100?title.slice(0,100)+'…':title;
   const bytes=new TextEncoder().encode(version.html).length;
@@ -203,6 +204,7 @@ el<HTMLFormElement>('create').addEventListener('submit',event=>{event.preventDef
 el<HTMLFormElement>('iterate').addEventListener('submit',event=>{event.preventDefault();if(current)void submitJob('improve',el<HTMLTextAreaElement>('change').value,current.versionId);});
 async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);el('phone').scrollIntoView({block:'start'});}finally{phoneOpening=false;}}
 el('phone-game').addEventListener('click',()=>{if(current)void attempt(()=>phoneFor(current!.versionId));});
+el('arena-game').addEventListener('click',()=>{if(current)location.assign('/arena?versionId='+current.versionId);});
 el('edit-game').addEventListener('click',()=>{el('iterate').scrollIntoView({block:'center'});el('change').focus();});
 el('replay').addEventListener('click',()=>{if(current)void attempt(signal=>play(current!,signal));});
 el('versions').addEventListener('change',()=>void attempt(async signal=>show(await readVersion(el<HTMLSelectElement>('versions').value,signal),signal)));

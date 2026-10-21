@@ -13,7 +13,7 @@ export async function appIdentity(port:number,key:string){
   const base='http://127.0.0.1:'+port,nonce=randomBytes(32).toString('hex');
   const read=async(path:string)=>{const response=await fetch(base+path,{redirect:'error',signal:AbortSignal.timeout(1500)});if(!response.ok)throw new Fault('BACKEND_NOT_READY');return JSON.parse(await boundedText(response,4096));};
   const identity=await read('/api/runtime/tunnel?nonce='+nonce);
-  if(identity.app!=='YAPLIX'||identity.protocol!==RUNTIME_PROTOCOL||identity.proof!==proof(key,nonce,identity.instance)||identity.mode!=='local'||identity.schemaVersion!==2)throw new Fault('BACKEND_NOT_READY');
+  if(identity.app!=='YAPLIX'||identity.protocol!==RUNTIME_PROTOCOL||identity.proof!==proof(key,nonce,identity.instance)||identity.mode!=='local'||identity.schemaVersion!==3)throw new Fault('BACKEND_NOT_READY');
   if(identity.buildId!==buildIdentity())throw new Fault('BACKEND_UPDATE_RESTART_REQUIRED');
   const health=await read('/healthz');if(health.ready!==true||health.instance!==identity.instance)throw new Fault('BACKEND_NOT_READY');return identity.instance as string;
 }

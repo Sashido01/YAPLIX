@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>YAPLIX Arena — общий рейтинг</title><link rel="stylesheet" href="/arena/style.css"><script type="module" src="/runtime/arena-host-ui.js"></script></head>
+<body><header><a href="/">← YAPLIX</a><strong>Arena</strong><span>Локальная комната</span></header><main>
+<h1>Общий рейтинг</h1><p id="title">Открываем сохранённую версию…</p><p id="version" class="muted"></p>
+<p id="status" role="status">Подготовка…</p>
+<section id="setup" hidden><label for="rooms">Комната</label><select id="rooms"><option value="">Новая комната</option></select><label for="network">Сеть участников</label><select id="network"></select><p class="muted">Телефоны должны быть в той же доверенной частной сети. Доступ — на 2 часа. Firewall и Hotspot настройте самостоятельно.</p><div class="actions"><button id="start">Запустить Arena</button><button id="stop" disabled>Отключить комнату</button><button id="refresh">Обновить статус</button></div></section>
+<section id="invite" hidden><h2>Один QR для всех</h2><img id="qr" width="260" height="260" alt="QR входа в комнату Arena"><label for="url">Локальная ссылка</label><input id="url" readonly><button id="copy">Скопировать ссылку</button></section>
+<section id="leaderboard"><div class="actions"><h2>Результаты</h2><button id="screen">Рейтинг на весь экран</button></div><p class="muted">Лучший завершённый результат. Больше — лучше. Клиентские игровые события; без серверного античита.</p><p id="board-status" role="status">Пока нет результатов.</p><table><thead><tr><th>Место</th><th>Ник</th><th>Лучший счёт</th></tr></thead><tbody id="scores"></tbody></table></section>
+</main></body></html>
