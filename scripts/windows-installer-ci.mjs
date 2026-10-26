@@ -56,25 +56,39 @@ async function waitFor(file,present=true){
  for(let i=0;i<100;i++){if(existsSync(file)===present)return;await delay(100);}
  throw Error(`Timed out waiting for profile state: ${file}`);
 }
+async function loopbackGet(label,url){
+ let last;
+ for(let attempt=0;attempt<4;attempt++){
+  try{return await fetch(url,{headers:{Connection:'close'},signal:AbortSignal.timeout(5000)});}
+  catch(error){last=error;if(attempt<3)await delay(250);}
+ }
+ throw Error(`${label}: loopback GET failed (${last?.cause?.code??last?.message??'unknown'})`);
+}
+async function oneRequest(label,url,options){
+ try{return await fetch(url,options);}
+ catch(error){throw Error(`${label}: request failed (${error?.cause?.code??error?.message??'unknown'})`);}
+}
 async function verifyProfile(profilePath,expectedBrowser){
  const {app,id}=installed(profilePath,expectedBrowser);
  assert.equal(existsSync(join(profilePath,'applications/YAPLIX/YAPLIX.lnk')),true,'Test shortcuts escaped the isolated profile.');
  const node=join(app,'runtime/node.exe'),desktop=join(app,'scripts/desktop.mjs');
  const dataHome=join(profilePath,'data');
  const env={...offlineEnv,YAPLIX_DATA_HOME:dataHome};
+ console.log(`Verifying ${expectedBrowser}: protected browser`);
  const probe=readJSONFromRun(node,[join(app,'scripts/install-probe.mjs')],env);
  assert.equal(probe.sandboxReady,true,'Protected browser probe did not pass.');
  const state=readJSON(join(dataHome,'desktop.json'));
  const base=`http://127.0.0.1:${state.port}`;
- const health=await fetch(base+'/healthz',{signal:AbortSignal.timeout(5000)});
+ console.log(`Verifying ${expectedBrowser}: API and UI`);
+ const health=await loopbackGet(`${expectedBrowser} health`,base+'/healthz');
  assert.equal(health.status,200);
- const ui=await fetch(base+'/',{signal:AbortSignal.timeout(5000)});
+ const ui=await loopbackGet(`${expectedBrowser} UI`,base+'/');
  assert.equal(ui.status,200);assert.match(await ui.text(),/YAPLIX/);
- const gallery=await (await fetch(base+'/api/gallery',{signal:AbortSignal.timeout(5000)})).json();
+ const gallery=await (await loopbackGet(`${expectedBrowser} gallery`,base+'/api/gallery')).json();
  assert.deepEqual(gallery.games.map(game=>game.id),['ember-blocks','prism-maze','arena-target']);
  const versions=[];
  for(const game of gallery.games){
-  const response=await fetch(base+'/api/gallery/'+game.id,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(10000)});
+  const response=await oneRequest(`${expectedBrowser} create ${game.id}`,base+'/api/gallery/'+game.id,{method:'POST',headers:{'Content-Type':'application/json',Connection:'close'},body:'{}',signal:AbortSignal.timeout(10000)});
   assert.equal(response.status,201);
   const version=await response.json();assert.match(version.html,/<html/i);
   versions.push({id:version.versionId,sha256:createHash('sha256').update(version.html).digest('hex')});
@@ -84,7 +98,7 @@ async function verifyProfile(profilePath,expectedBrowser){
  runToFile(node,[desktop,'--no-open'],env,'desktop-start.log',40000);
  const restarted=readJSON(join(dataHome,'desktop.json'));
  for(const version of versions){
-  const response=await fetch(`http://127.0.0.1:${restarted.port}/api/versions/${version.id}`,{signal:AbortSignal.timeout(5000)});
+  const response=await loopbackGet(`${expectedBrowser} persisted version`,`http://127.0.0.1:${restarted.port}/api/versions/${version.id}`);
   assert.equal(response.status,200);
   const saved=await response.json();
   assert.equal(createHash('sha256').update(saved.html).digest('hex'),version.sha256);
