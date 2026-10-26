@@ -1,10 +1,11 @@
-// Source checkout adapter: prepare the same verified Lite payload consumed by
+// Source checkout adapter: prepare a verified Lite or Full payload consumed by
 // install-ui/install-engine. Packaged installers bypass this build step.
 import {cpSync,existsSync,lstatSync,mkdirSync,mkdtempSync,readdirSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {resolve,join,dirname,relative,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawn,spawnSync,execFileSync} from 'node:child_process';
+import {inspectFullSource,prepareFullBrowser,copyInstalledLibraries} from './source-browser.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const runtime=process.execPath;
@@ -16,9 +17,15 @@ if(!existsSync(npm))throw Error('В изолированном Node отсутс
 const parent=resolve(process.env.YAPLIX_BOOTSTRAP_HOME??join(dirname(nodeHome),'source-builds'));
 mkdirSync(parent,{recursive:true,mode:0o700});
 const npmCache=join(parent,'npm-cache');mkdirSync(npmCache,{recursive:true,mode:0o700});
+const archiveHome=join(parent,'browser-archives');
 const temporary=mkdtempSync(join(parent,'.build-'));
 const work=join(temporary,'source'),payload=join(temporary,'payload');
 const status=message=>console.error('YAPLIX: '+message);
+const args=process.argv.slice(2);
+const option=name=>{const i=args.indexOf(name);return i>=0?args[i+1]:undefined;};
+const testNoChrome=args.includes('--test-no-chrome');
+if(testNoChrome&&!option('--test-profile'))throw Error('--test-no-chrome разрешён только с изолированным --test-profile.');
+const chrome=process.platform==='linux'?'/opt/google/chrome/chrome':[process.env.LOCALAPPDATA,process.env.PROGRAMFILES,process.env['PROGRAMFILES(X86)']].filter(Boolean).map(p=>join(p,'Google/Chrome/Application/chrome.exe')).find(existsSync);
 function copy(name,to=work,from=root){
  const source=join(from,name),target=join(to,name);
  if(!existsSync(source))throw Error('В исходниках отсутствует '+name);
@@ -43,15 +50,21 @@ function gather(path,prefix='',entries={}){
  return entries;
 }
 try{
+ if(args.includes('--plan')){
+  const liteCandidate=!testNoChrome&&!!chrome&&existsSync(chrome);
+  const source=liteCandidate?{kind:'system-chrome'}:await inspectFullSource(root,archiveHome);
+  const mode=liteCandidate?'lite-candidate':'full';
+  console.log(JSON.stringify({mode,browserSource:source.kind,needsNetwork:!liteCandidate&&source.kind==='download'},null,2));
+  if(source.rejectedCache)status('кэш браузера повреждён или неполон; он сохранён.');
+  if(mode==='full'&&source.kind==='download'&&process.env.YAPLIX_INSTALL_OFFLINE==='1')throw Error('Нет проверенного Chromium в офлайн-кэше. Подключите сеть или используйте готовый Full-пакет YAPLIX.');
+ }else{
  // Source installation must package a reviewed commit. Dirty tracked work is
  // left in place and never copied into an installed version.
  for(const args of [['diff','--quiet'],['diff','--cached','--quiet']]){
   const result=spawnSync('git',args,{cwd:root,windowsHide:true});
   if(result.status!==0)throw Error('В клоне есть несохранённые изменения отслеживаемых файлов. Установка остановлена; сохраните или отдельно зафиксируйте работу перед установкой.');
  }
- const chrome=process.platform==='linux'?'/opt/google/chrome/chrome':[process.env.LOCALAPPDATA,process.env.PROGRAMFILES,process.env['PROGRAMFILES(X86)']].filter(Boolean).map(p=>join(p,'Google/Chrome/Application/chrome.exe')).find(existsSync);
- if(!chrome||!existsSync(chrome))throw Error('Для сборки Lite из исходников нужен установленный Google Chrome. Он не менялся; используйте готовый Full-пакет YAPLIX с отдельным Chromium.');
- status('предварительный план: Lite с проверкой Google Chrome; npm-зависимости в изолированном каталоге; затем общий мастер проверит диск, SQLite, браузер и порты.');
+ status('предварительный план: Lite при защищённом Google Chrome, иначе Full с проверенными Chromium/headless-shell; npm-зависимости во временном каталоге; общий мастер затем проверит диск и SQLite.');
  status(process.env.YAPLIX_INSTALL_OFFLINE==='1'?'офлайн-режим npm: только проверенный локальный кэш.':'npm использует текущий маршрут и переменные HTTP_PROXY/HTTPS_PROXY/NO_PROXY; при недоступности сети повторите установку.');
  mkdirSync(work);mkdirSync(payload);
  // Only clean Git-tracked source enters the build: no local .env, DB, private
@@ -65,6 +78,14 @@ try{
  const ci=['ci','--no-audit','--no-fund','--cache',npmCache,'--fetch-retries=2','--fetch-timeout=120000',process.env.YAPLIX_INSTALL_OFFLINE==='1'?'--offline':'--prefer-offline'];
  status('проверяем lockfile и устанавливаем зависимости во временный каталог…');
  try{await run([npm,...ci],work);}catch(error){throw Error('npm ci не прошёл: '+error.message+'. Проверьте DNS/TLS/маршрут, HTTP_PROXY/HTTPS_PROXY/NO_PROXY или наполните кэш для YAPLIX_INSTALL_OFFLINE=1.');}
+ let browser='isolated-chromium';
+ if(!testNoChrome&&chrome&&existsSync(chrome)){
+  writeFileSync(join(work,'packaging','delivery.json'),JSON.stringify({browser:'system-chrome'}));
+  const probe=spawnSync(runtime,[join(work,'scripts/install-probe.mjs')],{cwd:work,env:{...process.env,LIVE_PROVIDER:'none',TELEGRAM_UPDATES:'off'},encoding:'utf8',timeout:30000,windowsHide:true});
+  if(!probe.error&&probe.status===0){try{if(JSON.parse(probe.stdout).sandboxReady===true)browser='system-chrome';}catch{}}
+  if(browser==='isolated-chromium')status('Google Chrome не прошёл защищённую проверку; до установки выбран Full. Sandbox не ослаблялся.');
+ }
+ status(browser==='system-chrome'?'выбран Lite с проверенным Google Chrome.':'выбран Full с изолированным Chromium.');
  status('собираем клиент и сервер…');
  await run([npm,'run','build'],work);
  status('готовим только production-зависимости…');
@@ -83,10 +104,16 @@ try{
  if(process.platform!=='win32'){
   const nodeLicense=join(nodeHome,'LICENSE');if(existsSync(nodeLicense))cpSync(nodeLicense,join(payload,'runtime','NODE-LICENSE.txt'));
  }
- writeFileSync(join(payload,'packaging','delivery.json'),JSON.stringify({browser:'system-chrome',os:process.platform==='win32'?'windows-10-11':'ubuntu-24.04',arch:'x64'}));
+ if(browser==='isolated-chromium'){
+  await prepareFullBrowser(root,archiveHome,temporary,payload,status);
+  const provenance=copyInstalledLibraries(payload);
+  writeFileSync(join(payload,'packaging','libraries.json'),JSON.stringify(provenance,null,2)+'\n');
+ }
+ writeFileSync(join(payload,'packaging','delivery.json'),JSON.stringify({browser,os:process.platform==='win32'?'windows-10-11':'ubuntu-24.04',arch:'x64'}));
  writeFileSync(join(payload,'integrity.json'),JSON.stringify(gather(payload),null,2)+'\n');
  status('пакет готов; открываем общий мастер установки…');
- await run([join(payload,'scripts','install-ui.mjs'),...process.argv.slice(2)],payload);
+ await run([join(payload,'scripts','install-ui.mjs'),...args.filter(arg=>arg!=='--test-no-chrome')],payload);
+ }
 }finally{
  // Only this invocation's staging directory is removed; installed versions and
  // data live outside it and are managed by the shared transaction adapter.
