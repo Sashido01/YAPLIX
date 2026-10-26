@@ -36,7 +36,8 @@ export async function verifiedBrowserTree(root,part){
  }catch{return false;}
 }
 function browserCaches(repo){
- return [...new Set([process.env.PLAYWRIGHT_BROWSERS_PATH,join(homedir(),'.cache/ms-playwright'),join(repo,'.local/playwright')].filter(Boolean).map(path=>resolve(path)))];
+ const configured=process.env.PLAYWRIGHT_BROWSERS_PATH;
+ return [...new Set((configured?[configured]:[join(homedir(),'.cache/ms-playwright'),join(repo,'.local/playwright')]).map(path=>resolve(path)))];
 }
 async function validCache(path){return Promise.all(browserParts.map(part=>verifiedBrowserTree(join(path,part.directory),part))).then(rows=>rows.every(Boolean));}
 export async function inspectFullSource(repo,archiveHome){
@@ -55,12 +56,14 @@ function download(part,archive,cert){
  // inherited lowercase value cannot silently bypass the caller's override.
  const args=['--disable','--fail','--location','--silent','--show-error','--proto','=https','--proto-redir','=https','--connect-timeout','15','--max-time','900','--retry','2','--retry-delay','1'];
  const proxy=process.env.HTTPS_PROXY??process.env.https_proxy??process.env.ALL_PROXY??process.env.all_proxy;
- if(proxy)args.push('--proxy',proxy);
  const noProxy=process.env.NO_PROXY??process.env.no_proxy;
- if(noProxy!==undefined)args.push('--noproxy',noProxy);
  if(cert)args.push('--cacert',cert);
  args.push('--output',archive,part.url);
- const result=spawnSync('curl',args,{encoding:'utf8',timeout:930000,windowsHide:true});
+ // Keep proxy credentials in the child environment, not in its command line.
+ const env={...process.env};
+ if(proxy!==undefined){env.https_proxy=proxy;env.HTTPS_PROXY=proxy;}
+ if(noProxy!==undefined){env.no_proxy=noProxy;env.NO_PROXY=noProxy;}
+ const result=spawnSync('curl',args,{env,encoding:'utf8',timeout:930000,windowsHide:true});
  if(result.error||result.status!==0)throw Error('Не удалось загрузить проверенный Chromium через текущий маршрут/proxy (curl '+(result.status??result.error?.code??'error')+'). Проверьте DNS, TLS и HTTP_PROXY/HTTPS_PROXY/NO_PROXY либо используйте готовый Full-пакет.');
 }
 function extract(archive,destination){
@@ -98,7 +101,8 @@ export async function prepareFullBrowser(repo,archiveHome,staging,payload,status
    status('загружаем '+part.archive+' из закреплённого источника через текущий proxy/маршрут…');
    download(part,fresh,cert);
    if((await digestFile(fresh)).toString('hex')!==part.sha256)throw Error('SHA256 архива Chromium не совпал; архив не распакован. Используйте готовый Full-пакет.');
-   if(!existsSync(archive))renameSync(fresh,archive);else archive=fresh; // preserve a corrupt prior cache
+   if(existsSync(archive))renameSync(archive,archive+'.damaged-'+process.pid+'-'+Date.now());
+   renameSync(fresh,archive); // verified download is available for the next offline run
   }
   const extracted=mkdtempSync(join(staging,'.browser-archive-'));
   try{

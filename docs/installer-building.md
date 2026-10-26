@@ -36,11 +36,20 @@ SHA256. SHA256 извлечённого исполняемого файла то
 каждом повторном запуске; при обновлении Node синхронизируйте version и digest
 в `install.sh`, `install-windows.ps1`, `package-desktop.py` после проверки
 официальных архивов. `install-source.mjs` принимает только чистый Git-клон,
-проверяет наличие Chrome перед npm, использует личный npm-кэш, временно делает
-`npm ci`, build и production-only
+использует личный npm-кэш, временно делает `npm ci`, проверяет защищённый Chrome,
+выбирает Lite или Full, выполняет build и готовит production-only
 payload, затем вызывает общий `install-ui.mjs`/`install-engine.mjs`. Исходный
 клон и системный Node не меняются; временная сборка удаляется после мастера.
 Пакетный `.run`/`.exe` сразу передаёт готовый payload этому же ядру.
+
+Для Ubuntu Full из клона `source-browser.mjs` сверяет каждое дерево Chromium
+и headless-shell с закреплёнными SHA256. Сначала проверяется локальный
+Playwright-кэш, затем архивы в личном `YAPLIX_BOOTSTRAP_HOME/browser-archives`.
+При отсутствии обоих архивы загружаются из закреплённых Playwright CDN URL
+через заданный HTTPS proxy. `NO_PROXY` и `NODE_EXTRA_CA_CERTS` учитываются;
+ошибка сети или контроля целостности прекращает установку с советом получить
+готовый Full-пакет. Chromium не ставится системно; необходимые библиотеки
+копируются только после проверки принадлежности Ubuntu-пакету и его checksum.
 
 ## Минимальная архитектура
 

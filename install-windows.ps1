@@ -6,7 +6,7 @@ $expected='0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821'
 $expectedBinary='9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de'
 if(-not [Environment]::Is64BitOperatingSystem -or [Environment]::OSVersion.Version.Major -lt 10) { throw 'YAPLIX: требуется Windows 10/11 x64.' }
 Write-Host 'YAPLIX: план — проверить Node 24.18.0, при необходимости загрузить официальный архив с SHA256 в личный профиль; затем временно собрать исходники через npm ci и открыть мастер установки. Системные пакеты не меняются; база сохраняется с backup при обновлении.'
-Write-Host 'YAPLIX: сеть нужна только для недостающих Node/npm-компонентов; существующие HTTP_PROXY, HTTPS_PROXY и NO_PROXY сохраняются.'
+Write-Host 'YAPLIX: сеть нужна только для недостающих Node/npm-компонентов; HTTP_PROXY, HTTPS_PROXY, NO_PROXY и доверенные сертификаты сохраняются.'
 $base=if($env:YAPLIX_BOOTSTRAP_HOME){$env:YAPLIX_BOOTSTRAP_HOME}else{Join-Path $env:LOCALAPPDATA 'YAPLIX\tools'}
 [void][IO.Directory]::CreateDirectory($base)
 $target=Join-Path $base $name
@@ -22,7 +22,10 @@ if($env:YAPLIX_BOOTSTRAP_ARCHIVE -or -not (& $valid $node)) {
     } else {
       $curl=Get-Command curl.exe -ErrorAction Stop
       Write-Host 'YAPLIX: загружаем изолированный Node 24.18.0 с nodejs.org.'
-      & $curl.Source --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --retry 2 --output $archive "https://nodejs.org/dist/v24.18.0/$name.zip"
+      $curlArgs=@('--disable','--fail','--location','--silent','--show-error','--proto','=https','--proto-redir','=https','--connect-timeout','15','--max-time','180','--retry','2')
+      # curl.exe inherits proxy variables; credentials stay out of process argv.
+      if($env:NODE_EXTRA_CA_CERTS){$curlArgs+=@('--cacert',$env:NODE_EXTRA_CA_CERTS)}
+      & $curl.Source @curlArgs --output $archive "https://nodejs.org/dist/v24.18.0/$name.zip"
       if($LASTEXITCODE -ne 0){throw 'YAPLIX: загрузка Node не удалась; проверьте DNS/TLS/маршрут и HTTP_PROXY, HTTPS_PROXY, NO_PROXY или передайте проверенный архив через YAPLIX_BOOTSTRAP_ARCHIVE.'}
     }
     $actual=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()

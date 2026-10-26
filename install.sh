@@ -17,7 +17,7 @@ node="$base/$name/bin/node"
 valid_node() { [ -x "$1" ] && [ "$(sha256sum "$1" | cut -d ' ' -f 1)" = "$expected_binary" ]; }
 if ! command -v sha256sum >/dev/null 2>&1; then echo 'YAPLIX: нужен sha256sum.' >&2; exit 1; fi
 echo 'YAPLIX: план — проверить Node 24.18.0, при необходимости загрузить официальный архив с SHA256 в личный профиль; затем временно собрать исходники через npm ci и открыть мастер установки. Системные пакеты не меняются; база сохраняется с backup при обновлении.' >&2
-echo 'YAPLIX: сеть нужна только для недостающих Node/npm-компонентов; существующие HTTP_PROXY, HTTPS_PROXY и NO_PROXY сохраняются.' >&2
+echo 'YAPLIX: сеть нужна только для недостающих Node/npm/браузерных компонентов; HTTP_PROXY, HTTPS_PROXY, NO_PROXY и доверенные сертификаты сохраняются.' >&2
 mkdir -p -- "$base"
 
 # An explicit offline archive is always verified, including when a suitable
@@ -37,8 +37,13 @@ if [ -n "${YAPLIX_BOOTSTRAP_ARCHIVE:-}" ] || ! valid_node "$node"; then
       echo 'YAPLIX: нужен curl для загрузки Node; можно передать проверенный архив через YAPLIX_BOOTSTRAP_ARCHIVE.' >&2; exit 1
     fi
     echo 'YAPLIX: загружаем изолированный Node 24.18.0 с nodejs.org.' >&2
-    if ! curl --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --retry 2 \
-      --output "$archive" "https://nodejs.org/dist/v24.18.0/$name.tar.xz"; then
+    set -- --disable --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 180 --retry 2
+    proxy=${HTTPS_PROXY-${https_proxy-${ALL_PROXY-${all_proxy-}}}}
+    no_proxy_route=${NO_PROXY-${no_proxy-}}
+    if [ -n "${NODE_EXTRA_CA_CERTS:-}" ]; then set -- "$@" --cacert "$NODE_EXTRA_CA_CERTS"; fi
+    # Environment routing avoids exposing proxy credentials in process argv.
+    if ! https_proxy="$proxy" HTTPS_PROXY="$proxy" no_proxy="$no_proxy_route" NO_PROXY="$no_proxy_route" \
+      curl "$@" --output "$archive" "https://nodejs.org/dist/v24.18.0/$name.tar.xz"; then
       echo 'YAPLIX: загрузка Node не удалась. Проверьте DNS/TLS/маршрут и переменные HTTP_PROXY, HTTPS_PROXY, NO_PROXY; повторите команду или укажите YAPLIX_BOOTSTRAP_ARCHIVE.' >&2
       exit 1
     fi
