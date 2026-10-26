@@ -58,6 +58,10 @@ gh api --method PUT repos/Sashido01/yaplix/actions/permissions -F enabled=true -
 
 Все режимы действительно выполняют Python checker и его тесты, тесты CI policy,
 TypeScript typecheck, production build, `npm ci` и полную проверку секретов.
+Pinned Chromium/headless-shell устанавливаются до backend unit-тестов даже при
+FAST: часть контрактов проверяет доступность production checker. Колонка
+«Браузеры / performance» обозначает расширенный Playwright suite и performance,
+которые FAST docs/unit может пропустить.
 Отдельный lint в проекте не настроен. Windows FAST содержит реальные generator,
 backend/SQLite, persistence и authorization contracts, а не пустой зелёный job.
 

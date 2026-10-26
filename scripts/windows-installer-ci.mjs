@@ -22,7 +22,10 @@ for(const name of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_pr
 function run(binary,args,env=offlineEnv,timeout=600000){
  const result=spawnSync(binary,args,{cwd:root,env,encoding:'utf8',timeout,windowsHide:true,maxBuffer:4*1024*1024});
  assert.ifError(result.error);
- assert.equal(result.status,0,`${binary} exited ${result.status}; inspect isolated installer profile and CI step.`);
+ const safeError=(result.stderr??'').slice(-2000)
+  .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi,'$1***@')
+  .replace(/\b(?:gho_|ghp_|github_pat_)[A-Za-z0-9_]+\b/g,'[REDACTED]');
+ assert.equal(result.status,0,`${binary} exited ${result.status}; ${safeError}`);
  return result.stdout;
 }
 const profile=name=>join(local,'profiles',name);

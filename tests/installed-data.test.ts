@@ -9,9 +9,10 @@ test('installed storage survives reopening outside the application and refuses p
  try{
   const result=spawnSync(process.execPath,['--input-type=module','-e',`
    import assert from 'node:assert/strict';
+   import {resolve} from 'node:path';
    import {Store,managedPath} from './src/store.ts';
    import {runtimeKey} from './src/runtime-control.ts';
-   assert.equal(managedPath('.local/data/yaplix.sqlite'),process.env.YAPLIX_DATA_HOME+'/data/yaplix.sqlite');
+   assert.equal(managedPath('.local/data/yaplix.sqlite'),resolve(process.env.YAPLIX_DATA_HOME,'data/yaplix.sqlite'));
    const first=new Store();assert.equal(first.integrity(),true);first.close();
    const key=runtimeKey();const second=new Store();assert.equal(second.integrity(),true);second.close();
    assert.equal(runtimeKey(),key);

@@ -531,3 +531,11 @@ initData или необработанные журналы. [Запуск и о
   Добавлен отдельный агрегат `repository-checks`, который требует успеха обеих
   платформ и Windows installer job. При `actions/permissions.enabled=false`
   отсутствие hosted контекста остаётся PARTIAL, даже если локальные тесты зелёные.
+- Первый hosted FULL на `6fba842` нашёл `BROWSER_INSTALL_REQUIRED` в backend
+  unit-тестах обеих ОС: workflow устанавливал Chromium только после unit.
+  Перенесите установку pinned checker Chromium и проверенного Ubuntu sandbox
+  helper до этих тестов; полный browser suite и security-проверки сохраняются.
+  Windows дополнительно обнаружил сравнение путей с Unix-разделителем в двух
+  тестах и Linux-only `zenity` fixture в тесте настроек. Путь сравнивается в
+  нормализованном виде; `zenity` сценарий выполняется на Linux, Windows GUI
+  диалог остаётся отдельной границей проверки.

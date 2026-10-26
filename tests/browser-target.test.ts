@@ -11,7 +11,7 @@ test('Full selects its packaged headless shell',()=>{
  try{
   process.env.YAPLIX_BROWSER_CHANNEL='chromium';
   const target=checkerLaunchTarget('/opt/yaplix/browsers');
-  assert.match(target.executablePath!,/chromium_headless_shell-1248\/chrome-headless-shell-(linux64\/chrome-headless-shell|win64\/chrome-headless-shell\.exe)$/);
+  assert.match(target.executablePath!.replaceAll('\\','/'),/chromium_headless_shell-1248\/chrome-headless-shell-(linux64\/chrome-headless-shell|win64\/chrome-headless-shell\.exe)$/);
   assert.equal('channel' in target,false);
  }finally{if(original===undefined)delete process.env.YAPLIX_BROWSER_CHANNEL;else process.env.YAPLIX_BROWSER_CHANNEL=original;}
 });
