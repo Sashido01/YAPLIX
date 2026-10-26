@@ -2,9 +2,13 @@
 
 ## Временная пауза MICRO-019
 
-По прямому разрешению владельца 16 октября 2026 hosted Actions временно выключены
-на уровне репозитория до 29 октября 2026. Проверенный REST state —
+По прямому разрешению владельца 16 октября 2026 hosted Actions были временно
+выключены на уровне репозитория. Исторический REST state —
 `actions/permissions: enabled:false`; отсутствие новых runs не является CI PASS.
+Повторный read-only GET 26 октября в ходе RELEASE-CI-001 вернул `enabled:true`;
+кто и когда изменил настройку, этим запросом не установлено. Успешные checks на
+актуальном SHA PR всё равно необходимы до merge; push при включённых Actions
+может сам запустить workflow и требует отдельного разрешения владельца задачи.
 До изменения были `enabled:true`, `allowed_actions:all`,
 `sha_pinning_required:false`. В момент паузы workflow-файлы не менялись;
 RELEASE-CI-001 позже добавил агрегат required check и Windows installer job.
