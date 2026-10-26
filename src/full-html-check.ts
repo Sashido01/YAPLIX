@@ -6,26 +6,14 @@ import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
 import {randomUUID} from 'node:crypto';
 import {observeCanvas,canvasSnapshot,finalCanvasSnapshot,requireCanvas} from './canvas-check.ts';
 
-function activeElement(el:Element):boolean {
-  if(el.matches(':disabled')||el.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]'))return false;
-  for(let p:Element|null=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility!=='visible'||Number(s.opacity)===0||s.pointerEvents==='none')return false;}
-  const r=el.getBoundingClientRect();
-  // Do not auto-scroll to controls belonging to an unobserved offscreen state.
-  if(!(r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight))return false;
-  // A visible canvas can still be covered by a start overlay. Probe a point
-  // inside its visible intersection, retaining partially visible controls.
-  const x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2;
-  const y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
-  const hit=document.elementFromPoint(x,y);
-  return !!hit&&el.contains(hit);
-}
-
 /** Bounded technical checks for arbitrary standalone games, without game-specific
  * selectors, telemetry, state injection or JavaScript rewriting. */
 export async function checkFullHtml(browser:Browser,html:string,signal:AbortSignal):Promise<BrowserEvidence> {
   const began=performance.now();
   const renderContexts=new Set<'2d'|'webgl'|'webgl2'>();
-  for(const {width,height} of BROWSER_VIEWPORTS['full-html']){
+  // Profiles are independent; run them together so a slow hosted runner does
+  // not spend the same bounded validation deadline three times in sequence.
+  const profiles=await Promise.allSettled(BROWSER_VIEWPORTS['full-html'].map(async({width,height})=>{
     const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
     let failure='',phase='load';
     try{
@@ -83,21 +71,34 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
         // Repeated centre probes may reach Start, play, terminal and Restart;
         // their actual semantics remain NOT_VERIFIED for arbitrary games.
         const points=[[.5,.5],[.5,.5],[.25,.65],[.75,.65],[.5,.5],[.5,.5],[.25,.5],[.75,.5]];
+        const frameBox=target.parentFrame()?await (await target.frameElement()).boundingBox():null;
+        if(target.parentFrame()&&!frameBox)throw new Fault('BROWSER_CHECK_INCONCLUSIVE',502);
         for(const [x,y] of points){
           if(signal.aborted)throw new Fault('BROWSER_TIMEOUT',504);
-          const surfaces=target.locator('canvas');let tapped=false;
-          for(let i=0,n=Math.min(32,await surfaces.count());i<n;i++){
-            const canvas=surfaces.nth(i);
-            if(!await canvas.evaluate(activeElement))continue;
-            const point=await canvas.evaluate((node,[x,y])=>{
-              const c=node as HTMLCanvasElement,r=c.getBoundingClientRect();
-              // Work through backing coordinates then return CSS coordinates.
-              // This remains correct for DPR and independent CSS scaling.
-              return {x:(c.width*x)*r.width/c.width,y:(c.height*y)*r.height/c.height};
-            },[x,y]);
-            await canvas.tap({position:point});tapped=true;break;
-          }
-          if(!tapped)break;
+          // Select the same first active canvas in one browser round trip.
+          // A real touchscreen tap keeps the input evidence and avoids
+          // Playwright's repeated locator actionability polling per tap.
+          const point=await target.locator('canvas').evaluateAll((nodes,[x,y])=>{
+            for(const el of nodes.slice(0,32)){
+              if(el.matches(':disabled')||el.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]'))continue;
+              let active=true;
+              for(let p:Element|null=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility!=='visible'||Number(s.opacity)===0||s.pointerEvents==='none'){active=false;break;}}
+              if(!active)continue;
+              const r=el.getBoundingClientRect();
+              // Never scroll an unobserved state into view.
+              if(!(r.right>0&&r.bottom>0&&r.left<innerWidth&&r.top<innerHeight))continue;
+              const cx=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2;
+              const cy=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
+              const hit=document.elementFromPoint(cx,cy);
+              if(!hit||!el.contains(hit))continue;
+              // Backing coordinates map to the same CSS-relative tap point.
+              const c=el as HTMLCanvasElement;
+              return {x:r.left+(c.width*x)*r.width/c.width,y:r.top+(c.height*y)*r.height/c.height};
+            }
+            return null;
+          },[x,y]);
+          if(!point)break;
+          await page.touchscreen.tap(point.x+(frameBox?.x??0),point.y+(frameBox?.y??0));
           await page.waitForTimeout(50);await check();
         }
         if(keyboard){await page.keyboard.press('ArrowRight');await page.waitForTimeout(50);await check();}
@@ -117,7 +118,9 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
       if(error instanceof Fault)throw Object.assign(error,{validationPhase:phase,profileWidth:width,profileHeight:height});
       throw Object.assign(new Fault(signal.aborted?'BROWSER_TIMEOUT':'BROWSER_CHECK_INCONCLUSIVE',502),{validationPhase:phase,profileWidth:width,profileHeight:height});
     }finally{await context.close().catch(()=>{});}
-  }
+  }));
+  const failed=profiles.find(result=>result.status==='rejected');
+  if(failed?.status==='rejected')throw failed.reason;
   return {profiles:[...BROWSER_PROFILES['full-html']],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-strict-v2',contexts:[...renderContexts],profiles:[...BROWSER_PROFILES['full-html']]},levels:['HTML_VALID','JS_EXECUTABLE','UI_VISIBLE','MOBILE_VERIFIED'],elapsedMs:Math.round(performance.now()-began),checks:([
     'html-runs','input-works','gameplay-observed','win-reachable','loss-reachable','restart-works'
   ] as const).map(aspect=>({aspect,level:aspect==='html-runs'?'VERIFIED':'NOT_VERIFIED'}))};

@@ -539,3 +539,19 @@ initData или необработанные журналы. [Запуск и о
   тестах и Linux-only `zenity` fixture в тесте настроек. Путь сравнивается в
   нормализованном виде; `zenity` сценарий выполняется на Linux, Windows GUI
   диалог остаётся отдельной границей проверки.
+- На следующем head `3f3a7c6` Ubuntu unit прошли, но FULL остановился через
+  8 минут на `playwright install --with-deps`: apt скачивал 181 системный пакет
+  через медленный runner mirror. Для browser profiles используется закреплённый
+  Playwright без установки ОС-пакетов; browser suite остаётся обязательным и
+  покажет, хватает ли библиотек готового runner image.
+- Windows Lite/Full EXE успешно собрались с SHA256, но source bootstrap из
+  `powershell.exe` не нашёл штатный `Get-FileHash`, доступный в build-step `pwsh`.
+  CI-процесс больше не передаёт PowerShell 7 `PSModulePath` в Windows PowerShell
+  и проверяет cmdlet до bootstrap. Причина будет подтверждена только hosted
+  повтором; sandbox/контроль SHA не ослабляются.
+- Windows FULL browser suite превысил 20 минут; четыре положительных WebGL
+  сценария отменились на 18-секундном budget во время полной проверки трёх
+  viewport. Независимые viewport теперь проверяются параллельно, сохраняя
+  реальные touch-действия, Canvas snapshots и прежний production watchdog.
+  Локальный положительный WebGL2-кейс прошёл за 13,5 секунды; Windows PASS
+  возможен только после нового hosted run. CI step получил 45 минут, job — 60.

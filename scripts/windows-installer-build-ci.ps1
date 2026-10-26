@@ -21,6 +21,21 @@ $shasums = Join-Path $tools 'SHASUMS256.txt'
 & curl.exe --disable --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 --output $shasums 'https://nodejs.org/dist/v24.18.0/SHASUMS256.txt'
 if ($LASTEXITCODE -ne 0) { throw 'Node official SHASUMS download failed.' }
 
+# Exercise the built-in Windows PowerShell bootstrap before expensive NSIS
+# compression. pwsh's module path must not hide Windows PowerShell modules.
+$previousModules = $env:PSModulePath
+Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue
+$env:YAPLIX_BOOTSTRAP_ARCHIVE = $nodeArchive
+$env:YAPLIX_BOOTSTRAP_HOME = Join-Path $root '.local/release-ci-001/bootstrap'
+try {
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'install-windows.ps1') --runtime-only
+  if ($LASTEXITCODE -ne 0) { throw 'Built-in PowerShell source bootstrap failed before installer build.' }
+} finally {
+  if ($null -eq $previousModules) { Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue }
+  else { $env:PSModulePath = $previousModules }
+  Remove-Item Env:YAPLIX_BOOTSTRAP_ARCHIVE, Env:YAPLIX_BOOTSTRAP_HOME -ErrorAction SilentlyContinue
+}
+
 $nsisArchive = Join-Path $tools 'nsis-3.11.zip'
 Download-Pinned 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip' $nsisArchive 'c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1'
 $nsis = Join-Path $tools 'nsis-3.11'

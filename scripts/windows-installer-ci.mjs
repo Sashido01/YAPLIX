@@ -18,6 +18,8 @@ const sha=file=>createHash('sha256').update(readFileSync(file)).digest('hex');
 const evidence={platform:process.platform,checks:[],packages:{}};
 const offlineEnv={...process.env,LIVE_PROVIDER:'none',TELEGRAM_UPDATES:'off'};
 for(const name of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy'])delete offlineEnv[name];
+// GitHub's pwsh parent may expose only PowerShell 7 modules to powershell.exe.
+delete offlineEnv.PSModulePath;
 
 function run(binary,args,env=offlineEnv,timeout=600000){
  const result=spawnSync(binary,args,{cwd:root,env,encoding:'utf8',timeout,windowsHide:true,maxBuffer:4*1024*1024});
@@ -93,7 +95,9 @@ try{
  const sourceProfile=profile('source-lite');
  mkdirSync(sourceProfile,{recursive:true});
  const sourceEnv={...process.env,YAPLIX_BOOTSTRAP_HOME:bootstrapHome,YAPLIX_BOOTSTRAP_ARCHIVE:nodeArchive,LIVE_PROVIDER:'none',TELEGRAM_UPDATES:'off'};
+ delete sourceEnv.PSModulePath;
  const sourceScript=join(root,'install-windows.ps1');
+ run('powershell.exe',['-NoProfile','-Command','Get-Command Get-FileHash | Out-Null'],sourceEnv,30000);
  const isolatedNode=run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--runtime-only'],sourceEnv,120000).trim().split(/\r?\n/).at(-1).trim();
  assert.equal(run(isolatedNode,['--version'],sourceEnv,10000).trim(),'v24.18.0');
  run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--headless','--test-profile',sourceProfile],sourceEnv,600000);
