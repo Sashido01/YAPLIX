@@ -522,3 +522,12 @@ initData или необработанные журналы. [Запуск и о
 - Архив Chrome for Testing распаковывается с каталогом `chrome-linux64` внутри
   корня браузера. Проверка SHA256 дерева должна включать этот каталог; проверка
   только его содержимого ошибочно отвергала корректный официальный архив.
+
+## RELEASE-CI-001: обязательный статус PR
+
+- REST ruleset `protect-main` 26.10.2026 вернул обязательные контексты
+  `repository-checks` и `secret-scan`, тогда как workflow публиковал только
+  `repository-checks (ubuntu-24.04)` и `repository-checks (windows-latest)`.
+  Добавлен отдельный агрегат `repository-checks`, который требует успеха обеих
+  платформ и Windows installer job. При `actions/permissions.enabled=false`
+  отсутствие hosted контекста остаётся PARTIAL, даже если локальные тесты зелёные.

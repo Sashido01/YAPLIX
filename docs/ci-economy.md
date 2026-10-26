@@ -6,7 +6,9 @@
 на уровне репозитория до 29 октября 2026. Проверенный REST state —
 `actions/permissions: enabled:false`; отсутствие новых runs не является CI PASS.
 До изменения были `enabled:true`, `allowed_actions:all`,
-`sha_pinning_required:false`. Workflow-файлы и FAST/FULL policy ниже не изменены.
+`sha_pinning_required:false`. В момент паузы workflow-файлы не менялись;
+RELEASE-CI-001 позже добавил агрегат required check и Windows installer job.
+FAST/FULL policy сохранён.
 
 Исходно активны `Repository checks` (ID 379465037) и dynamic
 `Dependabot Updates` (ID 379465492). Dynamic workflow отверг отдельное disable
@@ -73,10 +75,18 @@ output выбирает FULL. Labels и ручной параметр для о�
 
 Стабильные checks сохранены:
 
+- `repository-checks` — обязательный агрегат для ruleset `protect-main`;
 - `repository-checks (ubuntu-24.04)`;
 - `repository-checks (windows-latest)`;
+- `windows-installer` — изолированный source bootstrap и настоящие Lite/Full EXE;
 - `secret-scan`.
 
+Агрегат `repository-checks` получает success только если оба matrix jobs и
+`windows-installer` завершились success. Он запускается и при отказе/пропуске
+зависимости, чтобы отсутствие платформенного результата не стало зелёным check.
+`windows-installer` собирает Windows Lite/Full из закреплённых Node/Chromium/NSIS,
+запускает `install-windows.ps1` и оба EXE только с отдельными CI-профилями;
+проверяет API/UI, protected browser, три игры и SQLite после рестарта.
 Jobs не пропускаются целиком. Дополнительные тесты находятся внутри тех же jobs:
 ошибка обязательного или выбранного расширенного step делает соответствующий
 check красным. Нет `continue-on-error`, retries или зависимого skipped-job gate.
@@ -132,7 +142,8 @@ FULL использует все три browser engines, потому что sui
 проверяет; произвольное сокращение профилей здесь лишило бы покрытия.
 Кэш браузеров и передача build между jobs не введены без замера выгоды.
 
-Build выполняется один раз на ОС: прямые Node/Playwright команды обходят
+Основной build выполняется один раз на ОС; отдельный Windows installer job
+собирает собственный payload, чтобы его отказ не скрывался matrix-job. Прямые Node/Playwright команды обходят
 `pretest` и повторный build в `test:browser` / `performance:smoke`. Public npm
 scripts для разработчика сохранены. Общий timeout FULL остаётся 30 min,
 browser install ограничен 8 min, suite 20 min, performance 3 min.

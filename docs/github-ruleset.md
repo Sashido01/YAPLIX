@@ -13,6 +13,17 @@ _Состояние на TASK-001, 12 октября 2026._ Репозитори
 делает выбранные по риску тесты обязательными внутри jobs, но серверная блокировка
 merge при текущем тарифе по-прежнему не подтверждена и не восстановлена.
 
+**Повторная read-only проверка 26 октября 2026:** REST `rulesets/24780721`
+вернул `protect-main`, `enforcement: active`, условие `~DEFAULT_BRANCH`, запрет
+deletion/non-fast-forward и required status contexts `repository-checks`,
+`secret-scan` (GitHub Actions integration 15368). Это более новое наблюдение,
+чем снимок 16 октября. До RELEASE-CI-001 workflow выдавал только два matrix
+контекста `repository-checks (ubuntu-24.04)` и `repository-checks (windows-latest)`;
+требуемый агрегат `repository-checks` отсутствовал. Он добавлен с зависимостью
+от обоих платформенных прогонов и Windows installer acceptance. GitHub Actions
+на момент изменения `enabled:false`, поэтому реальные required checks текущего
+PR ещё не подтверждены. Правила и настройки сервера не изменялись.
+
 - main — стабильная ветка. Работа идёт в отдельных ветках и предлагается через PR.
 - До merge обе платформы repository-checks (FAST/FULL по риску) и secret-scan проходят на актуальном head; diff, target main, конфликты и замечания проверены. Перед release обязателен manual FULL на точном commit. Владелец разрешает автономный merge; review другого участника обязателен, только если его требует серверная защита. Задача завершается после проверки main после merge.
 - Прямой push, force-push и удаление main, переписывание общей истории запрещены регламентом.

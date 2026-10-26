@@ -1,5 +1,5 @@
-param([Parameter(Mandatory=$true)][string]$Root)
-$menu=Join-Path ([Environment]::GetFolderPath('Programs')) 'YAPLIX'
+param([Parameter(Mandatory=$true)][string]$Root,[string]$MenuHome)
+$menu=if($MenuHome){Join-Path $MenuHome 'YAPLIX'}else{Join-Path ([Environment]::GetFolderPath('Programs')) 'YAPLIX'}
 New-Item -ItemType Directory -Force -Path $menu | Out-Null
 $shell=New-Object -ComObject WScript.Shell
 foreach($entry in @(@('YAPLIX',''),@('Stop YAPLIX','--stop'),@('Configure AI','--settings'),@('YAPLIX log','--logs'))) {

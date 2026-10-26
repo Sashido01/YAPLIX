@@ -207,5 +207,15 @@ UTF-8 BOM добавляется PS-файлам в Windows payload для Power
 Отсутствующие Windows OS-компоненты не устанавливать автоматически; сообщать
 об ограничении. Подготовленная конфигурация не равна PASS на Windows.
 
+Для RELEASE-CI-001 Windows runner собирает Lite и Full через
+`scripts/windows-installer-build-ci.ps1`: проверенный Node zip, закреплённый
+portable NSIS, project-local Playwright Chromium/headless-shell и `nodew.exe` из
+MSVC runner. `scripts/windows-installer-ci.mjs` в отдельных `.local` профилях
+запускает source bootstrap и оба настоящих NSIS EXE в тихом тестовом режиме,
+затем проверяет API/UI, защищённый браузер, три игры и SQLite после рестарта.
+Только для теста NSIS читает `YAPLIX_INSTALL_TEST_PROFILE`; обычный запуск без
+этой переменной остаётся интерактивным. До фактического hosted Windows success
+этот путь считается подготовленной проверкой, а не Windows PASS.
+
 macOS и интернет-доступ — FUTURE. Смартфоны — существующий QR в одной Wi-Fi/LAN.
 Текущие локальные результаты и границы проверки: [подготовка к публикации](submission-verification.md).

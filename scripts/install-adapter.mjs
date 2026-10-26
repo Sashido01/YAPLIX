@@ -74,7 +74,9 @@ export function createAdapter(options){
  }
  async function shortcuts(root){
   if(process.platform==='win32'){
-   const r=spawnSync('powershell.exe',['-NoProfile','-File',join(source,'packaging/install-shortcuts.ps1'),'-Root',root],{encoding:'utf8',windowsHide:true});if(r.error||r.status!==0)throw new InstallError('PERMISSION');return;
+   const args=['-NoProfile','-File',join(source,'packaging/install-shortcuts.ps1'),'-Root',root];
+   if(options.menuHome)args.push('-MenuHome',menuHome);
+   const r=spawnSync('powershell.exe',args,{encoding:'utf8',windowsHide:true});if(r.error||r.status!==0)throw new InstallError('PERMISSION');return;
   }
   privateDirectory(menuHome);
   for(const [name,title,args] of [['yaplix','YAPLIX',''],['yaplix-stop','Остановить YAPLIX','--stop'],['yaplix-settings','Настроить AI YAPLIX','--settings'],['yaplix-logs','Журнал YAPLIX','--logs']]){
