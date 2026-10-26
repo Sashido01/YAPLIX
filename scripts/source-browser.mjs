@@ -51,11 +51,17 @@ export async function inspectFullSource(repo,archiveHome){
  return {kind:'download',rejectedCache:rejectedCache||archives.includes(false)};
 }
 function download(part,archive,cert){
- const args=['--fail','--location','--silent','--show-error','--proto','=https','--proto-redir','=https','--connect-timeout','15','--max-time','900','--retry','2','--retry-delay','1'];
+ // Curl prefers lowercase proxy variables; choose one explicit route so an
+ // inherited lowercase value cannot silently bypass the caller's override.
+ const args=['--disable','--fail','--location','--silent','--show-error','--proto','=https','--proto-redir','=https','--connect-timeout','15','--max-time','900','--retry','2','--retry-delay','1'];
+ const proxy=process.env.HTTPS_PROXY??process.env.https_proxy??process.env.ALL_PROXY??process.env.all_proxy;
+ if(proxy)args.push('--proxy',proxy);
+ const noProxy=process.env.NO_PROXY??process.env.no_proxy;
+ if(noProxy!==undefined)args.push('--noproxy',noProxy);
  if(cert)args.push('--cacert',cert);
  args.push('--output',archive,part.url);
  const result=spawnSync('curl',args,{encoding:'utf8',timeout:930000,windowsHide:true});
- if(result.error||result.status!==0)throw Error('Не удалось загрузить проверенный Chromium через текущий маршрут/proxy. Проверьте DNS, TLS и HTTP_PROXY/HTTPS_PROXY/NO_PROXY либо используйте готовый Full-пакет. '+(result.stderr??'').trim());
+ if(result.error||result.status!==0)throw Error('Не удалось загрузить проверенный Chromium через текущий маршрут/proxy (curl '+(result.status??result.error?.code??'error')+'). Проверьте DNS, TLS и HTTP_PROXY/HTTPS_PROXY/NO_PROXY либо используйте готовый Full-пакет.');
 }
 function extract(archive,destination){
  mkdirSync(destination,{recursive:true,mode:0o700});
@@ -97,9 +103,8 @@ export async function prepareFullBrowser(repo,archiveHome,staging,payload,status
   const extracted=mkdtempSync(join(staging,'.browser-archive-'));
   try{
    extract(archive,extracted);
-   const source=join(extracted,part.archive.slice(0,-4));
-   if(!(await verifiedBrowserTree(source,part)))throw Error('SHA256 файлов Chromium не совпал; используйте готовый Full-пакет.');
-   renameSync(source,join(browsers,part.directory));
+   if(!(await verifiedBrowserTree(extracted,part)))throw Error('SHA256 файлов Chromium не совпал; используйте готовый Full-пакет.');
+   renameSync(extracted,join(browsers,part.directory));
   }finally{rmSync(extracted,{recursive:true,force:true});}
  }
  return 'archive';
