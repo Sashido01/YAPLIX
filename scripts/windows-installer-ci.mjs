@@ -31,14 +31,14 @@ function installed(profilePath,expectedBrowser){
  assert.match(pointer.id,/^[0-9a-f]{64}$/);
  const app=join(profilePath,'program/versions',pointer.id);
  assert.equal(readJSON(join(app,'packaging/delivery.json')).browser,expectedBrowser);
- return app;
+ return {app,id:pointer.id};
 }
 async function waitFor(file,present=true){
  for(let i=0;i<100;i++){if(existsSync(file)===present)return;await delay(100);}
  throw Error(`Timed out waiting for profile state: ${file}`);
 }
 async function verifyProfile(profilePath,expectedBrowser){
- const app=installed(profilePath,expectedBrowser);
+ const {app,id}=installed(profilePath,expectedBrowser);
  assert.equal(existsSync(join(profilePath,'applications/YAPLIX/YAPLIX.lnk')),true,'Test shortcuts escaped the isolated profile.');
  const node=join(app,'runtime/node.exe'),desktop=join(app,'scripts/desktop.mjs');
  const dataHome=join(profilePath,'data');
@@ -77,7 +77,7 @@ async function verifyProfile(profilePath,expectedBrowser){
   assert.equal(db.prepare('PRAGMA quick_check').get().quick_check,'ok');
   assert.equal(db.prepare('SELECT count(*) AS count FROM games').get().count,3);
  }finally{db.close();}
- return {browser:expectedBrowser,version:pointer.id,games:3,api:true,ui:true,sandbox:true,sqlite:'ok',restart:true};
+ return {browser:expectedBrowser,version:id,games:3,api:true,ui:true,sandbox:true,sqlite:'ok',restart:true};
 }
 function readJSONFromRun(binary,args,env){
  const output=run(binary,args,env,30000);

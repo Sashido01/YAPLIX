@@ -94,13 +94,13 @@ Typecheck и build разнесены на отдельные steps, чтобы 
 скрыть неуспешную предыдущую на PowerShell. Каждый PR проверяет свой merge SHA;
 новый commit отменяет устаревший PR run, но не manual/release/merge queue.
 
-**Состояние сервера 16 октября 2026:** GET branch main вернул `protected:false`,
+**Исторический снимок 16 октября 2026:** GET branch main вернул `protected:false`,
 `protection.enabled:false`, `enforcement_level:off`, `checks:[]`, `contexts:[]`.
-Protection/rulesets endpoints вернули 403 с требованием Pro/Public.
-Настройки не изменены. Checks выявляют отказ, но текущая серверная защита
-не запрещает merge красного PR. Обязательное ожидание checks остаётся правилом
-команды вне временного owner exception MICRO-019 выше. Для технического запрета merge нужна отдельная разрешённая настройка
-доступной серверной защиты; workflow не способен заменить её.
+Protection/rulesets endpoints тогда вернули 403 с требованием Pro/Public.
+**Более новый снимок 26 октября** показывает активный `protect-main` и обязательные
+`repository-checks`/`secret-scan`; фактическое применение защиты к merge ещё
+не подтверждено. До получения успешных hosted checks на актуальном SHA merge
+PR #65 запрещён независимо от поведения серверного ограничения.
 См. [границы защиты](github-ruleset.md).
 
 ## Локальная проверка
