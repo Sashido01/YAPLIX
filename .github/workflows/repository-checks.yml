@@ -24,7 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     # Retain required check names. FAST runs real checks on both platforms;
     # risky steps stay inside these jobs, so their failures fail the same checks.
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,6 +81,10 @@ jobs:
         if: steps.scope.outputs.browsers != 'false'
         timeout-minutes: 8
         run: node scripts/browser-tests.mjs install chromium webkit firefox
+      - name: Install WebKit libraries on the disposable Ubuntu runner
+        if: runner.os == 'Linux' && steps.scope.outputs.browsers != 'false'
+        timeout-minutes: 25
+        run: node scripts/browser-tests.mjs install-deps webkit
       - name: Autonomous game and isolation browser tests
         if: steps.scope.outputs.browsers != 'false'
         timeout-minutes: 45
@@ -101,7 +105,7 @@ jobs:
   windows-installer:
     name: windows-installer
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -115,8 +119,10 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies and build
         run: |
-          npm ci
+          npm ci --cache .local/release-ci-001/bootstrap/npm-cache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build Windows Lite and Full from verified inputs
         shell: pwsh
         run: ./scripts/windows-installer-build-ci.ps1

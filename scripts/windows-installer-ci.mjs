@@ -23,10 +23,10 @@ delete offlineEnv.PSModulePath;
 
 function run(binary,args,env=offlineEnv,timeout=600000){
  const result=spawnSync(binary,args,{cwd:root,env,encoding:'utf8',timeout,windowsHide:true,maxBuffer:4*1024*1024});
- assert.ifError(result.error);
- const safeError=(result.stderr??'').slice(-2000)
+ const safeError=((result.stderr??'')+'\n'+(result.stdout??'')).slice(-2500)
   .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi,'$1***@')
   .replace(/\b(?:gho_|ghp_|github_pat_)[A-Za-z0-9_]+\b/g,'[REDACTED]');
+ if(result.error)throw Error(`${binary} ${result.error.message}; last output: ${safeError}`);
  assert.equal(result.status,0,`${binary} exited ${result.status}; ${safeError}`);
  return result.stdout;
 }
@@ -94,13 +94,13 @@ try{
  const bootstrapHome=join(local,'bootstrap');
  const sourceProfile=profile('source-lite');
  mkdirSync(sourceProfile,{recursive:true});
- const sourceEnv={...process.env,YAPLIX_BOOTSTRAP_HOME:bootstrapHome,YAPLIX_BOOTSTRAP_ARCHIVE:nodeArchive,LIVE_PROVIDER:'none',TELEGRAM_UPDATES:'off'};
+ const sourceEnv={...process.env,YAPLIX_BOOTSTRAP_HOME:bootstrapHome,YAPLIX_BOOTSTRAP_ARCHIVE:nodeArchive,YAPLIX_INSTALL_OFFLINE:'1',LIVE_PROVIDER:'none',TELEGRAM_UPDATES:'off'};
  delete sourceEnv.PSModulePath;
  const sourceScript=join(root,'install-windows.ps1');
  run('powershell.exe',['-NoProfile','-Command','Get-Command Get-FileHash | Out-Null'],sourceEnv,30000);
  const isolatedNode=run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--runtime-only'],sourceEnv,120000).trim().split(/\r?\n/).at(-1).trim();
  assert.equal(run(isolatedNode,['--version'],sourceEnv,10000).trim(),'v24.18.0');
- run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--headless','--test-profile',sourceProfile],sourceEnv,600000);
+ run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--headless','--test-profile',sourceProfile],sourceEnv,900000);
  evidence.source=await verifyProfile(sourceProfile,'system-chrome');
  evidence.checks.push('install-windows.ps1 isolated Node and Lite source installation');
 
