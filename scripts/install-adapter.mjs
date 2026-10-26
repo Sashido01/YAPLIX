@@ -93,7 +93,7 @@ export function createAdapter(options){
    const data=await dbInfo(dataHome);let oldInfo;try{oldInfo=old?verifyFiles(old):null;}catch{}
    const fs=statfsSync(installHome);let writable=true;const test=join(stateHome,'write-'+process.pid);try{writeFileSync(test,'',{flag:'wx',mode:0o600});rmSync(test);}catch{writable=false;}
    const dependencies=[];
-   if(process.platform==='linux')for(const binary of ['runtime/node',...(delivery?.browser==='system-chrome'?[]:['browsers/chromium-1248/chrome-linux64/chrome'])]){
+   if(process.platform==='linux')for(const binary of ['runtime/node',...(delivery?.browser==='system-chrome'?[]:['browsers/chromium-1248/chrome-linux64/chrome','browsers/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell'])]){
     const r=spawnSync('/usr/bin/ldd',[join(source,binary)],{env:{...process.env,LC_ALL:'C',LD_LIBRARY_PATH:join(source,'lib')},encoding:'utf8'});
     if(r.error||r.status!==0||/not found/.test(r.stdout))throw new InstallError('DEPENDENCIES');
     dependencies.push({component:binary,status:'isolated-ready'});

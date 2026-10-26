@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 const root=fileURLToPath(new URL('../',import.meta.url));
 process.env.PLAYWRIGHT_BROWSERS_PATH=resolve(root,'browsers');
 const channel=JSON.parse(readFileSync(resolve(root,'packaging/delivery.json'),'utf8')).browser==='system-chrome'?'chrome':'chromium';
-const launchTarget=channel==='chrome'?{channel:'chrome'}:{executablePath:resolve(root,'browsers/chromium-1248',process.platform==='win32'?'chrome-win64/chrome.exe':'chrome-linux64/chrome')};
+const launchTarget=channel==='chrome'?{channel:'chrome'}:{executablePath:resolve(root,'browsers/chromium_headless_shell-1248',process.platform==='win32'?'chrome-headless-shell-win64/chrome-headless-shell.exe':'chrome-headless-shell-linux64/chrome-headless-shell')};
 const {chromium}=await import('playwright-core');
 const temp=mkdtempSync(join(tmpdir(),'y2-'));
 const env={...process.env,TMPDIR:temp,TMP:temp,TEMP:temp};

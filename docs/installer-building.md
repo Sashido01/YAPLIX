@@ -59,11 +59,11 @@ strict checker, принят Canvas fixture и отклонён DOM fixture. П�
 не обновляет. Сбой не переключает браузер и не ослабляет validator.
 [Каналы Playwright](https://playwright.dev/docs/browsers#google-chrome--microsoft-edge).
 
-**Full:** Chromium revision 1248 из INSTALL-001, Node и отдельные нужные библиотеки.
-Production validator и установочный probe явно запускают этот Chromium из payload:
-Playwright в headless-режиме иначе может выбрать отдельный `chromium_headless_shell`,
-который Full не содержит. При пересборке проверьте production browser-check на
-готовой Canvas-игре, а не только запуск браузера.
+**Full:** Chromium revision 1248 и его `chromium_headless_shell-1248`, Node и
+отдельные нужные библиотеки. Production validator и установочный probe явно
+запускают поставляемый headless-shell с sandbox; обычный Chromium остаётся для
+UI-проверок. При пересборке проверьте production browser-check на готовой
+Canvas/WebGL-игре, а не только запуск браузера.
 Библиотеки копируются в `lib/`, glibc/loader не подменяются. Для каждой библиотеки
 проверяется checksum установленного Ubuntu-пакета через dpkg metadata, фиксируются
 package/version/SHA256 и лицензия в `packaging/libraries.json` / `licenses/`.
@@ -86,7 +86,8 @@ Full нужен только когда нет совместимого Chrome; 
 Используйте Node 24.18.0 из проверенного официального архива, текущий lockfile
 и `npm ci && npm run build`. Укажите пути к отдельно полученным официальному
 Node archive, его SHASUMS256.txt и Linux Playwright browser cache. Проверьте,
-что browser cache содержит `chromium-1248/chrome-linux64/chrome`;
+что browser cache содержит `chromium-1248/chrome-linux64/chrome` и
+`chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`;
 `npm run checker:install` может подготовить его в `.local/playwright`.
 Ни один из этих входов не входит в Git. Для текущего дерева всегда создавайте
 новый payload; старые локальные пакеты не содержат исправления validator.

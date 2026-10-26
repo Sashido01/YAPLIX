@@ -21,6 +21,9 @@ if lock['packages']['node_modules/playwright-core']['version']!='1.64.0': p.erro
 browser=a.browsers/('chromium-1248')
 executable=browser/('chrome-linux64/chrome' if a.platform=='linux' else 'chrome-win64/chrome.exe')
 if not executable.is_file(): p.error('Pinned platform Chromium 1248 is missing')
+shell=a.browsers/'chromium_headless_shell-1248'
+shell_executable=shell/('chrome-headless-shell-linux64/chrome-headless-shell' if a.platform=='linux' else 'chrome-headless-shell-win64/chrome-headless-shell.exe')
+if not shell_executable.is_file(): p.error('Pinned platform Chromium headless shell 1248 is missing')
 out=ROOT/'.local/install-001/packages';out.mkdir(parents=True,exist_ok=True)
 # Temporary staging is always owned by this invocation, never a user's directory.
 with tempfile.TemporaryDirectory(prefix='stage-',dir=out.parent) as tmp:
@@ -70,6 +73,7 @@ with tempfile.TemporaryDirectory(prefix='stage-',dir=out.parent) as tmp:
   shutil.copy2(nodew,runtime/'nodew.exe')
  shutil.copy2(dist/'LICENSE',runtime/'NODE-LICENSE.txt')
  shutil.copytree(browser,app/'browsers/chromium-1248')
+ shutil.copytree(shell,app/'browsers/chromium_headless_shell-1248')
  # The regular Chromium channel is used for the protected production checker.
  (app/'packaging/delivery.json').write_text(json.dumps({'browser':'isolated-chromium'}))
  manifest={str(f.relative_to(app)).replace(os.sep,'/'):hashfile(f) for f in sorted(app.rglob('*')) if f.is_file()}
