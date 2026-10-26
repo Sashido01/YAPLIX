@@ -40,6 +40,8 @@ test('touch, rotation, reduced viewport, focus game and repeated library navigat
     for(const button of await frame.locator('.controls button').all()){const rect=await button.boundingBox();expect(rect!.width).toBeGreaterThanOrEqual(44);expect(rect!.height).toBeGreaterThanOrEqual(44);}
   }
   mark('focus');await page.setViewportSize(original);await page.getByRole('button',{name:'Игровой экран',exact:true}).click();
+  await expect(page.locator('.player')).toHaveCSS('position','fixed');
+  await expect(page.locator('.player')).toHaveCSS('top','0px');
   await action('Вправо');await expect(frame.locator('#score')).toHaveText('2');
   await page.screenshot({path:info.outputPath('mobile-game.png')});
   await page.getByRole('button',{name:'Обычный экран',exact:true}).click();
@@ -75,4 +77,13 @@ test('version and replay controls stay disabled until the displayed game finishe
     release();await expect(page.locator('#message')).toContainText('Игра сохранена');
     await expect(page.locator('#versions')).toBeEnabled();await expect(page.locator('#replay')).toBeEnabled();
   }finally{release();}
+});
+
+
+test('header brand and actions stay separate at mobile widths',async({page})=>{
+  await page.goto('/');
+  const brand=await page.locator('header .brand').boundingBox(),tools=await page.locator('.header-tools').boundingBox();
+  expect(brand!.x+brand!.width).toBeLessThanOrEqual(tools!.x);
+  await expect(page.locator('#jobs-toggle')).toBeVisible();
+  await expect(page.locator('#diagnostics')).toBeVisible();
 });

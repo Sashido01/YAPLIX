@@ -40,7 +40,7 @@ export function canvasGame(kind='arcade'){
  ${kind==='puzzle'?"for(let i=0;i<9;i++){ctx.fillStyle=i===step%9?'#ffce40':'#456788';ctx.fillRect(10+(i%3)*90,10+Math.floor(i/3)*52,80,44);}":"ctx.fillStyle='#4c8290';ctx.fillRect(220,20,45,120);ctx.fillStyle='#ffcc40';ctx.fillRect(20+(step%5)*30,100,40,40);"}
  }
  `;
- return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+ return `<!doctype html><html><head><meta name="yaplix-arena" content="goal-required-v1"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
  body{margin:0;font:16px system-ui;background:#101828;color:white}canvas{display:block;width:min(300px,100vw);height:180px;touch-action:none}button{min-width:60px;min-height:44px}output{display:block}
  </style></head><body><p>${kind==='puzzle'?'Light each tile':'Move past the obstacle'}</p><button id="begin">Start</button><canvas aria-label="Game world"></canvas><button id="move">Move</button><output>Ready</output><script>
  const surface=document.querySelector('canvas');let active=false,step=0;
@@ -52,4 +52,4 @@ export function canvasGame(kind='arcade'){
  addEventListener('keydown',e=>{if(e.key==='ArrowRight')act();});addEventListener('resize',draw);draw();
  </script></body></html>`;
 }
-export const domGame='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><button onclick="this.textContent=Number(this.textContent)+1">0</button><script>/* authored offline fixture */</script></body></html>';
+export const domGame='<!doctype html><html><head><meta name="yaplix-arena" content="goal-required-v1"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><button onclick="this.textContent=Number(this.textContent)+1">0</button><script>/* authored offline fixture */</script></body></html>';

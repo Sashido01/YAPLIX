@@ -4,6 +4,7 @@ import { CloudTransport, CloudOutputFailure, ProviderFailure } from './transport
 import type { CodeTransport, Generator, GenerationContext, TokenUsage, ProviderMode } from './transport.ts';
 import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { generationMessages, validateDocument } from './generation.ts';
+import {arenaDeclared,arenaGoalRequired} from './arena-contract.ts';
 import type { PromptStyle } from './generation.ts';
 import { prepareDocument } from './validation.ts';
 import {generationTimeouts,LIVE_RESPONSE_TIMEOUT_MS,LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
@@ -66,6 +67,7 @@ export class GenerationEngine implements Generator {
           if(prepared.repair){context?.preserveOriginal?.(raw);context?.validation?.({level:'NOT_VERIFIED',code:prepared.repair,phase:'format',feedback:'Format repair requires full revalidation.'},prepared.repair);}
           context?.trace?.('html.extracted',{outputBytes:Buffer.byteLength(prepared.html),durationMs:Math.round(performance.now()-formatBegan),next:'html-validation'});
           const issues=validateDocument(prepared.html);if(issues.length)throw new BrowserFailure('LLM_UNSAFE_ARTIFACT',issues.join(', '));
+          if(!arenaDeclared(prepared.html)&&!arenaGoalRequired(prepared.html))throw new BrowserFailure('ARENA_CONTRACT_REQUIRED','Missing or ambiguous Arena metric. Keep the checkpoint; a measured game needs result-v1, otherwise explicitly declare goal-required-v1. No automatic inference repair.');
           context?.trace?.('html.validated',{durationMs:Math.round(performance.now()-formatBegan),next:'browser'});browserBegan=performance.now();context?.trace?.('browser.started');
           const evidence=await this.check(prepared.html,controller.signal);
           if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
@@ -87,7 +89,7 @@ export class GenerationEngine implements Generator {
             context.stage('validating');
             try{const checked=await checkDocument(partial),evidence=checked.evidence;complete=checked.code;if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);const attempt:GenerationAttempt={route:route.route,provider:origin.provider,requestedModel:origin.requestedModel,model:origin.model,outcome:'accepted',errorCode:null,elapsedMs:Math.round(performance.now()-started),requestMs:0,validationMs:Math.round(performance.now()-started)};context.attempt(attempt);
               return parseArtifact({html:complete,method:'llm_code',provider:origin.provider,model:origin.model,generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[attempt],fallback:route!==routes[0],elapsedMs:Math.round(performance.now()-started),browser:evidence}});
-            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='chatgpt'||route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE|^INVALID_GENERATION_METADATA$|^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(error.code)))throw error;
+            }catch(error){if(controller.signal.aborted)throw error;recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';if(route.provider==='chatgpt'||route.provider==='openrouter'||!this.allowLlmRepair||this.repairs===0||repairUsed||error instanceof Fault&&(/TIMEOUT|SANDBOX|INSTALL_REQUIRED|INCONCLUSIVE|^INVALID_GENERATION_METADATA$|^ARENA_CONTRACT_REQUIRED$|^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(error.code)))throw error;
               context?.trace?.('repair.started');context?.claimRepair?.();repairUsed=true;recoveryRoute=route;}
           }else{
             context.preserveOriginal?.(partial);
@@ -146,7 +148,7 @@ export class GenerationEngine implements Generator {
               const until=Date.now()+5000;this.cooldowns.set(key,{until,code:lastCode});context.cooldownRoute?.(route,until,lastCode);context.retryAt?.(until);break;
             }
             // A local contract failure cannot be repaired by another provider.
-            if(lastCode==='INVALID_GENERATION_METADATA'||/^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(lastCode))throw new GenerationFailure(lastCode,attempts);
+            if(lastCode==='ARENA_CONTRACT_REQUIRED'||lastCode==='INVALID_GENERATION_METADATA'||/^BROWSER_(?:CANVAS_|DOM_GAME_(?:WORLD|UI))/.test(lastCode))throw new GenerationFailure(lastCode,attempts);
             if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED'].includes(lastCode))throw new GenerationFailure(lastCode,attempts,503);
             const repairable=error instanceof BrowserFailure||/^(?:BROWSER_|JAVASCRIPT_EXCEPTION|LLM_INVALID_HTML|LLM_UNSAFE_ARTIFACT|LLM_OUTPUT_TRUNCATED)/.test(lastCode);
             if(!actual||!repairable)break;

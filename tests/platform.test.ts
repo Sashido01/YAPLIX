@@ -31,7 +31,7 @@ test('migration, persistence, lineage, integrity and project containment', t => 
   store.close();
   store = new Store(`${dir}/data.sqlite`);
   assert.deepEqual(store.getVersion(second.versionId), second);
-  store.db.exec('PRAGMA user_version=3');
+  store.db.exec('PRAGMA user_version=4');
   store.close();
   assert.throws(() => new Store(`${dir}/data.sqlite`), /SCHEMA_TOO_NEW/);
   assert.throws(() => new Store('../escape.sqlite'), /DB_PATH_OUTSIDE_PROJECT/);
@@ -162,4 +162,12 @@ test('browser runtime ESM graph is served as JavaScript through the exact module
     '/runtime/../src/store.ts', '/runtime/%252e%252e%252fsrc%252fstore.ts']) {
     assert.equal((await app.request(path)).status, 404, path);
   }
+});
+
+
+test('production CSS has no parser warnings that can swallow mobile rules',async()=>{
+  const {transform}=await import('esbuild');
+  const {readFile}=await import('node:fs/promises');
+  const parsed=await transform(await readFile('assets/style.css','utf8'),{loader:'css',logLevel:'silent'});
+  assert.deepEqual(parsed.warnings.map(w=>w.text),[]);
 });

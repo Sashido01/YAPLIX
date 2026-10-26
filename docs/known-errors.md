@@ -1,13 +1,21 @@
 # Известные ошибки и восстановление YAPLIX
 
 Справочник действий по текущему коду. Реальные результаты и ограничения сети
-TASK-008 зафиксированы в [отчёте](task-008-report.md), TASK-010 — в [едином отчёте](task-010-report.md); они не доказывают причину
+TASK-008 зафиксированы в [отчёте](archive/task-008-report.md), TASK-010 — в [едином отчёте](archive/task-010-report.md); они не доказывают причину
 каждого будущего сбоя. Сначала сохраните запрос/черновик и проверьте этап,
 код ошибки, состояние задания и диагностику. Не прикладывайте `.env`, ключи,
 initData или необработанные журналы. [Запуск и обслуживание](../README.md).
 
 | Ошибка / симптом | Причина и безопасное действие |
 | --- | --- |
+| Full portable: production checker выдаёт `BROWSER_SANDBOX_UNAVAILABLE`, хотя Chromium установлен | В CORE-001/002 Playwright 1.64.0 при `headless:true` выбирал отдельный `chromium_headless_shell-1248`, которого не было в Full payload. SUBMISSION-001 добавляет точный pinned headless-shell в Full и явно выбирает его с `chromiumSandbox:true`; установленный probe использует тот же бинарник. Обычный Chromium остаётся в Full для UI-проверок. Если запуск по-прежнему не удаётся, проверьте реальное сообщение Chromium и короткий путь временного профиля; отключать sandbox нельзя. [Проверки кандидата](submission-verification.md). |
+| Положительная WebGL-игра не завершается в 18 секунд на текущей Ubuntu | Наблюдался `REQUEST_CANCELLED` в двух `strict animated webgl` случаях `draw` и `redraw`; `draw` также не уложился на неизменённом CORE-001 baseline с headless-shell. Причина затрат времени не установлена, поэтому WebGL PASS на этом хосте не заявляется. Сохраните checkpoint и диагностику; не увеличивайте лимит и не отключайте проверку ради принятия игры. [Граница результата](submission-verification.md). |
+| Изолированный worktree: browser suite падает до первого действия с Executable doesn't exist | `scripts/browser-tests.mjs` принудительно задаёт cache `.local/playwright` своего worktree, даже при внешнем PLAYWRIGHT_BROWSERS_PATH. Установите браузеры через `npm run browsers:install` именно в этой копии. Для использования уже проверенного cache без повторного скачивания задайте абсолютный PLAYWRIGHT_BROWSERS_PATH и запустите `node node_modules/@playwright/test/cli.js test ...` напрямую; на Windows при необходимости также задайте TEMP/TMP в локальную папку. Отсутствующий executable не является дефектом приложения. |
+| Arena: `LAN_QR_UNAVAILABLE` при новом URL комнаты | QR телефона допускает только `/phone`. Arena использует отдельный узкий QR-формат `/arena/<UUID>#<secret>` с частным IPv4; не расширяйте общий QR до произвольных URL. Browser E2E декодирует QR и проходит реальные касания десяти clients, без подстановки score. В тесте нужен частный IPv4, loopback QR запрещён. [Демо и ограничения](arena.md). |
+| Arena: версия не выдаёт score/завершение | Декларация score-v1/result-v1 — заявление контракта, не gameplay PASS. Без неё UI предлагает «Подготовить для Arena»: известный authored HTML локально, неизвестный — по отдельному LLM-согласию. Без корректного результата и session_ended рекорд не создаётся. Не подставляйте очки по Start, DOM/Canvas или таймеру; inference требует бюджета. |
+| UI-001: долгоживущий локальный сервер отдаёт устаревший CSS/HTML после правки ассетов | `staticAssets()` кэширует файлы навсегда по назначению продакшн-сервера; после правки `assets/*.css` перезапустите сервер (`Ctrl+C` и повторный запуск), иначе браузер видит предыдущую версию с прежним ETag, а свежий playwright webServer всегда её обновляет. Наблюдение UI-001 в worktree, правки кода не требуются. |
+| UI-001: Playwright `ENOENT …/traces/*-recording46.trace` или zip при сборке артефактов (webkit-tablet `phone.spec`) | Не assertion-отказ: сборка trace-артефакта оборвалась в файловой системе. Чистый повтор того же теста прошёл. При единичном таком отказе перезапустите конкретную спеку/profile, не внося правок в код. |
+| UI-001: unit-тесты transport падают с `LLM_PROXY_CONNECTION` на машине с системным `HTTPS_PROXY` | Оболочка экспортирует `HTTPS_PROXY=http://127.0.0.1:10809`; mock-failure тесты ожидают прямые DNS/TLS коды, а undici уходит в прокси. Локально очищайте `HTTP_PROXY`/`HTTPS_PROXY` для `npm test`. На CI переменных нет. Это окружение хоста, не регрессия кода. |
 | A1.8.5: browser ESM graph assertion перечисляет только прежние три модуля | При корректных HTTP 200 четырёх модулей точный список `runtime.spec.ts` ещё ожидал три; полный прогон дал один и тот же RED во всех 12 профилях. Список обновлён совместно с unit graph, без ослабления status/session/gameplay assertions. Исходный failed full log сохранён; финальный HEAD требует нового полного прогона. |
 | A1.8.5: `/runtime/generation-limits.js` возвращает 404 | Вынос pure cap в отдельный модуль добавил browser ESM import из contracts. Полный unit graph test воспроизвёл 404; новый dependency-free модуль добавлен в точный API allowlist и ожидаемый ESM graph. Server timeout module и произвольные пути по-прежнему не доступны. Это локальная source/build проверка, без пользовательского сервера. |
 | A1.8.5: риск рассинхронизации metadata cap и job budget | Dependency-free `src/generation-limits.ts` задаёт прежние 35 min для parser и server timeout policy; `generation-timeouts.ts` сохраняет прежний экспорт. Regression сохраняет maximum configurable job budget во всех пяти timing fields и проверяет меньшие явные response/job limits. Восстановление старого metadata cap 5 min даёт 16 RED, текущий parser — 31/31 GREEN. Реальные inference deadlines, historical profiles и one-POST guard не увеличены. |
@@ -24,9 +32,9 @@ initData или необработанные журналы. [Запуск и о
 | A1.8: falling-blocks проходит lifecycle, но получает `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` | Наблюдённый probe сначала нажимал Pause и затем проверял движение в паузе. Общий Full HTML probe теперь пропускает служебные Pause/Resume/Restart в игровых действиях и снимает Canvas после каждого реального игрового нажатия, прежде чем противоположное направление отменит изменение. Исходный Orchestrator fixture проходит без изменения правил, Canvas gate и его порогов. |
 | A1.8: нарисованный Canvas имеет нулевые наблюдённые draw-вызовы | В Chromium для `srcdoc` наблюдалась гонка: game inline script получил контекст до init instrumentation. Gate теперь загружает HTML через точный локально fulfilled document URL, до parsing устанавливая observer. Внешнего GET нет; opaque `allow-scripts` и CSP сохранены. Реальные Canvas 2D/WebGL fixtures и production job проверяются offline. Не отключайте gate и не добавляйте instrumentation в сохраняемый HTML. |
 | `BROWSER_CANVAS_REQUIRED`, `BROWSER_CANVAS_LAYOUT`, `BROWSER_CANVAS_RENDER_UNVERIFIED`, `BROWSER_CANVAS_ACTIVITY_UNVERIFIED`, `BROWSER_DOM_GAME_WORLD` | Новая версия не получила достаточного Canvas/WebGL evidence или обнаружен DOM/SVG world. Draft и причина остаются в job, новая версия не сохраняется; автоматического repair/fallback нет. Continue перепроверяет полный checkpoint локально. Исправление требует нового явного запроса владельца. Старые HTML продолжают открываться и экспортироваться. [Границы проверки](canvas-rendering-contract.md). |
-| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
+| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](archive/micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
 | NL-004: обе змейки теряют управление при 844×390 | Сохранённые DEV HTML рассчитывают поле без достаточного учёта высоты, body overflow:hidden блокирует прокрутку. Общее требование landscape не обеспечило адаптацию. MICRO-030 отклоняет подтверждённо недоступные controls; MICRO-031 уточняет общий prompt: три размера, все основные состояния, CSS shrink/reflow либо настоящая прокрутка без глобальной блокировки жестов. Offline tests проверяют подготовку сообщений; улучшение новых игр NOT_VERIFIED до отдельного разрешённого A/B. Исходные HTML не исправляются. [Контракт и границы](nl-game-intent.md#micro-031-доступность-управления). |
-| MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](micro-028n-phone-connectivity.md). |
+| MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](archive/micro-028n-phone-connectivity.md). |
 | MICRO-026: unit `tunnel.test.ts` ждёт TUNNEL_CLOSED, но получает BACKEND_NOT_READY | Один параллельный replay при browser/build нагрузке не успел поднять synthetic backend; полный последовательный `node --test --test-concurrency=1 tests/*.test.ts` прошёл 235/235 без изменения timeouts/production. Это наблюдение локального теста, не доказательство внешнего tunnel отказа. |
 | MICRO-026: старые `production.spec.ts` LIVE fixtures падают при локальных model endpoints | На неизменённом main 37653b9 повторён `FREE_MODEL_REQUIRED`: HTTP-disconnect fixture задаёт CLOUD_BASE_URL=localhost, запрещённый MICRO-019. Старые OLLAMA_BASE_URL fixtures также не настраивают текущий cloud route. В расширенном smoke 7 FAIL; production routes не ослаблять. Использовать актуальные isolated transport unit tests и отдельный runtime smoke; обновление legacy harness требует отдельной задачи. Это пробел тестов, не внешний inference proof. |
 | MICRO-026: `eval` через Playwright evaluate не показывает запрет CSP | DevTools execution может обходить ограничение unsafe-eval. Проверенный способ: отдельный обычный inline script внутри allow-scripts opaque iframe выполняет security probe, Playwright только читает результат. Обычный eval/network заблокированы; parent DOM/storage недоступны. Это проверка браузерной изоляции, не доказательство безопасности произвольной игровой логики. |
@@ -66,7 +74,7 @@ initData или необработанные журналы. [Запуск и о
 | `LLM_INVALID_RESPONSE` / `LLM_INVALID_HTML` / `LLM_UNSAFE_ARTIFACT` / `BROWSER_*` | Неполный документ/отказ проверки не создаёт passed version. Repair получает исходный prompt, полезный HTML и конкретную ошибку. TASK-010 устраняет потерю raw response при extract failure и уточняет порядок game_started до score events. Для BROWSER_INSTALL_REQUIRED установите checker; sandbox ОС исправляйте по [setup](development-setup.md), не выключайте. Gate startup-input-pause не доказывает весь gameplay. |
 | `JOB_RESTART_UNCERTAIN` | Восстанавливаются original deadline/budget/cooldown и допустимые автоматические действия. Неизвестный potentially billed route исключается; полный checkpoint с совместимым origin может пройти повторную validation без POST. MICRO-023 не допускает автоматическую смену provider. Без ресурсов/бюджета остаётся needs_attention. Ручной Continue запускает новый bounded cycle, не обнуляет lifetime attempts. |
 | `BROWSER_RESUME_NOT_WORKING` | После паузы checker не увидел фактического продолжения. Сделайте видимую Resume/Continue/data-yaplix-resume либо работающий pause toggle; одно изменение надписи не доказывает resume. Общий gate не заменяет полный сценарий gameplay/win/loss. |
-| `game_won` без доказанного порога / rules-aware NOT_VERIFIED | TASK-017: событие само по себе не доказывает победу. Отдельный offline-аудит читает сохранённые rules, сверяет numeric HUD, реальные действия, стабильный видимый terminal и end; для змейки дополнительно сверяет пиксельные контакты головы с яблоками. Unknown/compound rule, исходно неоднозначный/конфликтный target, отсутствие безопасного пути или исчерпание бюджета остаются NOT_VERIFIED; изменение уже установленной цели — FAILED. HTML и очки не подменяются. См. [результаты и evidence](task-017-report.md). |
+| `game_won` без доказанного порога / rules-aware NOT_VERIFIED | TASK-017: событие само по себе не доказывает победу. Отдельный offline-аудит читает сохранённые rules, сверяет numeric HUD, реальные действия, стабильный видимый terminal и end; для змейки дополнительно сверяет пиксельные контакты головы с яблоками. Unknown/compound rule, исходно неоднозначный/конфликтный target, отсутствие безопасного пути или исчерпание бюджета остаются NOT_VERIFIED; изменение уже установленной цели — FAILED. HTML и очки не подменяются. См. [результаты и evidence](archive/task-017-report.md). |
 | TASK-016 LIVE-тетрис не падает и не реагирует на Drop | Подтверждено TASK-017: 30 s, score 0/200, фигура остаётся в строках 0–1 после 41 Drop при работающем горизонтальном вводе. В исходной логике секунды `dt` сравниваются с `800`, а Drop меняет неиспользуемое `piece.dy`. Это дефект артефакта, не cloud/network timeout и не повод увеличить generation timeout. Исправление генерации не выполнялось в TASK-017; победа остаётся NOT_VERIFIED. |
 | `JOB_QUEUE_FULL` / `RATE_LIMIT` | Один worker, до 20 pending глобально и 3 на владельца при creation/continue. LIVE creation при настроенном generator: 6/min owner, 12/min global. Отдельно такие же лимиты фактических provider dispatch, включая repair/Continue. Подождите завершения/отмените своё ненужное задание. Cancel не удаляет запрос и checkpoint. |
 | `JOB_WORKER_BUSY` | После successful bind lease защищает одну DB от второго backend, в том числе на другом порте. Закройте только свой writer штатно. После crash подтверждённо отсутствующий PID позволяет restart сразу; живой/непроверяемый PID сохраняет lease до 60 s. Чужой процесс/lease не удаляйте, игры и записанные checkpoints сохраните. |
@@ -79,7 +87,7 @@ initData или необработанные журналы. [Запуск и о
 | Mini App недоступна / нет HTTPS | Текстовый bot и HTTPS Mini App — разные каналы. Loopback/LAN не заменяют публичный HTTPS. Меню/кнопки публикуются только для подтверждённого текущего экземпляра; при недоступном Quick Tunnel используйте отдельно подготовленный защищённый [HTTPS host](telegram.md), не anonymous LLM endpoint. |
 | `SCHEMA_INVALID` / `SCHEMA_TOO_NEW` / `BACKUP_*` | Не пересоздавайте и не удаляйте базу. Остановите свой writer, сохраните DB/WAL/SHM и protective `before-v2-*` snapshots. Неизвестная схема/неисправная копия блокируют запуск. Restore выполняйте только из проверенной копии по [setup](development-setup.md). |
 | Hosted repository-checks падает на тяжёлых browser-тестах | Windows shared runners близки к 20-минутному лимиту job'а: полный browser suite ~13.5 m суммарно с setup и unit-тестами превышал бюджет (TASK-013: три прогона подряд — упавшие тесты каждый раз разные, затем step cancelled при пройденных 218 тестах). Теперь budget 30 m. Медленный runner не доказывает дефект кода: сначала проверьте, совпадает ли тест между прогонами и прошёл ли тот же коммит в другой раз. MICRO-018 сохраняет suite для FULL, но не устанавливает browsers для docs-only; [policy и ограничения](ci-economy.md). |
-| Actions быстро расходует квоту, timing API показывает нулевые billable | MICRO-018: у main run 38868311721 timing API вернул `total_ms:0` при 21 min workflow wall time. Это не нулевой счёт: используйте job started/completed timestamps, отдельно округляйте каждый job вверх и подписывайте оценку, а не billable факт. Billing GET без user scope вернул 404; остаток 189 min из старого письма не подтверждён. MICRO-019 владелец временно выключил repository Actions до 29 октября 2026; отсутствие run не PASS. Dynamic Dependabot workflow не отключается отдельно (422), repository actions/permissions enabled:false — authoritative state. Восстановление только по команде владельца: [порядок](ci-economy.md). Scopes/тариф автоматически не меняются. [Baseline](micro-018-report.md). |
+| Actions быстро расходует квоту, timing API показывает нулевые billable | MICRO-018: у main run 38868311721 timing API вернул `total_ms:0` при 21 min workflow wall time. Это не нулевой счёт: используйте job started/completed timestamps, отдельно округляйте каждый job вверх и подписывайте оценку, а не billable факт. Billing GET без user scope вернул 404; остаток 189 min из старого письма не подтверждён. MICRO-019 владелец временно выключил repository Actions до 29 октября 2026; отсутствие run не PASS. Dynamic Dependabot workflow не отключается отдельно (422), repository actions/permissions enabled:false — authoritative state. Восстановление только по команде владельца: [порядок](ci-economy.md). Scopes/тариф автоматически не меняются. [Baseline](archive/micro-018-report.md). |
 | main a902343: Windows browser suite красный после merge PR 23 | Run 38868311721: jobs background/offline test исчерпал 20 s при ожидании Start после reload; unresponsive gameplay вернул правильный timeout verdict, но wall time 24881 ms превысил assertion 22000 ms. Это два наблюдаемых отказа; точная причина race/нагрузки и remedy не подтверждены. MICRO-018 не отключает эти тесты, не повышает таймауты и не добавляет retries. Локальный PASS не заменяет новый hosted FULL. |
 | TASK-017 unresponsive-fixture возвращает NOT_VERIFIED вместо watchdog FAILED в CI | Ubuntu run 38861148019 закончился за 2.0 s до ввода; Windows run 38862850604 показал ту же проблему при 6 s (Start tap 2.58 s, setup/baseline съели drive budget). Активный rules-aware budget теперь начинается после настоящего `game_started`; общий hard watchdog budget + 12 s по-прежнему включает startup. Fixture имеет 6 s и требует `BROWSER_GAMEPLAY_TIMEOUT`; отдельная delayed-Start регрессия с тем же 6 s budget проверяет игру после анимированного Start. Generation/LIVE audit budgets не меняются. |
 | Gameplay checker сообщает FAILED при настоящем terminal overlay между наблюдением и FIRE/Pause | Windows trace run 38862850604: змейка закончила run, пока Playwright проверял actionability; `#yapOverlay` перехватил FIRE. Pending click отменяется только при наблюдаемом terminal event, затем обычный независимый proof всё равно сверяет цель/HUD/screen/end. Клик сквозь overlay и изменение состояния запрещены; другие click errors не скрываются. |
@@ -134,7 +142,7 @@ initData или необработанные журналы. [Запуск и о
   Программный scrollIntoView не доказывает доступность: он умеет прокручивать hidden.
 - Сохранённые игры не исправлялись; булочная по-прежнему проходит техническую
   проверку. Это не доказательство gameplay/win или физических Android/iOS.
-  Детали и границы: [MICRO-030](micro-030-report.md).
+  Детали и границы: [MICRO-030](archive/micro-030-report.md).
 
 ## MICRO-036.3: Full HTML прошёл checker, но не сохраняется
 
@@ -206,7 +214,7 @@ initData или необработанные журналы. [Запуск и о
   HTTP/SSE-сервером, проверяют max POST 1,
   отсутствие refresh/retry и утечек, включая 401/429/5xx/timeout/expired token.
   HTTP200 или SSE без completed + text не дают PASS. Реальный probe не запускался.
-  [CLI proof и версия Gitleaks](micro-029-chatgpt-feasibility.md#micro-0293-финальная-offline-подготовка-cli).
+  [CLI proof и версия Gitleaks](archive/micro-029-chatgpt-feasibility.md#micro-0293-финальная-offline-подготовка-cli).
 
 - MICRO-032.1: `SIWC_OUTPUT_INVALID` при HTTP200/sseObserved true прежде возникал
   в completed-ветке при пустом или >8192 тексте, до чтения usage. Offline
@@ -215,7 +223,7 @@ initData или необработанные журналы. [Запуск и о
   сохраняются до проверки текста; пустой completed имеет отдельный
   SIWC_COMPLETED_WITHOUT_TEXT. Причина конкретного ответа владельца NOT_VERIFIED.
   Диагностика содержит только counts/status/codes/length/bytes/usage, без текста.
-  Реальный probe не повторять без нового разрешения. [Разбор](micro-029-chatgpt-feasibility.md#micro-0321-пустой-результат-и-безопасная-диагностика).
+  Реальный probe не повторять без нового разрешения. [Разбор](archive/micro-029-chatgpt-feasibility.md#micro-0321-пустой-результат-и-безопасная-диагностика).
 
 - MICRO-029.2 / MICRO-032: владелец сообщил `SIWC_SSE_REQUIRED`, HTTP200,
   Content-Type UNKNOWN. Прежний header-only guard локально воспроизвёл отказ на
@@ -224,14 +232,14 @@ initData или необработанные журналы. [Запуск и о
   `responseMediaType`/`sseObserved`. Причина реального HTTP200 не установлена.
   Только `gpt-6.1-sol` из свежего видимого каталога, reasoning medium; при отсутствии
   `SIWC_PROBE_MODEL_UNAVAILABLE`, POST 0, без подмены. Повторный LIVE probe требует
-  нового разрешения. [Контракт и границы](micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
+  нового разрешения. [Контракт и границы](archive/micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
 
 - MICRO-032: HTTP 200 или output delta без `response.completed` не доказывают
   inference. `--probe` возвращает PARTIAL при `SIWC_STREAM_INTERRUPTED`,
   `SIWC_INFERENCE_INCOMPLETE`, `SIWC_USAGE_LIMIT`/`SIWC_USAGE_UNAVAILABLE` и timeout;
   автоматического повторного POST нет. Это проверено offline с синтетическим
   OpenAI HTTP, не реальным аккаунтом. После PARTIAL не перезапускать CLI без
-  нового бюджета. [Ручной probe](micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
+  нового бюджета. [Ручной probe](archive/micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
 
 - `SIWC_PLAN_PERMISSION_REQUIRED` / `SIWC_ID_TOKEN_INVALID`: identity sign-in
   не даёт автоматически ChatGPT plan usage. Проверяются granted scopes,
@@ -241,7 +249,7 @@ initData или необработанные журналы. [Запуск и о
   Реальные loopback offline-тесты проходят после нормализации, без роста timeout.
 - CLI `--prepare` не обращается к сети; `--authorize` — только ручной вход.
   Токены живут в памяти и забываются; persistent vault/refresh не реализованы.
-  Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](micro-029-chatgpt-feasibility.md).
+  Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](archive/micro-029-chatgpt-feasibility.md).
 
 ## MICRO-036.4: post-merge ESM и controlled worker
 
@@ -457,3 +465,45 @@ initData или необработанные журналы. [Запуск и о
   Continue revalidates locally without another dispatch. These are offline
   synthetic checks, not real-provider or physical-device evidence.
 - Evidence is synthetic/offline only; real LLM/OAuth/model requests remain zero.
+## LAN Setup (#55): локальные проверки
+
+- Windows Firewall отдаёт `DisabledInterfaceAliases = null`, когда исключённых
+  интерфейсов нет. Это не запрет политики. Синтетический collector RED воспроизвёл
+  ложный UNVERIFIED; null теперь пропускается, реальный read-only Inspect прочитал
+  адаптер, профиль, 230 правил и listener'ы. Это не изменение Firewall и не phone PASS.
+- На Windows sandbox Firefox мог падать при создании страницы (`Target crashed`),
+  а Playwright оставлял собственный webServer в teardown (`taskkill: Access denied`).
+  Host-прогон той же LAN UI матрицы прошёл 24/24 за 22 s. Для offline browser checks
+  используйте scoped per-command исключение из MICRO-029 A1.7 выше; не отключайте
+  защиту или CSP. При очистке проверяйте точные PID/parent chain своего worktree.
+- Arena responsive test после очень быстрой второй игры нажимал третью попытку
+  раньше действующего секундного rate limit и получал «Подождите секунду».
+  Тест теперь выдерживает тот же 1100 ms перед keyboard-попыткой, как перед
+  предыдущей. Production rate limit, счёт и игровое поведение не менялись.
+
+
+## RELEASE-INTEGRATION-001: ошибки объединённого кандидата
+
+- Два `network.test.ts` shutdown/restart test завершались timeout (15/20 s), в том числе изолированно. Фоновый `LanSetup.diagnose` оставлял referenced PowerShell Inspect до 30 s; закрытие SQLite не завершало Node. `closeDiagnostics()` теперь прерывает только Inspect через AbortSignal при shutdown. Elevated Apply не отменяется этим механизмом. Профильный повтор прошёл без увеличения таймаутов.
+- Незакрытый desktop `@media` в UI-001 поглощал следующий CSS, включая мобильный game-focus/keyboard/safe-area. Esbuild parser test воспроизвёл `Expected "}" to go with "{"`; закрывающая скобка и browser assertion fixed position устраняют проблему. Успешный TypeScript build сам по себе CSS не проверяет.
+- Выбор сохранённой Arena-комнаты или ошибка refresh оставляли Stop disabled; историческая закрытая комната также ошибочно влияла на активный listener. Stop теперь отражает известное состояние активного listener и временно блокируется только на операцию. Browser regression проверяет выбор, failed refresh и фактическое отключение.
+
+- При реальном просмотре screenshot 390px бренд пересекался с header-tools (правый край 274px, кнопки начинались на 209px). В HTML два дочерних элемента, а CSS оставлял три grid columns. Header теперь имеет две колонки, подпись бренда до 430px переносится под название. Regression сверяет реальные bounding boxes, отдельно от общего overflow.
+
+- Полная RELEASE-INTEGRATION-001 матрица дала 604 PASS / 2119 SKIP / 1 FAIL: Chromium tablet не декодировал screenshot QR. Три повтора сохранили реальное перекрытие верхней части QR sticky header (768px, DPR2.75). Причина: `attempt.finally → lock(false)` после открытия телефона возвращал viewport к игре; один центрирующий scroll этого не исправлял. Действие «На телефон» теперь сохраняет собственную цель прокрутки, QR центрируется, остальные действия сохраняют game reveal. Тот же screenshot→jsQR и настоящая игра на телефоне прошли 3/3; в regression дополнительно проверяется, что QR целиком в viewport ниже header. SVG, decoder, QR secret и протокол не менялись. Исходный FAIL/trace сохранён, он не объявляется PASS.
+
+## ARENA-UNIVERSAL-001: режим попытки и обязательная декларация
+
+- Обычная gallery-игра тоже получает `yaplix_init`/session. Проверка одного
+  `telemetry.session` ошибочно блокировала Restart обеих authored игр. Старые
+  arcades browser tests дали RED 2/2; ограничение теперь проверяет только
+  `init.arena===true`, который задаёт Arena parent. Те же tests дали GREEN 2/2.
+- Инструкция модели сама по себе не обеспечивает совместимость нового HTML.
+  Synthetic ответ без декларации раньше сохранялся как completed. Локальный
+  `ARENA_CONTRACT_REQUIRED` теперь оставляет checkpoint в needs_attention;
+  чувствительный durable test подтвердил один dispatch, без repair/fallback.
+- Сырые mouse coordinates на середине высокого iframe могли попасть за
+  viewport после длинного заголовка. Screenshot воспроизвёл Gate 1 без ввода.
+  Обычный locator click прокручивает цель; тест по-прежнему реально проходит
+  ворота и ждёт подтверждённый рекорд. Force-click, score POST и state injection нет.
+- Универсальные значения используют прежнюю колонку sessions.score, но время/дистанция не являются очками. Analytics теперь возвращает resultMetric/meanResult; nonscore meanScore=null. Unit RED 5000 как очки → GREEN 5.000 с и 30 м, UI browser regression проверяет единицы.

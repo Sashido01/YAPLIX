@@ -5,6 +5,10 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Fault, parseArtifact, parseEvent, parseSpec, uuid } from './contracts.ts';
 import type { Artifact, GameEvent, GameSpec, GameVersion } from './contracts.ts';
+import { SCHEMA_V3 } from './arena-schema.ts';
+import {arenaMetric} from './arena-contract.ts';
+
+export const SCHEMA_VERSION = 3;
 
 const moduleParent = fileURLToPath(new URL('../', import.meta.url));
 export const PROJECT_ROOT = existsSync(resolve(moduleParent, 'package.json')) ? moduleParent : resolve(moduleParent, '..');
@@ -27,41 +31,38 @@ const SCHEMA_V2 = [
 ];
 export function validSchema(db: DatabaseSync): boolean {
   const version = db.prepare('PRAGMA user_version').get()?.user_version;
-  if (version !== 1 && version !== 2) return false;
+  if (version !== 1 && version !== 2 && version !== 3) return false;
   const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim();
   const actual = db.prepare("SELECT sql FROM sqlite_schema WHERE substr(name,1,7) <> 'sqlite_' ORDER BY name").all().map(row => normalize(String(row.sql))).sort();
-  const expected = [...SCHEMA_V1,...(version===2?SCHEMA_V2:[])].map(normalize).sort();
+  const expected = [...SCHEMA_V1,...(Number(version)>=2?SCHEMA_V2:[]),...(version===3?SCHEMA_V3:[])].map(normalize).sort();
   return actual.length === expected.length && actual.every((sql, i) => sql === expected[i]);
 }
 export function healthyDatabase(db: DatabaseSync): boolean {
   return validSchema(db) && db.prepare('PRAGMA integrity_check').get()?.integrity_check === 'ok' && db.prepare('PRAGMA foreign_key_check').all().length === 0;
 }
+// Installed builds keep mutable files outside the read-only application tree.
+// Development retains the existing .local contract, including traversal checks.
+export const DATA_ROOT = process.env.YAPLIX_DATA_HOME
+  ? resolve(process.env.YAPLIX_DATA_HOME) : resolve(PROJECT_ROOT, '.local');
 export function managedPath(path: string, createParents = true): string {
-  const managed = resolve(PROJECT_ROOT, '.local');
-  const target = resolve(PROJECT_ROOT, path);
-  const rel = relative(managed, target);
+  const legacy = resolve(PROJECT_ROOT, '.local');
+  const rel = relative(legacy, resolve(PROJECT_ROOT, path));
   if (isAbsolute(rel) || rel.startsWith('..') || !rel) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-  // lstat catches dangling file links too; exists/realpath alone cannot do that.
-  for (let part = target; relative(PROJECT_ROOT, part) !== ''; part = dirname(part)) {
-    if (dirname(part) === part) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  const target = resolve(DATA_ROOT, rel);
+  // Check every ancestor before mkdir: never follow links into another tree.
+  for (let part = target; ; part = dirname(part)) {
     try { if (lstatSync(part).isSymbolicLink()) throw new Fault('DB_LINK_FORBIDDEN'); }
     catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+    if (dirname(part) === part) break;
   }
-  // Verify the nearest existing parent before recursive mkdir can follow a junction.
-  let parent = dirname(target);
-  while (!existsSync(parent)) parent = dirname(parent);
-  const nearest = relative(realpathSync(PROJECT_ROOT), realpathSync(parent));
-  if (isAbsolute(nearest) || nearest.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-  if (createParents) mkdirSync(dirname(target), { recursive: true });
-  if (existsSync(dirname(target))) {
-    const actual = relative(realpathSync(PROJECT_ROOT), realpathSync(dirname(target)));
-    if (isAbsolute(actual) || actual.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  if (createParents) mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  if (existsSync(target)) {
+    const r = relative(realpathSync(DATA_ROOT), realpathSync(target));
+    if (isAbsolute(r) || r.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
   }
-  // Existing DB symlinks may point outside even when the directory is safe.
-  try { const r = relative(realpathSync(managed), realpathSync(target)); if (isAbsolute(r) || r.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT'); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   return target;
 }
+
 export class Store {
   db: DatabaseSync;
   private backingUp = false;
@@ -71,10 +72,10 @@ export class Store {
     try {
       this.db.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000;');
       const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-      if (version > 2) throw new Fault('SCHEMA_TOO_NEW', 500);
+      if (version > SCHEMA_VERSION) throw new Fault('SCHEMA_TOO_NEW', 500);
       if (version === 0) {
         if(this.db.prepare("SELECT 1 FROM sqlite_schema WHERE substr(name,1,7)<>'sqlite_' LIMIT 1").get())throw new Fault('SCHEMA_INVALID',500);
-        this.transaction(() => this.db.exec([...SCHEMA_V1,...SCHEMA_V2].join(';\n') + '; PRAGMA user_version=2;'));
+        this.transaction(() => this.db.exec([...SCHEMA_V1,...SCHEMA_V2,...SCHEMA_V3].join(';\n') + '; PRAGMA user_version=3;'));
       }
       if (!validSchema(this.db)) throw new Fault('SCHEMA_INVALID', 500);
       if (this.db.prepare('PRAGMA user_version').get()?.user_version === 1) {
@@ -87,6 +88,17 @@ export class Store {
           try { if(!healthyDatabase(copy))throw new Fault('BACKUP_INVALID',500); } finally {copy.close();}
         }
         this.transaction(()=>this.db.exec(SCHEMA_V2.join(';\n')+'; PRAGMA user_version=2;'));
+        if (!validSchema(this.db)) throw new Fault('SCHEMA_INVALID',500);
+      }
+      if (this.db.prepare('PRAGMA user_version').get()?.user_version === 2) {
+        if (!healthyDatabase(this.db)) throw new Fault('SCHEMA_INVALID',500);
+        if (path !== ':memory:') {
+          const snapshot=managedPath(`.local/backups/before-v3-${randomUUID()}.sqlite`);
+          this.db.prepare('VACUUM INTO ?').run(snapshot);
+          const copy=new DatabaseSync(snapshot,{readOnly:true});
+          try { if(!healthyDatabase(copy))throw new Fault('BACKUP_INVALID',500); } finally {copy.close();}
+        }
+        this.transaction(()=>this.db.exec(SCHEMA_V3.join(';\n')+'; PRAGMA user_version=3;'));
         if (!validSchema(this.db)) throw new Fault('SCHEMA_INVALID',500);
       }
     } catch (e) { this.db.close(); throw e; }
@@ -126,7 +138,7 @@ export class Store {
       try {
         if (!healthyDatabase(copy)) throw new Fault('BACKUP_INVALID', 500);
       } finally { copy.close(); }
-      return { filename, sha256: createHash('sha256').update(readFileSync(target)).digest('hex'), schemaVersion: 2, verified: true };
+      return { filename, sha256: createHash('sha256').update(readFileSync(target)).digest('hex'), schemaVersion: SCHEMA_VERSION, verified: true };
     } finally { this.backingUp = false; }
   }
   history(id: string) {
@@ -163,16 +175,17 @@ export class Store {
       this.db.prepare('INSERT INTO versions VALUES (?,?,?,?,?,?,?)').run(version.versionId, version.gameId, version.previousVersionId, html, Buffer.byteLength(html), JSON.stringify(metadata), version.createdAt);
     return version;
   }
-  session(versionId: string) {
+  session(versionId: string, onCreated?: (sessionId: string) => void) {
     versionId = this.getVersion(versionId).versionId;
     const sessionId = randomUUID(), token = randomBytes(32).toString('hex'), expiresAt = Date.now() + 3600_000;
     this.transaction(() => {
       if (Number(this.db.prepare('SELECT COUNT(*) n FROM sessions').get()?.n) >= 10_000) throw new Fault('SESSION_QUOTA', 507);
       this.db.prepare('INSERT INTO sessions(session_id,version_id,token_hash,expires_at) VALUES (?,?,?,?)').run(sessionId, versionId, hash(token), expiresAt);
+      onCreated?.(sessionId);
     });
     return { sessionId, versionId, token, expiresAt, protocolVersion: 1 as const };
   }
-  event(input: GameEvent, token: string): { duplicate: boolean } {
+  event(input: GameEvent, token: string, onAccepted?: () => void): { duplicate: boolean } {
     const event = parseEvent(input);
     return this.transaction(() => {
       const s = this.db.prepare('SELECT * FROM sessions WHERE session_id=?').get(event.sessionId) as Session | undefined;
@@ -184,10 +197,12 @@ export class Store {
       if (duplicate) { if (duplicate.payload !== payload) throw new Fault('EVENT_ID_CONFLICT', 409); return { duplicate: true }; }
       if (s.ended_at !== null || event.sequence !== s.last_sequence + 1) throw new Fault('EVENT_ORDER', 409);
       if (Math.abs(event.timestamp - Date.now()) > 300_000 || s.last_timestamp !== null && event.timestamp < s.last_timestamp) throw new Fault('EVENT_TIME', 409);
-      if (event.type === 'game_started' && s.started_at !== null || ['score_changed', 'game_won', 'game_lost', 'session_ended'].includes(event.type) && s.started_at === null || ['game_won', 'game_lost'].includes(event.type) && s.outcome !== null || event.type === 'score_changed' && s.outcome !== null || event.type === 'game_ready' && s.started_at !== null) throw new Fault('EVENT_STATE', 409);
+      if (event.type === 'game_started' && s.started_at !== null || ['score_changed', 'result_changed', 'game_won', 'game_lost', 'session_ended'].includes(event.type) && s.started_at === null || ['game_won', 'game_lost'].includes(event.type) && s.outcome !== null || ['score_changed','result_changed'].includes(event.type) && s.outcome !== null || event.type === 'game_ready' && s.started_at !== null) throw new Fault('EVENT_STATE', 409);
       if (Number(this.db.prepare('SELECT COUNT(*) n FROM events').get()?.n) >= 100_000) throw new Fault('EVENT_QUOTA', 507);
       this.db.prepare('INSERT INTO events VALUES (?,?,?,?)').run(event.eventId, event.sessionId, event.sequence, payload);
-      this.db.prepare('UPDATE sessions SET last_sequence=?,last_timestamp=?,started_at=?,ended_at=?,outcome=?,score=? WHERE session_id=?').run(event.sequence, event.timestamp, event.type === 'game_started' ? event.timestamp : s.started_at, event.type === 'session_ended' ? event.timestamp : s.ended_at, ['game_won', 'game_lost'].includes(event.type) ? event.type : s.outcome, event.type === 'score_changed' ? event.data.score! : s.score, event.sessionId);
+      this.db.prepare('UPDATE sessions SET last_sequence=?,last_timestamp=?,started_at=?,ended_at=?,outcome=?,score=? WHERE session_id=?').run(event.sequence, event.timestamp, event.type === 'game_started' ? event.timestamp : s.started_at, event.type === 'session_ended' ? event.timestamp : s.ended_at, ['game_won', 'game_lost'].includes(event.type) ? event.type : s.outcome, event.type === 'result_changed' ? event.data.value! : event.type === 'score_changed' ? event.data.score! : s.score, event.sessionId);
+      // Arena finalization shares this transaction: no completed event without its record.
+      onAccepted?.();
       return { duplicate: false };
     });
   }
@@ -197,7 +212,8 @@ export class Store {
       COALESCE(SUM(outcome='game_won'),0) won,COALESCE(SUM(outcome='game_lost'),0) lost,
       AVG(CASE WHEN ended_at>=started_at THEN ended_at-started_at END) meanDurationMs,AVG(score) meanScore
       FROM sessions WHERE version_id=?`).get(versionId) as Metrics;
-    return { versionId, ...row, winRate: row.startedCount ? row.won! / row.startedCount : null, trust: 'untrusted_client' as const };
+    const resultMetric=arenaMetric(this.getVersion(versionId).html);
+    return { versionId, ...row,meanScore:resultMetric&&resultMetric.id!=='score'?null:row.meanScore,meanResult:row.meanScore,resultMetric,winRate: row.startedCount ? row.won! / row.startedCount : null, trust: 'untrusted_client' as const };
   }
   compare(versionId: string, baselineId: string) {
     const v = this.getVersion(versionId), b = this.getVersion(baselineId);

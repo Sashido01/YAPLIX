@@ -5,7 +5,7 @@ export const GAME_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-s
 // Browser API compatibility for old generated bridges on explicit LAN HTTP.
 // getRandomValues is available outside secure contexts; never use Math.random.
 export const UUID_COMPAT = "if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=>{const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);}});";
-export interface RuntimeSession { sessionId: string; versionId: string }
+export interface RuntimeSession { sessionId: string; versionId: string;arena?:true }
 export function acceptMessage(message: MessageEvent, source: Window | null, session: RuntimeSession): GameEvent | null {
   if (!source || message.source !== source || message.origin !== 'null') return null;
   try {
@@ -34,7 +34,7 @@ export function mountGame(container: HTMLElement, html: string, session: Runtime
     if (event) { try { onEvent(event); } catch { /* UI callback cannot interrupt the game. */ } }
   };
   window.addEventListener('message', receive);
-  frame.addEventListener('load', () => frame.contentWindow?.postMessage({ channel: 'yaplix_init', protocolVersion: 1, ...session }, '*'));
+  frame.addEventListener('load', () => frame.contentWindow?.postMessage({ channel: 'yaplix_init', protocolVersion: 1, sessionId:session.sessionId, versionId:session.versionId,...(session.arena?{arena:true}:{}) }, '*'));
   container.append(frame);
   return () => { window.removeEventListener('message', receive); frame.remove(); };
 }

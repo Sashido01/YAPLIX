@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { gameIntent, intentDefaults, compactGameIntent } from '../src/game-intent.ts';
 import type { Requirement } from '../src/game-intent.ts';
 import { generationMessages, GAME_GENERATION_CONTRACT } from '../src/generation.ts';
+import {UNIVERSAL_ARENA_CONTRACT} from '../src/arena-contract.ts';
 import { GenerationEngine, configuredGenerator } from '../src/live.ts';
 import type { CodeTransport, Message } from '../src/transport.ts';
 import type { GameSpec, GameVersion } from '../src/contracts.ts';
@@ -192,7 +193,7 @@ test('invalid input, host injection and quoted game signage respect the trust bo
 });
 
 const evidence = async () => ({ profiles: [320, 390, 844], offline: true as const, errors: 0 as const, scope: 'full-html' as const,rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]} });
-test('engine switch defaults to byte-identical legacy messages and intent adds no interpretation call', async () => {
+test('engine switch defaults to direct Arena messages and intent adds no interpretation call', async () => {
   const text = 'Змейка для бабушки';
   const captured: Message[][] = [];
   const route: CodeTransport = { route: 'primary', provider: 'synthetic', model: 'test', readiness: async () => { throw new Error('No readiness/interpretation request'); }, complete: async messages => { captured.push(structuredClone(messages)); return { code: html, model: 'test' }; } };
@@ -202,7 +203,7 @@ test('engine switch defaults to byte-identical legacy messages and intent adds n
   }
   assert.equal(captured.length, 4);
   assert.deepEqual(captured[0], captured[1]);
-  assert.equal(captured[0][0].content, GAME_GENERATION_CONTRACT);
+  assert.equal(captured[0][0].content, GAME_GENERATION_CONTRACT+'\n'+UNIVERSAL_ARENA_CONTRACT);
   assert.equal(captured[0][1].content, 'User request: '+text+'\nAudience: default\nGenre: unknown\nMechanics: \nControls: keyboard, touch, pointer');
   assert.equal(JSON.parse(captured[2][1].content).request, text);
   assert.equal(JSON.parse(captured[3][1].content).request, text);
