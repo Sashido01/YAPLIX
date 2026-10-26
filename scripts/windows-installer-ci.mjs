@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {closeSync,existsSync,mkdirSync,openSync,readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -29,6 +29,20 @@ function run(binary,args,env=offlineEnv,timeout=600000){
  if(result.error)throw Error(`${binary} ${result.error.message}; last output: ${safeError}`);
  assert.equal(result.status,0,`${binary} exited ${result.status}; ${safeError}`);
  return result.stdout;
+}
+// Installed desktop servers inherit standard handles. Redirect commands that
+// start them to files so spawnSync waits for the installer, not pipe EOF from
+// the surviving server process.
+function runToFile(binary,args,env,name,timeout=600000){
+ const file=join(evidenceHome,name),fd=openSync(file,'w',0o600);
+ let result;
+ try{result=spawnSync(binary,args,{cwd:root,env,stdio:['ignore',fd,fd],timeout,windowsHide:true});}
+ finally{closeSync(fd);}
+ const safeError=readFileSync(file,'utf8').slice(-2500)
+  .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi,'$1***@')
+  .replace(/\b(?:gho_|ghp_|github_pat_)[A-Za-z0-9_]+\b/g,'[REDACTED]');
+ if(result.error)throw Error(`${binary} ${result.error.message}; last output: ${safeError}`);
+ assert.equal(result.status,0,`${binary} exited ${result.status}; ${safeError}`);
 }
 const profile=name=>join(local,'profiles',name);
 function installed(profilePath,expectedBrowser){
@@ -65,9 +79,9 @@ async function verifyProfile(profilePath,expectedBrowser){
   const version=await response.json();assert.match(version.html,/<html/i);
   versions.push({id:version.versionId,sha256:createHash('sha256').update(version.html).digest('hex')});
  }
- run(node,[desktop,'--stop','--no-open'],env,40000);
+ runToFile(node,[desktop,'--stop','--no-open'],env,'desktop-stop.log',40000);
  await waitFor(join(dataHome,'desktop.lock'),false);
- run(node,[desktop,'--no-open'],env,40000);
+ runToFile(node,[desktop,'--no-open'],env,'desktop-start.log',40000);
  const restarted=readJSON(join(dataHome,'desktop.json'));
  for(const version of versions){
   const response=await fetch(`http://127.0.0.1:${restarted.port}/api/versions/${version.id}`,{signal:AbortSignal.timeout(5000)});
@@ -75,7 +89,7 @@ async function verifyProfile(profilePath,expectedBrowser){
   const saved=await response.json();
   assert.equal(createHash('sha256').update(saved.html).digest('hex'),version.sha256);
  }
- run(node,[desktop,'--stop','--no-open'],env,40000);
+ runToFile(node,[desktop,'--stop','--no-open'],env,'desktop-stop.log',40000);
  await waitFor(join(dataHome,'desktop.lock'),false);
  const db=new DatabaseSync(join(dataHome,'data/yaplix.sqlite'),{readOnly:true});
  try{
@@ -100,7 +114,7 @@ try{
  run('powershell.exe',['-NoProfile','-Command','Get-Command Get-FileHash | Out-Null'],sourceEnv,30000);
  const isolatedNode=run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--runtime-only'],sourceEnv,120000).trim().split(/\r?\n/).at(-1).trim();
  assert.equal(run(isolatedNode,['--version'],sourceEnv,10000).trim(),'v24.18.0');
- run('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--headless','--test-profile',sourceProfile],sourceEnv,900000);
+ runToFile('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',sourceScript,'--headless','--test-profile',sourceProfile],sourceEnv,'source-install.log',900000);
  evidence.source=await verifyProfile(sourceProfile,'system-chrome');
  evidence.checks.push('install-windows.ps1 isolated Node and Lite source installation');
 
@@ -109,7 +123,7 @@ try{
   const line=readFileSync(artifact+'.sha256','utf8').trim();
   assert.equal(line.split(/\s+/)[0],sha(artifact));
   const target=profile(mode);mkdirSync(target,{recursive:true});
-  run(artifact,['/S'],{...offlineEnv,YAPLIX_INSTALL_TEST_PROFILE:target},600000);
+  runToFile(artifact,['/S'],{...offlineEnv,YAPLIX_INSTALL_TEST_PROFILE:target},`${mode}-install.log`,600000);
   evidence.packages[mode]={sha256:sha(artifact),...(await verifyProfile(target,mode==='lite'?'system-chrome':'isolated-chromium'))};
   evidence.checks.push(`${mode} NSIS installer, API/UI, protected browser, three games and SQLite restart`);
  }
