@@ -40,32 +40,29 @@ export function validSchema(db: DatabaseSync): boolean {
 export function healthyDatabase(db: DatabaseSync): boolean {
   return validSchema(db) && db.prepare('PRAGMA integrity_check').get()?.integrity_check === 'ok' && db.prepare('PRAGMA foreign_key_check').all().length === 0;
 }
+// Installed builds keep mutable files outside the read-only application tree.
+// Development retains the existing .local contract, including traversal checks.
+export const DATA_ROOT = process.env.YAPLIX_DATA_HOME
+  ? resolve(process.env.YAPLIX_DATA_HOME) : resolve(PROJECT_ROOT, '.local');
 export function managedPath(path: string, createParents = true): string {
-  const managed = resolve(PROJECT_ROOT, '.local');
-  const target = resolve(PROJECT_ROOT, path);
-  const rel = relative(managed, target);
+  const legacy = resolve(PROJECT_ROOT, '.local');
+  const rel = relative(legacy, resolve(PROJECT_ROOT, path));
   if (isAbsolute(rel) || rel.startsWith('..') || !rel) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-  // lstat catches dangling file links too; exists/realpath alone cannot do that.
-  for (let part = target; relative(PROJECT_ROOT, part) !== ''; part = dirname(part)) {
-    if (dirname(part) === part) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  const target = resolve(DATA_ROOT, rel);
+  // Check every ancestor before mkdir: never follow links into another tree.
+  for (let part = target; ; part = dirname(part)) {
     try { if (lstatSync(part).isSymbolicLink()) throw new Fault('DB_LINK_FORBIDDEN'); }
     catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+    if (dirname(part) === part) break;
   }
-  // Verify the nearest existing parent before recursive mkdir can follow a junction.
-  let parent = dirname(target);
-  while (!existsSync(parent)) parent = dirname(parent);
-  const nearest = relative(realpathSync(PROJECT_ROOT), realpathSync(parent));
-  if (isAbsolute(nearest) || nearest.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
-  if (createParents) mkdirSync(dirname(target), { recursive: true });
-  if (existsSync(dirname(target))) {
-    const actual = relative(realpathSync(PROJECT_ROOT), realpathSync(dirname(target)));
-    if (isAbsolute(actual) || actual.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
+  if (createParents) mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  if (existsSync(target)) {
+    const r = relative(realpathSync(DATA_ROOT), realpathSync(target));
+    if (isAbsolute(r) || r.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT');
   }
-  // Existing DB symlinks may point outside even when the directory is safe.
-  try { const r = relative(realpathSync(managed), realpathSync(target)); if (isAbsolute(r) || r.startsWith('..')) throw new Fault('DB_PATH_OUTSIDE_PROJECT'); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   return target;
 }
+
 export class Store {
   db: DatabaseSync;
   private backingUp = false;

@@ -1,16 +1,17 @@
+import {checkerChannel,checkerLaunchTarget,systemChromePresent} from './browser-target.ts';
 import { resolve } from 'node:path';
 import { existsSync, statSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseEvent, Fault } from './contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from './runtime.ts';
-import { PROJECT_ROOT } from './store.ts';
+import { PROJECT_ROOT, managedPath } from './store.ts';
 import { summarizeSession } from './orchestrator/gameplay-check.ts';
 import { checkFullHtml } from './full-html-check.ts';
 import type { BrowserEvidence } from './contracts.ts';
 import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
-const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
+const temp=managedPath('.local/tmp/profiles');mkdirSync(temp,{recursive:true});
 for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
@@ -20,13 +21,13 @@ export class BrowserFailure extends Fault {
   readonly feedback:string;
   constructor(code:string,feedback:string){super(code,502);this.feedback=feedback.slice(0,512);}
 }
-export function checkerReady() { return existsSync(chromium.executablePath()); }
+export function checkerReady() { return checkerChannel()==='chrome'?systemChromePresent():existsSync(checkerLaunchTarget().executablePath!); }
 export async function browserCheck(html: string, signal: AbortSignal): Promise<BrowserEvidence> {
   const began=performance.now();let phase='startup';
   if(signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
   if (!checkerReady()) throw new Fault('BROWSER_INSTALL_REQUIRED',503);
   const deadline=AbortSignal.any([signal,AbortSignal.timeout(VALIDATION_BUDGETS.totalMs)]);
-  const env=Object.fromEntries(['PATH','Path','SystemRoot','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','DISPLAY','XDG_RUNTIME_DIR','LANG'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!]));
+  const env=Object.fromEntries(['LD_LIBRARY_PATH','PATH','Path','SystemRoot','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','DISPLAY','XDG_RUNTIME_DIR','LANG'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!]));
   // Chromium's supported root-owned helper preserves its sandbox on Ubuntu's
   // restricted user namespaces. Never change AppArmor or use --no-sandbox.
   if(process.platform==='linux'){
@@ -37,7 +38,7 @@ export async function browserCheck(html: string, signal: AbortSignal): Promise<B
       env.CHROME_DEVEL_SANDBOX=helper;
     }else if(process.env.CHROME_DEVEL_SANDBOX)throw new Fault('BROWSER_SANDBOX_CONFIGURATION',503);
   }
-  const launch=chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:VALIDATION_BUDGETS.startupMs,env});
+  const launch=chromium.launch({...checkerLaunchTarget(),headless:true,chromiumSandbox:true,timeout:VALIDATION_BUDGETS.startupMs,env});
   const cancelLaunch=()=>void launch.then(b=>b.close()).catch(()=>{});
   deadline.addEventListener('abort',cancelLaunch,{once:true});
   let browser;
