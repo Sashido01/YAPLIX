@@ -30,11 +30,11 @@ export function planInstallation(facts){
 }
 export async function runInstallation(adapter,notify=()=>{}){
  let snapshot,changed=false;
- const emit=(stage,code='OK')=>{notify({stage,code});};
+ const emit=(stage,code='OK',details={})=>{notify({stage,code,...details});};
  try{
   emit('CHECK');let facts=await adapter.check();
   if(facts.supported&&facts.integrity&&await adapter.recover?.())facts=await adapter.check();
-  emit('PLAN');const plan=planInstallation(facts);
+  const plan=planInstallation(facts);emit('PLAN','OK',{plan});
   if(plan.action!=='reuse'){
    emit('PREPARE');snapshot=await adapter.prepare(plan);
    emit('INSTALL');changed=true;await adapter.install(plan,snapshot);

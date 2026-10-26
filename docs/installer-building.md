@@ -6,6 +6,37 @@
 административные права. DEB из `.local/install-001` остаётся историческим артефактом;
 системно его не устанавливать.
 
+## Единая сборка Lite и Full
+
+На целевой ОС используйте `scripts/build-installers.py`: он последовательно
+вызывает существующие `package-desktop.py` и `package-installer.py`, проверяет
+закреплённый SHA256 официального Node 24.18.0 и пишет оба пакета с checksums в
+новый каталог. Это инструмент разработчика; готовому пакету Python, npm,
+компилятор и NSIS не нужны.
+
+```sh
+python3 scripts/build-installers.py --platform linux \
+  --node-archive /absolute/node-v24.18.0-linux-x64.tar.xz \
+  --shasums /absolute/SHASUMS256.txt \
+  --browsers /absolute/playwright-browsers \
+  --output .local/new-installer-build
+```
+
+В Windows укажите `--platform windows`, официальный `win-x64.zip`, Windows browser
+cache и новый каталог вывода; сборка NSIS/nodew выполняется на Windows. Сборка
+на Ubuntu не подтверждает Windows runtime. Выполняйте `npm ci` и `npm run build`
+с Node 24.18.0 до сборки. Сверьте `.sha256` с фактическими пакетами. Для
+GitHub Releases загрузите только проверенные `.run`/`.exe` и `.sha256` от одного
+точного commit, укажите source SHA и результаты runtime acceptance в описании;
+не добавляйте бинарники в Git и не публикуйте неподтверждённый Windows PASS.
+
+При запуске из исходного клона `install.sh`/`install-windows.ps1` находят
+изолированный Node в профиле или загружают официальный архив с закреплённым
+SHA256. `install-source.mjs` временно делает `npm ci`, build и production-only
+payload, затем вызывает общий `install-ui.mjs`/`install-engine.mjs`. Исходный
+клон и системный Node не меняются; временная сборка удаляется после мастера.
+Пакетный `.run`/`.exe` сразу передаёт готовый payload этому же ядру.
+
 ## Минимальная архитектура
 
 Сохраняются Node 24.18.0, Hono, встроенная SQLite, обычный браузер и существующий
