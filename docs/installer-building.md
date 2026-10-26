@@ -32,7 +32,12 @@ GitHub Releases загрузите только проверенные `.run`/`.
 
 При запуске из исходного клона `install.sh`/`install-windows.ps1` находят
 изолированный Node в профиле или загружают официальный архив с закреплённым
-SHA256. `install-source.mjs` временно делает `npm ci`, build и production-only
+SHA256. SHA256 извлечённого исполняемого файла тоже закреплён и сверяется при
+каждом повторном запуске; при обновлении Node синхронизируйте version и digest
+в `install.sh`, `install-windows.ps1`, `package-desktop.py` после проверки
+официальных архивов. `install-source.mjs` принимает только чистый Git-клон,
+проверяет наличие Chrome перед npm, использует личный npm-кэш, временно делает
+`npm ci`, build и production-only
 payload, затем вызывает общий `install-ui.mjs`/`install-engine.mjs`. Исходный
 клон и системный Node не меняются; временная сборка удаляется после мастера.
 Пакетный `.run`/`.exe` сразу передаёт готовый payload этому же ядру.

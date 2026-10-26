@@ -11,16 +11,20 @@ if ! grep -q '^ID=ubuntu$' /etc/os-release || ! grep -q '^VERSION_ID="24.04"$' /
 fi
 name=node-v24.18.0-linux-x64
 expected=55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742
+expected_binary=41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c
 base=${YAPLIX_BOOTSTRAP_HOME:-${XDG_DATA_HOME:-"$HOME/.local/share"}/yaplix/tools}
-mkdir -p -- "$base"
 node="$base/$name/bin/node"
-valid_node() { [ -x "$1" ] && [ "$("$1" --version 2>/dev/null || :)" = v24.18.0 ]; }
+valid_node() { [ -x "$1" ] && [ "$(sha256sum "$1" | cut -d ' ' -f 1)" = "$expected_binary" ]; }
+if ! command -v sha256sum >/dev/null 2>&1; then echo 'YAPLIX: нужен sha256sum.' >&2; exit 1; fi
+echo 'YAPLIX: план — проверить Node 24.18.0, при необходимости загрузить официальный архив с SHA256 в личный профиль; затем временно собрать исходники через npm ci и открыть мастер установки. Системные пакеты не меняются; база сохраняется с backup при обновлении.' >&2
+echo 'YAPLIX: сеть нужна только для недостающих Node/npm-компонентов; существующие HTTP_PROXY, HTTPS_PROXY и NO_PROXY сохраняются.' >&2
+mkdir -p -- "$base"
 
 # An explicit offline archive is always verified, including when a suitable
 # system Node is present. This supports air-gapped installations and testing.
 if [ -n "${YAPLIX_BOOTSTRAP_ARCHIVE:-}" ] || ! valid_node "$node"; then
-  if ! command -v sha256sum >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
-    echo 'YAPLIX: нужны стандартные sha256sum и tar.' >&2; exit 1
+  if ! command -v tar >/dev/null 2>&1; then
+    echo 'YAPLIX: нужен стандартный tar.' >&2; exit 1
   fi
   stage=$(mktemp -d "$base/.node-stage.XXXXXXXX")
   cleanup() { rm -rf -- "$stage"; }
@@ -33,8 +37,11 @@ if [ -n "${YAPLIX_BOOTSTRAP_ARCHIVE:-}" ] || ! valid_node "$node"; then
       echo 'YAPLIX: нужен curl для загрузки Node; можно передать проверенный архив через YAPLIX_BOOTSTRAP_ARCHIVE.' >&2; exit 1
     fi
     echo 'YAPLIX: загружаем изолированный Node 24.18.0 с nodejs.org.' >&2
-    curl --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --retry 2 \
-      --output "$archive" "https://nodejs.org/dist/v24.18.0/$name.tar.xz"
+    if ! curl --fail --location --silent --show-error --connect-timeout 15 --max-time 180 --retry 2 \
+      --output "$archive" "https://nodejs.org/dist/v24.18.0/$name.tar.xz"; then
+      echo 'YAPLIX: загрузка Node не удалась. Проверьте DNS/TLS/маршрут и переменные HTTP_PROXY, HTTPS_PROXY, NO_PROXY; повторите команду или укажите YAPLIX_BOOTSTRAP_ARCHIVE.' >&2
+      exit 1
+    fi
   fi
   actual=$(sha256sum "$archive" | cut -d ' ' -f 1)
   if [ "$actual" != "$expected" ]; then
@@ -47,7 +54,7 @@ if [ -n "${YAPLIX_BOOTSTRAP_ARCHIVE:-}" ] || ! valid_node "$node"; then
   if [ ! -e "$base/$name" ]; then mv -- "$stage/$name" "$base/$name"; fi
   node="$base/$name/bin/node"
   if ! valid_node "$node"; then
-    echo 'YAPLIX: существующий изолированный Node повреждён; каталог сохранён.' >&2; exit 1
+    echo 'YAPLIX: существующий изолированный Node не совпадает с официальным SHA256; каталог сохранён.' >&2; exit 1
   fi
   trap - EXIT HUP INT TERM
   cleanup

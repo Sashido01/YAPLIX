@@ -4,7 +4,7 @@ import {cpSync,existsSync,lstatSync,mkdirSync,mkdtempSync,readdirSync,readFileSy
 import {resolve,join,dirname,relative,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
-import {spawn,execFileSync} from 'node:child_process';
+import {spawn,spawnSync,execFileSync} from 'node:child_process';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const runtime=process.execPath;
@@ -15,6 +15,7 @@ const npm=existsSync(npmCli)?npmCli:windowsNpmCli;
 if(!existsSync(npm))throw Error('В изолированном Node отсутствует npm. Архив сохранён; повторите установку с проверенным архивом.');
 const parent=resolve(process.env.YAPLIX_BOOTSTRAP_HOME??join(dirname(nodeHome),'source-builds'));
 mkdirSync(parent,{recursive:true,mode:0o700});
+const npmCache=join(parent,'npm-cache');mkdirSync(npmCache,{recursive:true,mode:0o700});
 const temporary=mkdtempSync(join(parent,'.build-'));
 const work=join(temporary,'source'),payload=join(temporary,'payload');
 const status=message=>console.error('YAPLIX: '+message);
@@ -42,23 +43,32 @@ function gather(path,prefix='',entries={}){
  return entries;
 }
 try{
+ // Source installation must package a reviewed commit. Dirty tracked work is
+ // left in place and never copied into an installed version.
+ for(const args of [['diff','--quiet'],['diff','--cached','--quiet']]){
+  const result=spawnSync('git',args,{cwd:root,windowsHide:true});
+  if(result.status!==0)throw Error('В клоне есть несохранённые изменения отслеживаемых файлов. Установка остановлена; сохраните или отдельно зафиксируйте работу перед установкой.');
+ }
+ const chrome=process.platform==='linux'?'/opt/google/chrome/chrome':[process.env.LOCALAPPDATA,process.env.PROGRAMFILES,process.env['PROGRAMFILES(X86)']].filter(Boolean).map(p=>join(p,'Google/Chrome/Application/chrome.exe')).find(existsSync);
+ if(!chrome||!existsSync(chrome))throw Error('Для сборки Lite из исходников нужен установленный Google Chrome. Он не менялся; используйте готовый Full-пакет YAPLIX с отдельным Chromium.');
+ status('предварительный план: Lite с проверкой Google Chrome; npm-зависимости в изолированном каталоге; затем общий мастер проверит диск, SQLite, браузер и порты.');
+ status(process.env.YAPLIX_INSTALL_OFFLINE==='1'?'офлайн-режим npm: только проверенный локальный кэш.':'npm использует текущий маршрут и переменные HTTP_PROXY/HTTPS_PROXY/NO_PROXY; при недоступности сети повторите установку.');
  mkdirSync(work);mkdirSync(payload);
- // Only Git-tracked source enters the build: no local .env, DB, private key,
- // ignored download cache or unreviewed file can enter the installed version.
+ // Only clean Git-tracked source enters the build: no local .env, DB, private
+ // key, ignored download cache or unreviewed tracked edit enters the version.
  const tracked=execFileSync('git',['ls-files','-z','--','src','scripts','assets','tests','packaging','package.json','package-lock.json','tsconfig.json','playwright.config.ts','INSTALL.md'],{cwd:root}).toString().split('\0').filter(Boolean);
  if(!tracked.includes('package-lock.json')||!tracked.includes('scripts/install-ui.mjs'))throw Error('Нужен полный Git клон YAPLIX с lockfile и установщиком.');
  for(const name of tracked){
   const source=join(root,name);if(!existsSync(source)||lstatSync(source).isSymbolicLink())throw Error('Некорректный отслеживаемый файл: '+name);
   mkdirSync(dirname(join(work,name)),{recursive:true});copy(name);
  }
- // The repository npm cache path is relative to this private staging tree.
- writeFileSync(join(work,'.npmrc'),'cache=.local/npm-cache\n');
+ const ci=['ci','--no-audit','--no-fund','--cache',npmCache,'--fetch-retries=2','--fetch-timeout=120000',process.env.YAPLIX_INSTALL_OFFLINE==='1'?'--offline':'--prefer-offline'];
  status('проверяем lockfile и устанавливаем зависимости во временный каталог…');
- await run([npm,'ci','--no-audit','--no-fund'],work);
+ try{await run([npm,...ci],work);}catch(error){throw Error('npm ci не прошёл: '+error.message+'. Проверьте DNS/TLS/маршрут, HTTP_PROXY/HTTPS_PROXY/NO_PROXY или наполните кэш для YAPLIX_INSTALL_OFFLINE=1.');}
  status('собираем клиент и сервер…');
  await run([npm,'run','build'],work);
  status('готовим только production-зависимости…');
- await run([npm,'ci','--omit=dev','--no-audit','--no-fund','--prefer-offline'],work);
+ try{await run([npm,...ci,'--omit=dev'],work);}catch(error){throw Error('npm ci production не прошёл: '+error.message+'. Проверьте сеть или локальный npm кэш.');}
  for(const name of ['src','assets','build/src','build/public','package.json','package-lock.json','INSTALL.md'])copy(name,payload,work);
  const runtimeScripts=['desktop.mjs','app-runtime.ts','install-engine.mjs','install-adapter.mjs','install-ui.mjs','install-probe.mjs','windows-lan-setup.ps1'];
  const runtimePackaging=['dialog.ps1','yaplix.svg','install-shortcuts.ps1','install.html','install-client.js'];
