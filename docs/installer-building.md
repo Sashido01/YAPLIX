@@ -6,6 +6,51 @@
 административные права. DEB из `.local/install-001` остаётся историческим артефактом;
 системно его не устанавливать.
 
+## Единая сборка Lite и Full
+
+На целевой ОС используйте `scripts/build-installers.py`: он последовательно
+вызывает существующие `package-desktop.py` и `package-installer.py`, проверяет
+закреплённый SHA256 официального Node 24.18.0 и пишет оба пакета с checksums в
+новый каталог. Это инструмент разработчика; готовому пакету Python, npm,
+компилятор и NSIS не нужны.
+
+```sh
+python3 scripts/build-installers.py --platform linux \
+  --node-archive /absolute/node-v24.18.0-linux-x64.tar.xz \
+  --shasums /absolute/SHASUMS256.txt \
+  --browsers /absolute/playwright-browsers \
+  --output .local/new-installer-build
+```
+
+В Windows укажите `--platform windows`, официальный `win-x64.zip`, Windows browser
+cache и новый каталог вывода; сборка NSIS/nodew выполняется на Windows. Сборка
+на Ubuntu не подтверждает Windows runtime. Выполняйте `npm ci` и `npm run build`
+с Node 24.18.0 до сборки. Сверьте `.sha256` с фактическими пакетами. Для
+GitHub Releases загрузите только проверенные `.run`/`.exe` и `.sha256` от одного
+точного commit, укажите source SHA и результаты runtime acceptance в описании;
+не добавляйте бинарники в Git и не публикуйте неподтверждённый Windows PASS.
+
+При запуске из исходного клона `install.sh`/`install-windows.ps1` находят
+изолированный Node в профиле или загружают официальный архив с закреплённым
+SHA256. SHA256 извлечённого исполняемого файла тоже закреплён и сверяется при
+каждом повторном запуске; при обновлении Node синхронизируйте version и digest
+в `install.sh`, `install-windows.ps1`, `package-desktop.py` после проверки
+официальных архивов. `install-source.mjs` принимает только чистый Git-клон,
+использует личный npm-кэш, временно делает `npm ci`, проверяет защищённый Chrome,
+выбирает Lite или Full, выполняет build и готовит production-only
+payload, затем вызывает общий `install-ui.mjs`/`install-engine.mjs`. Исходный
+клон и системный Node не меняются; временная сборка удаляется после мастера.
+Пакетный `.run`/`.exe` сразу передаёт готовый payload этому же ядру.
+
+Для Ubuntu Full из клона `source-browser.mjs` сверяет каждое дерево Chromium
+и headless-shell с закреплёнными SHA256. Сначала проверяется локальный
+Playwright-кэш, затем архивы в личном `YAPLIX_BOOTSTRAP_HOME/browser-archives`.
+При отсутствии обоих архивы загружаются из закреплённых Playwright CDN URL
+через заданный HTTPS proxy. `NO_PROXY` и `NODE_EXTRA_CA_CERTS` учитываются;
+ошибка сети или контроля целостности прекращает установку с советом получить
+готовый Full-пакет. Chromium не ставится системно; необходимые библиотеки
+копируются только после проверки принадлежности Ubuntu-пакету и его checksum.
+
 ## Минимальная архитектура
 
 Сохраняются Node 24.18.0, Hono, встроенная SQLite, обычный браузер и существующий
@@ -161,6 +206,16 @@ UTF-8 BOM добавляется PS-файлам в Windows payload для Power
 Здесь EXE не собран, Windows Chrome, CRT/DLL, NTFS ACL и GUI не проверялись.
 Отсутствующие Windows OS-компоненты не устанавливать автоматически; сообщать
 об ограничении. Подготовленная конфигурация не равна PASS на Windows.
+
+Для RELEASE-CI-001 Windows runner собирает Lite и Full через
+`scripts/windows-installer-build-ci.ps1`: проверенный Node zip, закреплённый
+portable NSIS, project-local Playwright Chromium/headless-shell и `nodew.exe` из
+MSVC runner. `scripts/windows-installer-ci.mjs` в отдельных `.local` профилях
+запускает source bootstrap и оба настоящих NSIS EXE в тихом тестовом режиме,
+затем проверяет API/UI, защищённый браузер, три игры и SQLite после рестарта.
+Только для теста NSIS читает `YAPLIX_INSTALL_TEST_PROFILE`; обычный запуск без
+этой переменной остаётся интерактивным. До фактического hosted Windows success
+этот путь считается подготовленной проверкой, а не Windows PASS.
 
 macOS и интернет-доступ — FUTURE. Смартфоны — существующий QR в одной Wi-Fi/LAN.
 Текущие локальные результаты и границы проверки: [подготовка к публикации](submission-verification.md).

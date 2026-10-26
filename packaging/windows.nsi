@@ -20,7 +20,13 @@ Section "YAPLIX"
  SetOutPath "$PLUGINSDIR\payload"
  File /r "${PAYLOAD}\*.*"
  DetailPrint "Проверяем компьютер и запускаем установку YAPLIX…"
+ ReadEnvStr $1 "YAPLIX_INSTALL_TEST_PROFILE"
+ StrCmp $1 "" regular_install
+ ExecWait '"$PLUGINSDIR\payload\runtime\nodew.exe" "$PLUGINSDIR\payload\scripts\install-ui.mjs" --headless --test-profile "$1"' $0
+ Goto checked
+ regular_install:
  ExecWait '"$PLUGINSDIR\payload\runtime\nodew.exe" "$PLUGINSDIR\payload\scripts\install-ui.mjs"' $0
+ checked:
  IntCmp $0 0 done
  MessageBox MB_OK|MB_ICONEXCLAMATION "Установка YAPLIX не завершена. Предыдущая версия и данные сохранены. Повторите запуск и прочитайте сообщение установщика."
  SetErrorLevel 1

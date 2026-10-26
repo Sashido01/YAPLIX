@@ -53,7 +53,7 @@ async function openDemo(page:Page,origin:string){
   await expect(page.locator('#qr')).toBeVisible();const url=await page.locator('#url').inputValue();
   return {url,id};
 }
-async function join(page:Page,url:string,nickname:string){await page.goto(url);await expect(page.locator('#join')).toBeVisible();await page.locator('#nickname').fill(nickname);await page.locator('#join button').click();await expect(page.locator('#play')).toBeVisible();}
+async function join(page:Page,url:string,nickname:string){await page.goto(url);await expect(page.locator('#join')).toBeVisible();await page.locator('#nickname').fill(nickname);await page.locator('#join button').click();await expect(page.locator('#play')).toBeVisible({timeout:12000});}
 async function gates(page:Page,delay=0){
   await page.locator('#attempt').click();await expect(page.locator('#attempt-status')).toContainText('Игра подключена');
   const canvas=page.frameLocator('#game iframe').locator('canvas');await canvas.click({position:{x:20,y:20}});

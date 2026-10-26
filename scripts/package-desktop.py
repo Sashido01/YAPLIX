@@ -16,6 +16,11 @@ if a.node_archive.name!=expected_name: p.error('Only pinned Node 24.18.0 x64 arc
 hashfile=lambda f:hashlib.sha256(f.read_bytes()).hexdigest()
 checks={line.split()[1].lstrip('*'):line.split()[0] for line in a.shasums.read_text().splitlines() if len(line.split())==2}
 if checks.get(expected_name)!=hashfile(a.node_archive): p.error('Node archive SHA256 mismatch')
+PINNED_NODE_SHA256={
+ 'node-v24.18.0-linux-x64.tar.xz':'55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742',
+ 'node-v24.18.0-win-x64.zip':'0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821',
+}
+if hashfile(a.node_archive)!=PINNED_NODE_SHA256[expected_name]: p.error('Node archive does not match pinned official SHA256')
 lock=json.loads((ROOT/'package-lock.json').read_text())
 if lock['packages']['node_modules/playwright-core']['version']!='1.64.0': p.error('Review Chromium revision for changed Playwright')
 browser=a.browsers/('chromium-1248')

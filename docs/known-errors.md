@@ -8,6 +8,8 @@ initData или необработанные журналы. [Запуск и о
 
 | Ошибка / симптом | Причина и безопасное действие |
 | --- | --- |
+| Клон на Ubuntu с Node 22 не запускается или архив Node отклонён | `sh install.sh` использует отдельный Node 24.18.0 в профиле и сверяет закреплённый SHA256 до распаковки. При неверном SHA ничего из архива не исполняется: проверьте файл или скачайте официальный архив повторно. Подтверждено на Ubuntu с системным Node 22; Windows bootstrap ещё не проходил реальную проверку. |
+| GUI acceptance Chrome: `Socket path too long` | На длинном пути изолированного worktree тестовый `TMPDIR` превысил лимит UNIX socket. `installer-smoke.mjs` теперь использует короткий собственный временный каталог; с ним тот же Lite пакет прошёл GUI smoke. Это не основание отключать sandbox или менять браузер. |
 | Full portable: production checker выдаёт `BROWSER_SANDBOX_UNAVAILABLE`, хотя Chromium установлен | В CORE-001/002 Playwright 1.64.0 при `headless:true` выбирал отдельный `chromium_headless_shell-1248`, которого не было в Full payload. SUBMISSION-001 добавляет точный pinned headless-shell в Full и явно выбирает его с `chromiumSandbox:true`; установленный probe использует тот же бинарник. Обычный Chromium остаётся в Full для UI-проверок. Если запуск по-прежнему не удаётся, проверьте реальное сообщение Chromium и короткий путь временного профиля; отключать sandbox нельзя. [Проверки кандидата](submission-verification.md). |
 | Положительная WebGL-игра не завершается в 18 секунд на текущей Ubuntu | Наблюдался `REQUEST_CANCELLED` в двух `strict animated webgl` случаях `draw` и `redraw`; `draw` также не уложился на неизменённом CORE-001 baseline с headless-shell. Причина затрат времени не установлена, поэтому WebGL PASS на этом хосте не заявляется. Сохраните checkpoint и диагностику; не увеличивайте лимит и не отключайте проверку ради принятия игры. [Граница результата](submission-verification.md). |
 | Изолированный worktree: browser suite падает до первого действия с Executable doesn't exist | `scripts/browser-tests.mjs` принудительно задаёт cache `.local/playwright` своего worktree, даже при внешнем PLAYWRIGHT_BROWSERS_PATH. Установите браузеры через `npm run browsers:install` именно в этой копии. Для использования уже проверенного cache без повторного скачивания задайте абсолютный PLAYWRIGHT_BROWSERS_PATH и запустите `node node_modules/@playwright/test/cli.js test ...` напрямую; на Windows при необходимости также задайте TEMP/TMP в локальную папку. Отсутствующий executable не является дефектом приложения. |
@@ -507,3 +509,79 @@ initData или необработанные журналы. [Запуск и о
   Обычный locator click прокручивает цель; тест по-прежнему реально проходит
   ворота и ждёт подтверждённый рекорд. Force-click, score POST и state injection нет.
 - Универсальные значения используют прежнюю колонку sessions.score, но время/дистанция не являются очками. Analytics теперь возвращает resultMetric/meanResult; nonscore meanScore=null. Unit RED 5000 как очки → GREEN 5.000 с и 30 м, UI browser regression проверяет единицы.
+
+## Source Full из клона Ubuntu
+
+- Если Chrome недоступен, source bootstrap готовит Full. Проверенный локальный
+  Playwright-кэш используется первым; повреждённый кэш сохраняется и не входит
+  в пакет. При отсутствии сети и закреплённых архивов сообщение направляет к
+  готовому Full-пакету. Не отключайте sandbox или TLS ради установки.
+- `curl` предпочитает строчные proxy-переменные. Source Full явно передаёт
+  текущий `HTTPS_PROXY` (либо `https_proxy`, если верхний регистр не задан) и
+  `NO_PROXY`, чтобы унаследованное значение не меняло маршрут незаметно.
+- Архив Chrome for Testing распаковывается с каталогом `chrome-linux64` внутри
+  корня браузера. Проверка SHA256 дерева должна включать этот каталог; проверка
+  только его содержимого ошибочно отвергала корректный официальный архив.
+
+## RELEASE-CI-001: обязательный статус PR
+
+- REST ruleset `protect-main` 26.10.2026 вернул обязательные контексты
+  `repository-checks` и `secret-scan`, тогда как workflow публиковал только
+  `repository-checks (ubuntu-24.04)` и `repository-checks (windows-latest)`.
+  Добавлен отдельный агрегат `repository-checks`, который требует успеха обеих
+  платформ и Windows installer job. При `actions/permissions.enabled=false`
+  отсутствие hosted контекста остаётся PARTIAL, даже если локальные тесты зелёные.
+- Первый hosted FULL на `6fba842` нашёл `BROWSER_INSTALL_REQUIRED` в backend
+  unit-тестах обеих ОС: workflow устанавливал Chromium только после unit.
+  Перенесите установку pinned checker Chromium и проверенного Ubuntu sandbox
+  helper до этих тестов; полный browser suite и security-проверки сохраняются.
+  Windows дополнительно обнаружил сравнение путей с Unix-разделителем в двух
+  тестах и Linux-only `zenity` fixture в тесте настроек. Путь сравнивается в
+  нормализованном виде; `zenity` сценарий выполняется на Linux, Windows GUI
+  диалог остаётся отдельной границей проверки.
+- На следующем head `3f3a7c6` Ubuntu unit прошли, но FULL остановился через
+  8 минут на `playwright install --with-deps`: apt скачивал 181 системный пакет
+  через медленный runner mirror. Для browser profiles используется закреплённый
+  Playwright без установки ОС-пакетов; browser suite остаётся обязательным и
+  покажет, хватает ли библиотек готового runner image.
+- Windows Lite/Full EXE успешно собрались с SHA256, но source bootstrap из
+  `powershell.exe` не нашёл штатный `Get-FileHash`, доступный в build-step `pwsh`.
+  CI-процесс больше не передаёт PowerShell 7 `PSModulePath` в Windows PowerShell
+  и проверяет cmdlet до bootstrap. Причина будет подтверждена только hosted
+  повтором; sandbox/контроль SHA не ослабляются.
+- Windows FULL browser suite превысил 20 минут; четыре положительных WebGL
+  сценария отменились на 18-секундном budget во время полной проверки трёх
+  viewport. Независимые viewport теперь проверяются параллельно, сохраняя
+  реальные touch-действия, Canvas snapshots и прежний production watchdog.
+  Локальный положительный WebGL2-кейс прошёл за 13,5 секунды; следующий hosted
+  Windows platform job подтвердил PASS. CI step получил 45 минут, job — 90.
+- Hosted run `fc14f40`: Windows platform browser suite и secret-scan прошли.
+  Ubuntu suite выполнил 500 тестов, но все WebKit-профили не стартовали из-за
+  отсутствующих библиотек в одноразовом Ubuntu runner. CI ставит зависимости
+  только WebKit на runner отдельным шагом; пользовательский установщик ОС не
+  меняет. Windows Lite/Full EXE собрались и ранний PowerShell bootstrap прошёл,
+  но source installation превысила 10 минут без сообщения о последней стадии.
+  CI заранее наполняет тот же изолированный npm cache и запускает source
+  проверку офлайн; при новом отказе выводит хвост лога для точной причины.
+- Повторный Windows run показал, что source установка уже напечатала результат
+  `apiReady/uiReady/sandboxReady:true`, но `spawnSync` ожидал ещё 15 минут до
+  `ETIMEDOUT`. Вероятно, фоновый desktop server удерживал pipe вывода открытым.
+  CI перенаправляет вывод команд, создающих сервер, в отдельные локальные файлы;
+  процесс установщика и его exit code остаются обязательными. Гипотезу должен
+  подтвердить следующий hosted запуск, после чего проверяются оба NSIS EXE.
+- Ubuntu browser suite после подготовки WebKit завершил 701 PASS и один Firefox
+  FAIL: Arena survival не показал `#play` в течение 5 секунд после join, при
+  этом видимая форма ещё ожидала ответ. Общий helper ждёт 12 секунд, не меняя
+  условие успеха и 8-секундный сетевой deadline приложения. Следующий hosted
+  run должен подтвердить переход либо показать ошибку join.
+- Следующий Windows installer run прошёл source без pipe timeout и собрал оба
+  EXE, но acceptance получил `fetch ECONNRESET` без указания loopback endpoint.
+  CI отмечает профиль и этап, сохраняет локальные журналы при отказе и
+  ограниченно повторяет только read-only GET при транспортном сбросе. POST
+  остаётся однократным; постоянный отказ по-прежнему FAIL.
+- Hosted run `f286996`: Windows installer и platform suite прошли, Ubuntu
+  browser suite завершил 701 PASS и один FAIL. Тест наблюдал все три viewport,
+  но требовал порядок их появления, хотя Full HTML checker запускает профили
+  параллельно. Сравнивайте отсортированный набор размеров; порядок сохранённых
+  `evidence.profiles` проверяется отдельно. Целевой локальный тест после правки
+  прошёл; новый hosted run ещё нужен.

@@ -36,7 +36,7 @@ test('desktop starts once, reopens, saves a game and preserves it after full sto
 });
 
 
-test('AI dialog saves OpenRouter settings privately and configures the existing route', {timeout:60000}, async()=>{
+test('AI dialog saves OpenRouter settings privately and configures the existing route', {timeout:60000,skip:process.platform==='win32'?'This test mocks the Linux zenity dialog; Windows uses native PowerShell UI.':false}, async()=>{
  const {readFileSync,statSync,existsSync}=await import('node:fs');
  const {setTimeout:delay}=await import('node:timers/promises');
  const home=mkdtempSync(resolve('.local/desktop-settings-')),bin=resolve(home,'bin');mkdirSync(bin);

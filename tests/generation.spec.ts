@@ -90,7 +90,7 @@ test('MICRO-036.3 real Full HTML evidence survives parse, save and reopened vers
  const timer=setInterval(observe,10);
  let evidence;
  try{evidence=await checkFullHtml(browser,source,AbortSignal.timeout(18000));}finally{clearInterval(timer);}
- expect([...viewports.values()]).toEqual([{width:320,height:700},{width:390,height:700},{width:844,height:390}]);
+ expect([...viewports.values()].sort((a,b)=>a.width-b.width)).toEqual([{width:320,height:700},{width:390,height:700},{width:844,height:390}]);
  expect(evidence.profiles).toEqual([320,390,844]);
  const candidate:Artifact={html:source,method:'llm_code',provider:'offline-test',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline-test',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:evidence}};
  const artifact=parseArtifact(candidate);

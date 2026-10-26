@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  repository-checks:
+  platform-checks:
     name: repository-checks (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -24,7 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     # Retain required check names. FAST runs real checks on both platforms;
     # risky steps stay inside these jobs, so their failures fail the same checks.
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,6 +52,22 @@ jobs:
         run: npm run typecheck
       - name: FAST build
         run: npm run build
+      - name: Install checker Chromium before backend contracts
+        timeout-minutes: 8
+        run: node scripts/browser-tests.mjs install chromium
+      - name: Prepare existing packaged Chromium sandbox helper
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=/opt/google/chrome/chrome-sandbox
+          test -f "$helper" && test ! -L "$helper"
+          dpkg-query -S "$helper" | grep -Fx 'google-chrome-stable: /opt/google/chrome/chrome-sandbox'
+          expected=$(awk '$2 == "opt/google/chrome/chrome-sandbox" { print $1 }' /var/lib/dpkg/info/google-chrome-stable.md5sums)
+          actual=$(md5sum "$helper" | cut -d ' ' -f 1)
+          test -n "$expected" && test "$actual" = "$expected"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
       - name: FAST complete Ubuntu unit and backend contracts
         if: runner.os == 'Linux'
         run: node --test tests/*.test.ts
@@ -64,23 +80,14 @@ jobs:
       - name: Install browser profiles
         if: steps.scope.outputs.browsers != 'false'
         timeout-minutes: 8
-        run: node scripts/browser-tests.mjs install --with-deps chromium webkit firefox
-      - name: Prepare existing packaged Chromium sandbox helper
+        run: node scripts/browser-tests.mjs install chromium webkit firefox
+      - name: Install WebKit libraries on the disposable Ubuntu runner
         if: runner.os == 'Linux' && steps.scope.outputs.browsers != 'false'
-        shell: bash
-        run: |
-          set -euo pipefail
-          helper=/opt/google/chrome/chrome-sandbox
-          test -f "$helper" && test ! -L "$helper"
-          dpkg-query -S "$helper" | grep -Fx 'google-chrome-stable: /opt/google/chrome/chrome-sandbox'
-          expected=$(awk '$2 == "opt/google/chrome/chrome-sandbox" { print $1 }' /var/lib/dpkg/info/google-chrome-stable.md5sums)
-          actual=$(md5sum "$helper" | cut -d ' ' -f 1)
-          test -n "$expected" && test "$actual" = "$expected"
-          sudo chown root:root "$helper"
-          sudo chmod 4755 "$helper"
+        timeout-minutes: 25
+        run: node scripts/browser-tests.mjs install-deps webkit
       - name: Autonomous game and isolation browser tests
         if: steps.scope.outputs.browsers != 'false'
-        timeout-minutes: 20
+        timeout-minutes: 45
         run: node scripts/browser-tests.mjs test
       - name: Preserve browser failure diagnostics
         if: failure()
@@ -94,6 +101,66 @@ jobs:
         if: steps.scope.outputs.browsers != 'false'
         timeout-minutes: 3
         run: node scripts/browser-tests.mjs performance
+
+  windows-installer:
+    name: windows-installer
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.0'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies and build
+        run: |
+          npm ci --cache .local/release-ci-001/bootstrap/npm-cache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows Lite and Full from verified inputs
+        shell: pwsh
+        run: ./scripts/windows-installer-build-ci.ps1
+      - name: Exercise source bootstrap and both Windows installers
+        run: node scripts/windows-installer-ci.mjs
+      - name: Preserve Windows installer failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installer-failure-${{ github.sha }}
+          path: |
+            .local/release-ci-001/evidence/windows.json
+            .local/release-ci-001/evidence/*.log
+            .local/release-ci-001/profiles/*/data/desktop.log
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Save verified Windows installers and checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installers-${{ github.sha }}
+          path: |
+            .local/release-ci-001/windows-build/packages/*.exe
+            .local/release-ci-001/windows-build/packages/*.sha256
+            .local/release-ci-001/evidence/windows.json
+          if-no-files-found: error
+          retention-days: 7
+
+  repository-checks:
+    name: repository-checks
+    needs: [platform-checks, windows-installer]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require Ubuntu, Windows and installer success
+        shell: bash
+        run: |
+          test '${{ needs.platform-checks.result }}' = success
+          test '${{ needs.windows-installer.result }}' = success
 
   secret-scan:
     name: secret-scan
