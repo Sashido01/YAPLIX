@@ -55,7 +55,17 @@ export function createAdapter(options){
  const current=()=>{const p=readJSON(pointer);return p&&/^[a-f0-9]{64}$/.test(p.id)?join(installHome,'versions',p.id):null;};
  let old=current(),probeHome,started=false;
  const log=row=>{try{const path=join(stateHome,'install.log');safeFile(path);if(existsSync(path)&&statSync(path).size>65536)writeFileSync(path,'',{mode:0o600});writeFileSync(path,new Date().toISOString()+' '+row.stage+' '+row.code+'\n',{flag:'a',mode:0o600});}catch{}};
- async function stop(root,home){if(!root)return;command(root,['--stop'],home);for(let i=0;i<100&&existsSync(join(home,'desktop.lock'));i++)await delay(100);if(existsSync(join(home,'desktop.lock')))throw new InstallError('BUSY');}
+ async function stop(root,home){
+  if(!root)return;
+  try{command(root,['--stop'],home);}catch{}
+  const lock=join(home,'desktop.lock');
+  for(let i=0;i<60&&existsSync(lock);i++)await delay(100);
+  if(existsSync(lock)){
+   try{const {pid}=JSON.parse(readFileSync(lock,'utf8'));if(Number.isInteger(pid)&&pid>0){try{process.kill(pid,'SIGTERM');}catch{}for(let i=0;i<20&&existsSync(lock);i++)await delay(100);try{process.kill(pid,'SIGKILL');}catch{}}}catch{}
+   try{rmSync(lock,{force:true});rmSync(join(home,'desktop.json'),{force:true});}catch{}
+  }
+  if(existsSync(lock))throw new InstallError('BUSY');
+ }
  async function recover(){
   for(const name of readdirSync(stateHome).filter(n=>/^probe-[a-zA-Z0-9]+$/.test(n))){
    const dir=join(stateHome,name),owner=readJSON(join(dir,'installer-owner.json'));
