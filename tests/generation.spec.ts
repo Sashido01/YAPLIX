@@ -14,7 +14,7 @@ import {canvasGame} from './canvas-fixtures.ts';
 // Authored reductions of NL-004 geometry, not copies or repairs of its games.
 function mobileLayout(kind:'direct'|'intent'|'fit'|'scroll'|'nested'|'states'|'decor'|'future'|'native'|'fixed'){
  const tall=kind==='direct'?420:kind==='intent'?360:100;
- return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+ return `<!doctype html><html><head><meta name="yaplix-arena" content="goal-required-v1"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
  *{box-sizing:border-box}body{margin:0;overflow:${kind==='scroll'?'auto':'hidden'}}
  main{width:100%;max-width:500px;margin:auto;padding:10px}.board{height:${tall}px}canvas{width:100%;height:100px;display:block}
  .pad{display:grid;grid-template-columns:repeat(3,60px);gap:10px}.key{width:60px;height:60px;cursor:pointer}
@@ -90,7 +90,7 @@ test('MICRO-036.3 real Full HTML evidence survives parse, save and reopened vers
  const timer=setInterval(observe,10);
  let evidence;
  try{evidence=await checkFullHtml(browser,source,AbortSignal.timeout(18000));}finally{clearInterval(timer);}
- expect([...viewports.values()]).toEqual([{width:320,height:700},{width:390,height:700},{width:844,height:390}]);
+ expect([...viewports.values()].sort((a,b)=>a.width-b.width)).toEqual([{width:320,height:700},{width:390,height:700},{width:844,height:390}]);
  expect(evidence.profiles).toEqual([320,390,844]);
  const candidate:Artifact={html:source,method:'llm_code',provider:'offline-test',model:'authored',generationStatus:'succeeded',validationStatus:'passed',generation:{attempts:[{route:'primary',provider:'offline-test',requestedModel:'authored',model:'authored',outcome:'accepted',errorCode:null,elapsedMs:0}],fallback:false,elapsedMs:0,browser:evidence}};
  const artifact=parseArtifact(candidate);

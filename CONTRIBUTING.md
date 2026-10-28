@@ -31,22 +31,27 @@ git push -u origin HEAD
 
 Создайте PR с base `main`, содержательным результатом и фактическими проверками
 по [шаблону](.github/pull_request_template.md). Просмотрите diff, target branch,
-конфликты и checks именно последнего head. Обязательны зелёные
-`repository-checks (ubuntu-24.04)`, `repository-checks (windows-latest)` и
-`secret-scan`. [FAST/FULL policy](docs/ci-economy.md) определяет объём реально
+конфликты и checks именно последнего head. Ruleset `protect-main` требует
+`repository-checks` и `secret-scan`; агрегат `repository-checks` становится
+зелёным только после `repository-checks (ubuntu-24.04)`,
+`repository-checks (windows-latest)` и `windows-installer`.
+[FAST/FULL policy](docs/ci-economy.md) определяет объём реально
 выполняемых проверок: docs-only не запускает browsers, unit-only запускает все
 unit обеих ОС, runtime/config/неизвестный diff требует FULL. Имена checks
 не меняются. Исправляйте ошибки новыми коммитами, снова ждите CI.
 Исключение владельца MICRO-019 до 29 октября 2026: repository Actions временно
 выключены. В этот период выполняйте локальные typecheck/build, критические unit,
 короткий Playwright и secret scan; отсутствие hosted run не является зелёным CI.
-Объём FAST/FULL и файлы workflow сохранены. [Состояние и восстановление](docs/ci-economy.md).
+Объём FAST/FULL сохранён. [Состояние и восстановление](docs/ci-economy.md).
 Перед release вручную выполните FULL на точном release commit. Повторного
 полного Actions run на push main нет; post-merge smoke выполняется локально.
-Текущие ограничения server protection описаны в [аудите](docs/micro-018-report.md).
+Текущая проверка server protection описана в [правилах main](docs/github-ruleset.md).
 
 Владелец разрешает самостоятельно выполнить стандартный merge обычной задачи
 после успешных проверок (в период MICRO-019 — указанных локальных проверок).
+Для PR #65 / RELEASE-CI-001 действует более строгое условие: дождитесь настоящих
+успешных hosted Ubuntu, Windows installer и `secret-scan` на актуальном head;
+отсутствие checks при выключенных Actions не разрешает merge.
 Не ждите участников ради внутренних инженерных решений.
 Если GitHub protection требует review, выполните требование; обход запрещён.
 Используйте разрешённый настройками merge method, предпочтительно merge commit

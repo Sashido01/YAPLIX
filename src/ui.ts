@@ -2,6 +2,7 @@ import {LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
 import { mountGame } from './runtime.ts';
 import type { GameVersion, GameSpec, GameEvent } from './contracts.ts';
 import type { JobSummary } from './job-contracts.ts';
+import {formatArenaValue} from './arena-contract.ts';
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const prompt = el<HTMLTextAreaElement>('prompt'), message = el('message');
 let current: GameVersion | null = null, unmount: (() => void) | undefined, busy = false, action: AbortController | undefined;
@@ -79,25 +80,25 @@ async function api(path: string, body?: unknown, token?: string, signal?: AbortS
     throw error;
   } finally {clearTimeout(timer);}
 }
-function lock(value: boolean) {
+function lock(value: boolean,revealGame=true) {
   busy=value; el<HTMLButtonElement>('generate').disabled=value; el<HTMLButtonElement>('improve').disabled=value||!current; el<HTMLSelectElement>('provider-mode').disabled=value;el<HTMLSelectElement>('edit-provider-mode').disabled=value;
   el<HTMLSelectElement>('versions').disabled=value||!current;el<HTMLButtonElement>('replay').disabled=value||!current;
   el('cancel').hidden=!value; document.body.classList.toggle('waiting',value);
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.disabled=value||button.dataset.view==='play'&&!current);
-  if(!value&&current&&document.body.dataset.screen==='play'){
+  if(!value&&revealGame&&current&&document.body.dataset.screen==='play'){
     const mobile=matchMedia('(max-width:760px)').matches;
     const scroller=(mobile?document.querySelector('body>main'):document.scrollingElement) as HTMLElement;
     const bottom=mobile?scroller.getBoundingClientRect().bottom:innerHeight;
     scroller.scrollTop+=Math.max(0,el('game').getBoundingClientRect().bottom-bottom+8);
   }
 }
-async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false) {
+async function attempt(work: (signal: AbortSignal) => Promise<void>, generating = false,revealGame=true) {
   if (busy) return; lock(true); action=new AbortController(); const controller=action;
   const timeout=setTimeout(()=>controller.abort('timeout'), generating ? LIVE_JOB_TIMEOUT_MS : 15_000), began=performance.now();
   const progress=generating?setInterval(()=>{if(!controller.signal.aborted)message.textContent=`Модель создаёт игру… ${Math.floor((performance.now()-began)/1000)} с. Можно отменить ожидание.`;},1000):undefined;
   try { await work(controller.signal); }
   catch (error) { message.textContent=controller.signal.aborted ? controller.signal.reason==='timeout'?'Ожидание истекло. Повторите действие.':'Ожидание отменено. Проверьте список сохранённых игр.' : (error as Error).message; }
-  finally { clearTimeout(timeout); clearInterval(progress); if(action===controller)action=undefined; lock(false); }
+  finally { clearTimeout(timeout); clearInterval(progress); if(action===controller)action=undefined; lock(false,revealGame); }
 }
 el('cancel').addEventListener('click',()=>action?.abort('user'));
 const spec=(text:string):GameSpec=>({prompt:text,audience:'default',genre:'unknown',mechanics:[],controls:['keyboard','touch','pointer'],responsive:true,webview:true});
@@ -120,7 +121,8 @@ async function list(signal?:AbortSignal) {
 }
 async function stats(version: GameVersion) {
   const data=await api('/api/versions/'+version.versionId+'/analytics');if(current?.versionId!==version.versionId)return;
-  el('analytics').textContent=`Начато: ${data.startedCount}. Завершено: ${data.completedCount}. Победы: ${data.won}. Поражения: ${data.lost}. Средний счёт: ${data.meanScore??'нет данных'}.`;
+  const result=data.resultMetric&&data.resultMetric.id!=='score'?`Средний результат · ${data.resultMetric.label}: ${data.meanResult===null?'нет данных':formatArenaValue(data.meanResult,data.resultMetric)}`:`Средний счёт: ${data.meanScore??'нет данных'}`;
+  el('analytics').textContent=`Начато: ${data.startedCount}. Завершено: ${data.completedCount}. Победы: ${data.won}. Поражения: ${data.lost}. ${result}.`;
   el('comparison').textContent='';
   if(version.previousVersionId){const comparison=await api(`/api/versions/${version.versionId}/analytics?baselineVersionId=${version.previousVersionId}`);if(current?.versionId!==version.versionId)return;
     el('comparison').textContent=comparison.evidence==='insufficient_data'?'Для сравнения нужно минимум пять завершённых сессий на каждой версии.':`Разница доли побед: ${comparison.winRateDelta??'нет данных'}. Это наблюдение по клиентской статистике.`;}
@@ -143,6 +145,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
   current=version;remember(version);
   el('phone').dataset.version = version.versionId;
+  el<HTMLButtonElement>('arena-game').disabled=false;
   const title=history.versions[0]?.spec.prompt??version.spec.prompt;
   el('game-title').textContent=title.length>100?title.slice(0,100)+'…':title;
   const bytes=new TextEncoder().encode(version.html).length;
@@ -201,8 +204,9 @@ async function submitJob(buttonId:string,text:string,previousVersionId?:string){
 }
 el<HTMLFormElement>('create').addEventListener('submit',event=>{event.preventDefault();void submitJob('generate',prompt.value);});
 el<HTMLFormElement>('iterate').addEventListener('submit',event=>{event.preventDefault();if(current)void submitJob('improve',el<HTMLTextAreaElement>('change').value,current.versionId);});
-async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);el('phone').scrollIntoView({block:'start'});}finally{phoneOpening=false;}}
-el('phone-game').addEventListener('click',()=>{if(current)void attempt(()=>phoneFor(current!.versionId));});
+async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);el('phone-qr').scrollIntoView({block:'center'});}finally{phoneOpening=false;}}
+el('phone-game').addEventListener('click',()=>{if(current)void attempt(()=>phoneFor(current!.versionId),false,false);});
+el('arena-game').addEventListener('click',()=>{if(current)location.assign('/arena?versionId='+current.versionId);});
 el('edit-game').addEventListener('click',()=>{el('iterate').scrollIntoView({block:'center'});el('change').focus();});
 el('replay').addEventListener('click',()=>{if(current)void attempt(signal=>play(current!,signal));});
 el('versions').addEventListener('change',()=>void attempt(async signal=>show(await readVersion(el<HTMLSelectElement>('versions').value,signal),signal)));
@@ -251,6 +255,7 @@ el('jobs-toggle').addEventListener('click',()=>{el('jobs-panel').hidden=!el('job
 document.addEventListener('visibilitychange',()=>{clearTimeout(pollTimer);if(!document.hidden)void pollJobs();});
 window.addEventListener('pagehide',()=>{closed=true;clearTimeout(pollTimer);unmount?.();unmount=undefined;});window.addEventListener('pageshow',()=>{if(closed){closed=false;void pollJobs();}});
 async function boot(){
+  if(document.body.dataset.entry!=='telegram'&&location.hostname==='127.0.0.1'){const path='/runtime/lan-setup-ui.js';void import(path).then(module=>module.mountLanSetup(document.querySelector('main')!)).catch(()=>{});}
   if(document.body.dataset.entry==='telegram'){const path='/runtime/telegram-ui.js';telegramToken=await (await import(path) as typeof import('./telegram-ui.ts')).initializeTelegram();el('telegram-notify-label').hidden=false;}
   await refreshProviderConfiguration();await list();void pollJobs();const params=new URL(location.href).searchParams,selected=params.get('game');if(params.get('view')==='create')view('create');if(selected&&/^[0-9a-f-]{36}$/.test(selected))await attempt(async signal=>{const history=await api('/api/games/'+selected,undefined,undefined,signal);const requested=params.get('version');const latest=requested?history.versions.find((v:GameVersion)=>v.versionId===requested):history.versions.at(-1);if(!latest)throw new Error('Версия отсутствует в этой игре.');await show(await readVersion(latest.versionId,signal),signal);},false);
 }

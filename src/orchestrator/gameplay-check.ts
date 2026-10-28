@@ -1,3 +1,4 @@
+import {checkerChannel,checkerLaunchTarget,systemChromePresent} from '../browser-target.ts';
 // TASK-016 gameplay evidence checker for the experimental orchestrator.
 // Layered on the existing browser-check.ts mechanics: the same strict launch
 // sandbox (OS-sandboxed Chromium, offline, secrets-free env, opaque iframe with
@@ -15,12 +16,12 @@ import { existsSync, statSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { Fault } from '../contracts.ts';
 import { GAME_CSP, UUID_COMPAT } from '../runtime.ts';
-import { PROJECT_ROOT } from '../store.ts';
+import { PROJECT_ROOT, managedPath } from '../store.ts';
 import { runRulesGameplay } from './rules-gameplay.ts';
 import type { RulesProbeOptions, RulesEvidence } from './rules-gameplay.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 // Playwright creates its temporary browser profiles in the parent process.
-const temp=resolve(PROJECT_ROOT,'.local/tmp');mkdirSync(temp,{recursive:true});
+const temp=managedPath('.local/tmp/profiles');mkdirSync(temp,{recursive:true});
 for(const key of ['TEMP','TMP','TMPDIR'])process.env[key]=temp;
 const {chromium}=await import('playwright-core');
 
@@ -142,7 +143,7 @@ export async function gameplayCheck(
   const target = options.scoreTarget ?? parseTarget([rules.win, rules.objective, rules.loss].filter(Boolean).join(' '));
   if (!checkerBrowserReady()) throw new Fault('BROWSER_INSTALL_REQUIRED', 503);
   const deadline = AbortSignal.timeout(budgetMs + 12000); // launch + teardown margin
-  const env=Object.fromEntries(['PATH','Path','SystemRoot','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','DISPLAY','XDG_RUNTIME_DIR','LANG'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!]));
+  const env=Object.fromEntries(['LD_LIBRARY_PATH','PATH','Path','SystemRoot','TEMP','TMP','TMPDIR','HOME','USERPROFILE','LOCALAPPDATA','DISPLAY','XDG_RUNTIME_DIR','LANG'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]!]));
   // Same strict Linux sandbox discipline as browser-check.ts. Never --no-sandbox.
   if(process.platform==='linux'){
     const helper=process.env.CHROME_DEVEL_SANDBOX??'/opt/google/chrome/chrome-sandbox';
@@ -154,7 +155,7 @@ export async function gameplayCheck(
   }
   const browserLaunchAbort=()=>void browserLaunchPromise!.then(b=>b.close().catch(()=>{}));
   const browserLaunchPromise: Promise<Awaited<ReturnType<typeof chromium.launch>>> =
-    chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
+    chromium.launch({...checkerLaunchTarget(),headless:true,chromiumSandbox:true,timeout:8000,env}).catch(()=>{throw new Fault('BROWSER_SANDBOX_UNAVAILABLE',503);});
   deadline.addEventListener('abort',browserLaunchAbort,{once:true});
   const browser=await browserLaunchPromise;
   let startedAt=Date.now();
@@ -362,4 +363,4 @@ export async function gameplayCheck(
   } finally { deadline.removeEventListener('abort',browserLaunchAbort); await browser.close().catch(()=>{}); }
 }
 
-function checkerBrowserReady(){ return existsSync(chromium.executablePath()); }
+function checkerBrowserReady(){ return checkerChannel()==='chrome'?systemChromePresent():existsSync(checkerLaunchTarget().executablePath!); }

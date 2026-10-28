@@ -7,13 +7,14 @@ import {generationMessages,extractDocument,GAME_GENERATION_CONTRACT,validateDocu
 import {Store} from '../src/store.ts';
 import {GenerationJobs} from '../src/jobs.ts';
 import {html,spec} from './helpers.ts';
+import {UNIVERSAL_ARENA_CONTRACT} from '../src/arena-contract.ts';
 const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
 const source=(provider:string,complete:CodeTransport['complete']):CodeTransport=>({provider,model:provider==='ollama.com'?'gemma4:31b':'openrouter/free',route:'primary',readiness:async()=>'ready',complete});
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<200;i++){const job=jobs.get('owner',id);if(['completed','needs_attention'].includes(job.stage))return job;await new Promise(r=>setTimeout(r,10));}throw Error('JOB_WAIT');}
 
-test('full HTML core has no genre classification, engine preference or mandatory telemetry',()=>{
+test('full HTML preserves genre independence while requesting Arena in the same generation',()=>{
   for(const prompt of ['Collect rubbish in a house with enemies','Match-3','Snake']){
-    const messages=generationMessages({...spec,prompt});assert.equal(messages.length,2);assert.equal(messages[0].content,GAME_GENERATION_CONTRACT);assert.ok(messages[1].content.includes(prompt));
+    const messages=generationMessages({...spec,prompt});assert.equal(messages.length,2);assert.equal(messages[0].content,GAME_GENERATION_CONTRACT+'\n'+UNIVERSAL_ARENA_CONTRACT);assert.ok(messages[1].content.includes(prompt));
   }
   assert.doesNotMatch(GAME_GENERATION_CONTRACT,/400 lines|Canvas 2D is preferred|requiredMechanics|data-yaplix-|eventBridge/);
   assert.deepEqual(validateDocument(html.replaceAll('data-yaplix-','data-custom-')),[]);

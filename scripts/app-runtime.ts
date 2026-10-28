@@ -13,7 +13,7 @@ export async function appIdentity(port:number,key:string){
   const base='http://127.0.0.1:'+port,nonce=randomBytes(32).toString('hex');
   const read=async(path:string)=>{const response=await fetch(base+path,{redirect:'error',signal:AbortSignal.timeout(1500)});if(!response.ok)throw new Fault('BACKEND_NOT_READY');return JSON.parse(await boundedText(response,4096));};
   const identity=await read('/api/runtime/tunnel?nonce='+nonce);
-  if(identity.app!=='YAPLIX'||identity.protocol!==RUNTIME_PROTOCOL||identity.proof!==proof(key,nonce,identity.instance)||identity.mode!=='local'||identity.schemaVersion!==2)throw new Fault('BACKEND_NOT_READY');
+  if(identity.app!=='YAPLIX'||identity.protocol!==RUNTIME_PROTOCOL||identity.proof!==proof(key,nonce,identity.instance)||identity.mode!=='local'||identity.schemaVersion!==3)throw new Fault('BACKEND_NOT_READY');
   if(identity.buildId!==buildIdentity())throw new Fault('BACKEND_UPDATE_RESTART_REQUIRED');
   const health=await read('/healthz');if(health.ready!==true||health.instance!==identity.instance)throw new Fault('BACKEND_NOT_READY');return identity.instance as string;
 }
@@ -43,11 +43,11 @@ export async function runApp(options:{port:number;env?:NodeJS.ProcessEnv;signal:
   }
   const env={...options.env,PORT:String(options.port),YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',YAPLIX_ACCESS_KEY:''};
   const child=options.startBackend?.(env)??fork('src/server.ts',[],{cwd:PROJECT_ROOT,env,stdio:['ignore','pipe','pipe','ipc'],windowsHide:true});
-  let error='';child.stderr?.on('data',()=>{error='BACKEND_START_FAILED: проверьте диагностику и настройки .env';});child.stdout?.on('data',()=>{});child.on('error',()=>{error='BACKEND_START_FAILED';});
+  let error='',portConflict=false;child.stderr?.on('data',chunk=>{const text=String(chunk);if(/\b(?:PORT_IN_USE|EADDRINUSE)\b/.test(text))portConflict=true;else error='BACKEND_START_FAILED: проверьте диагностику и настройки .env';});child.stdout?.on('data',()=>{});child.on('error',()=>{error='BACKEND_START_FAILED';});
   const closed=new Promise<void>(done=>child.once('close',()=>done()));let cancelled!:()=>void;const aborted=new Promise<void>(done=>cancelled=done);const stop=()=>{if(child.connected)child.send('shutdown',()=>{});cancelled();};options.signal.addEventListener('abort',stop,{once:true});
   try{
-    let ready=false;for(let i=0;i<100&&!options.signal.aborted;i++){if(child.exitCode!==null)break;try{await appIdentity(options.port,key);ready=true;break;}catch{}await delay(200);}
-    if(!ready){if(options.signal.aborted)return{attached:false};throw new Fault(error||'BACKEND_NOT_READY');}
+    let ready=false;for(let i=0;i<100&&!options.signal.aborted&&!portConflict;i++){if(child.exitCode!==null)break;try{await appIdentity(options.port,key);ready=true;break;}catch{}await delay(200);}
+    if(!ready){if(options.signal.aborted)return{attached:false};throw new Fault(portConflict?'PORT_IN_USE':error||'BACKEND_NOT_READY');}
     announce('YAPLIX готов: '+url+' · DEMO без ключей. Остановка: Ctrl+C в этом окне.');if(options.open!==false)open(url,options.openBrowser);if(options.signal.aborted)stop();await Promise.race([closed,aborted]);return{attached:false};
   }finally{options.signal.removeEventListener('abort',stop);if(child.exitCode===null&&child.signalCode===null){stop();let timer:ReturnType<typeof setTimeout>|undefined;const timeout=new Promise<boolean>(done=>{timer=setTimeout(()=>done(true),7000);});if(await Promise.race([closed.then(()=>false),timeout])){child.kill('SIGKILL');clearTimeout(timer);const forced=new Promise<boolean>(done=>{timer=setTimeout(()=>done(true),2000);});if(await Promise.race([closed.then(()=>false),forced]))throw new Fault('OWN_CHILD_CLOSE_TIMEOUT');}clearTimeout(timer);}
 }

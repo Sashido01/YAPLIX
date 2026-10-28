@@ -10,7 +10,7 @@ export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offl
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_EVENT_BYTES = 4096;
 export const methods = ['llm_code', 'template_config', 'mock', 'fallback','authored'] as const;
-export const eventTypes = ['game_ready', 'game_started', 'score_changed', 'game_won', 'game_lost', 'session_ended', 'game_error'] as const;
+export const eventTypes = ['game_ready', 'game_started', 'score_changed', 'result_changed', 'game_won', 'game_lost', 'session_ended', 'game_error'] as const;
 export type GenerationMethod = typeof methods[number];
 export type EventType = typeof eventTypes[number];
 export interface GameSpec {
@@ -48,7 +48,7 @@ export interface GameEvent {
   sequence: number;
   type: EventType;
   timestamp: number;
-  data: { score?: number; message?: string };
+  data: { score?: number; value?:number; message?: string };
 }
 export class Fault extends Error {
   code: string;
@@ -130,8 +130,9 @@ export function parseEvent(value: unknown): GameEvent {
   if (!Number.isSafeInteger(o.sequence) || (o.sequence as number) < 0 || (o.sequence as number) >= 1000) throw new Fault('INVALID_SEQUENCE');
   if (!Number.isSafeInteger(o.timestamp) || (o.timestamp as number) < 0) throw new Fault('INVALID_TIMESTAMP');
   const type = choice(o.type, eventTypes);
-  const data = object(o.data, type === 'score_changed' ? ['score'] : type === 'game_error' ? ['message'] : []);
+  const data = object(o.data, type === 'score_changed' ? ['score'] : type==='result_changed'?['value']:type === 'game_error' ? ['message'] : []);
+  if(type==='result_changed'&&(!Number.isSafeInteger(data.value)||(data.value as number)<0||(data.value as number)>1e9))throw new Fault('INVALID_RESULT');
   if (type === 'score_changed' && (typeof data.score !== 'number' || !Number.isFinite(data.score) || Math.abs(data.score) > 1e9)) throw new Fault('INVALID_SCORE');
   if (type === 'game_error') string(data.message, 512);
-  return { protocolVersion: 1, eventId: uuid(o.eventId), sessionId: uuid(o.sessionId), versionId: uuid(o.versionId), sequence: o.sequence as number, type, timestamp: o.timestamp as number, data: type === 'score_changed' ? { score: data.score as number } : type === 'game_error' ? { message: data.message as string } : {} };
+  return { protocolVersion: 1, eventId: uuid(o.eventId), sessionId: uuid(o.sessionId), versionId: uuid(o.versionId), sequence: o.sequence as number, type, timestamp: o.timestamp as number, data: type === 'score_changed' ? { score: data.score as number } : type==='result_changed'?{value:data.value as number}:type === 'game_error' ? { message: data.message as string } : {} };
 }

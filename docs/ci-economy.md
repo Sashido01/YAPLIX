@@ -2,11 +2,17 @@
 
 ## Временная пауза MICRO-019
 
-По прямому разрешению владельца 16 октября 2026 hosted Actions временно выключены
-на уровне репозитория до 29 октября 2026. Проверенный REST state —
+По прямому разрешению владельца 16 октября 2026 hosted Actions были временно
+выключены на уровне репозитория. Исторический REST state —
 `actions/permissions: enabled:false`; отсутствие новых runs не является CI PASS.
+Повторный read-only GET 26 октября в ходе RELEASE-CI-001 вернул `enabled:true`;
+кто и когда изменил настройку, этим запросом не установлено. Успешные checks на
+актуальном SHA PR всё равно необходимы до merge; push при включённых Actions
+может сам запустить workflow и требует отдельного разрешения владельца задачи.
 До изменения были `enabled:true`, `allowed_actions:all`,
-`sha_pinning_required:false`. Workflow-файлы и FAST/FULL policy ниже не изменены.
+`sha_pinning_required:false`. В момент паузы workflow-файлы не менялись;
+RELEASE-CI-001 позже добавил агрегат required check и Windows installer job.
+FAST/FULL policy сохранён.
 
 Исходно активны `Repository checks` (ID 379465037) и dynamic
 `Dependabot Updates` (ID 379465492). Dynamic workflow отверг отдельное disable
@@ -52,6 +58,10 @@ gh api --method PUT repos/Sashido01/yaplix/actions/permissions -F enabled=true -
 
 Все режимы действительно выполняют Python checker и его тесты, тесты CI policy,
 TypeScript typecheck, production build, `npm ci` и полную проверку секретов.
+Pinned Chromium/headless-shell устанавливаются до backend unit-тестов даже при
+FAST: часть контрактов проверяет доступность production checker. Колонка
+«Браузеры / performance» обозначает расширенный Playwright suite и performance,
+которые FAST docs/unit может пропустить.
 Отдельный lint в проекте не настроен. Windows FAST содержит реальные generator,
 backend/SQLite, persistence и authorization contracts, а не пустой зелёный job.
 
@@ -73,10 +83,18 @@ output выбирает FULL. Labels и ручной параметр для о�
 
 Стабильные checks сохранены:
 
+- `repository-checks` — обязательный агрегат для ruleset `protect-main`;
 - `repository-checks (ubuntu-24.04)`;
 - `repository-checks (windows-latest)`;
+- `windows-installer` — изолированный source bootstrap и настоящие Lite/Full EXE;
 - `secret-scan`.
 
+Агрегат `repository-checks` получает success только если оба matrix jobs и
+`windows-installer` завершились success. Он запускается и при отказе/пропуске
+зависимости, чтобы отсутствие платформенного результата не стало зелёным check.
+`windows-installer` собирает Windows Lite/Full из закреплённых Node/Chromium/NSIS,
+запускает `install-windows.ps1` и оба EXE только с отдельными CI-профилями;
+проверяет API/UI, protected browser, три игры и SQLite после рестарта.
 Jobs не пропускаются целиком. Дополнительные тесты находятся внутри тех же jobs:
 ошибка обязательного или выбранного расширенного step делает соответствующий
 check красным. Нет `continue-on-error`, retries или зависимого skipped-job gate.
@@ -84,13 +102,13 @@ Typecheck и build разнесены на отдельные steps, чтобы 
 скрыть неуспешную предыдущую на PowerShell. Каждый PR проверяет свой merge SHA;
 новый commit отменяет устаревший PR run, но не manual/release/merge queue.
 
-**Состояние сервера 16 октября 2026:** GET branch main вернул `protected:false`,
+**Исторический снимок 16 октября 2026:** GET branch main вернул `protected:false`,
 `protection.enabled:false`, `enforcement_level:off`, `checks:[]`, `contexts:[]`.
-Protection/rulesets endpoints вернули 403 с требованием Pro/Public.
-Настройки не изменены. Checks выявляют отказ, но текущая серверная защита
-не запрещает merge красного PR. Обязательное ожидание checks остаётся правилом
-команды вне временного owner exception MICRO-019 выше. Для технического запрета merge нужна отдельная разрешённая настройка
-доступной серверной защиты; workflow не способен заменить её.
+Protection/rulesets endpoints тогда вернули 403 с требованием Pro/Public.
+**Более новый снимок 26 октября** показывает активный `protect-main` и обязательные
+`repository-checks`/`secret-scan`; фактическое применение защиты к merge ещё
+не подтверждено. До получения успешных hosted checks на актуальном SHA merge
+PR #65 запрещён независимо от поведения серверного ограничения.
 См. [границы защиты](github-ruleset.md).
 
 ## Локальная проверка
@@ -132,7 +150,8 @@ FULL использует все три browser engines, потому что sui
 проверяет; произвольное сокращение профилей здесь лишило бы покрытия.
 Кэш браузеров и передача build между jobs не введены без замера выгоды.
 
-Build выполняется один раз на ОС: прямые Node/Playwright команды обходят
+Основной build выполняется один раз на ОС; отдельный Windows installer job
+собирает собственный payload, чтобы его отказ не скрывался matrix-job. Прямые Node/Playwright команды обходят
 `pretest` и повторный build в `test:browser` / `performance:smoke`. Public npm
 scripts для разработчика сохранены. Общий timeout FULL остаётся 30 min,
 browser install ограничен 8 min, suite 20 min, performance 3 min.
@@ -142,4 +161,4 @@ Failure diagnostics сохраняются 3 дня. Actions pinned по SHA, to
 FAST: начальный ориентир hosted p75 <=3 min на ОС, полный набор checks <=5
 runner-min/PR суммарно. Это цель после локального замера, а не hosted результат.
 Фактический baseline, расчёты и непроверенные границы:
-[отчёт MICRO-018](micro-018-report.md).
+[отчёт MICRO-018](archive/micro-018-report.md).
