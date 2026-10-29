@@ -72,7 +72,7 @@ export function networkCategory(error: unknown, route: NetworkRoute): string {
 // dispatcher mutation, stale proxy cache, credential logging or direct fallback.
 export async function networkRequest<T>(url: URL, init: RequestInit, provider: string,
   consume: (response: Response, diagnostic: NetworkDiagnostic) => Promise<T>,
-  env: NodeJS.ProcessEnv = process.env): Promise<T> {
+  env: NodeJS.ProcessEnv = process.env, request: typeof fetch = fetch, onDispatch?:()=>void): Promise<T> {
   const began = performance.now();
   const diagnostic: NetworkDiagnostic = { provider, route: 'configuration', stage: 'configuration', durationMs: 0, category: 'ok' };
   let dispatcher: Dispatcher | undefined;
@@ -92,7 +92,8 @@ export async function networkRequest<T>(url: URL, init: RequestInit, provider: s
       dispatcher = new ProxyAgent({ ...options, uri: proxy.href, token, proxyTls: { timeout }, requestTls: { timeout } });
     } else dispatcher = new Agent(options);
     diagnostic.stage = 'connect';
-    const response = await fetch(url, { ...init, dispatcher } as RequestInit & { dispatcher: Dispatcher });
+    onDispatch?.();
+    const response = await request(url, { ...init, dispatcher } as RequestInit & { dispatcher: Dispatcher });
     diagnostic.httpStatus = response.status; diagnostic.stage = 'response';
     return await consume(response, diagnostic);
   } catch (error) {

@@ -23,40 +23,22 @@ Auto на ChatGPT. `LIVE_PROVIDER` не меняется; `LIVE_PROVIDER=none` �
 генератор. Ручной выбор ChatGPT сохраняется после reload, без автоматического
 создания заданий. Это не сохраняет OAuth: он остаётся только в памяти сервера.
 
-## Длительная генерация — Stage A1.7
+## Длительная генерация и durable repairs
 
-Все LIVE-провайдеры используют одну политику: по умолчанию **30 минут на
-response** и **35 минут на всё задание**, включая очередь, browser validation
-и запись SQLite. Browser validation сохраняет собственные короткие лимиты.
-Ответ на 29-й минуте оставляет до 6 минут до job deadline; очередь и предыдущие
-попытки уменьшают остаток. Retry не выдаёт новый job budget.
+Все провайдеры ограничивают один ответ 30 минутами. Ollama Cloud jobs получают
+до 130 минут суммарно: до четырёх последовательных ответов (начальный запрос и
+три repairs) плюс очередь, browser validation и сохранение. OpenRouter и ChatGPT
+ограничены 35 минутами на job; OpenRouter не выполняет automatic repair, а
+ChatGPT дополнительно допускает только один POST и требует локальную авторизацию.
+Неизвестный исход POST никогда не повторяется после restart или Continue.
 
-Источник конфигурации — `src/generation-timeouts.ts`:
+Источник timeout-конфигурации — `src/generation-timeouts.ts`:
 `LLM_REQUEST_TIMEOUT_MS` (1000..1800000) и `LLM_MAX_DURATION_MS`
-(1000..2100000), response не больше job. Отсутствующие значения дают 30/35 минут;
-явные меньшие значения ограничивают все три провайдера одинаково. Удалите старые
-60 s / 180 s / 300 s значения из своей конфигурации, если нужны новые defaults.
-`LLM_TIMEOUT_MS` — только legacy alias job duration, когда
-`LLM_MAX_DURATION_MS` не задан; отдельного engine timeout больше нет.
-Проверьте эффективные значения через `npm run doctor:providers` без сети,
-OAuth, models GET, inference и открытия SQLite. Изменение конфигурации требует
-штатного перезапуска владельцем; уже работающий сервер не меняется.
-
-Worker сохраняет исходный durable deadline при restart и Continue.
-Существующие jobs не продлеваются. ChatGPT по-прежнему получает максимум один
-POST, с durable reservation до отправки, без retry/fallback/LLM repair.
-Полный совместимый checkpoint может пройти повторную локальную проверку без
-POST, только в оставшемся исходном бюджете. Синхронные endpoints не вызывают
-ChatGPT. Demo сохраняет прежний default job budget 5 минут.
-
-HTTP headers/body/SSE ограничены конечным response budget и абсолютным
-AbortSignal, включая keepalive-байты. Подключение/TLS остаётся коротким:
-ChatGPT 10 секунд, облака `LLM_CONNECT_TIMEOUT_MS` (по умолчанию 10 секунд).
-Применяется существующий direct/proxy без автоматического direct fallback;
-глобальные dispatcher и TLS не изменяются. После успеха, ошибки и отмены
-таймер и dispatcher освобождаются. OAuth, standalone probe, models GET и их
-короткие лимиты не расширяются. Входящие server headers/request timeouts
-ограничивают загрузку API-запроса; durable job creation возвращает ответ сразу.
+(1000..7800000), response не больше общего job budget. Значения по умолчанию —
+30 минут на ответ и 130 минут на job; OpenRouter/ChatGPT имеют provider cap
+35 минут. `LLM_TIMEOUT_MS` остаётся legacy alias job duration.
+`LLM_REPAIRS` задаёт 0–3 Ollama repairs, а `LLM_MAX_ATTEMPTS` может уменьшить,
+но не увеличить лимит четырёх POST одного Ollama job.
 
 ## Конфигурация Ollama / OpenRouter без сетевых проб
 

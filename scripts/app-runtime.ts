@@ -82,7 +82,7 @@ async function runAppOnPort(options:{port:number;env?:NodeJS.ProcessEnv;signal:A
       throw new Fault(portConflict?'PORT_IN_USE: порт '+options.port+' занят при запуске сервера. Он сохранён; укажите свободный явно: PORT=3001 ./yaplix.sh':error||'BACKEND_NOT_READY');
     }
     if(options.port!==Number(process.env.PORT??3000))announce('Выбран свободный порт '+options.port+'.');
-    announce('YAPLIX готов: '+url+' · DEMO без ключей. Остановка: Ctrl+C в этом окне.');if(options.open!==false)open(url,options.openBrowser);if(options.signal.aborted)stop();await Promise.race([closed,aborted]);return{attached:false};
+    announce('YAPLIX готов: '+url+' · Остановка: Ctrl+C в этом окне.');if(options.open!==false)open(url,options.openBrowser);if(options.signal.aborted)stop();await Promise.race([closed,aborted]);return{attached:false};
   }finally{options.signal.removeEventListener('abort',stop);if(child.exitCode===null&&child.signalCode===null){stop();let timer:ReturnType<typeof setTimeout>|undefined;const timeout=new Promise<boolean>(done=>{timer=setTimeout(()=>done(true),7000);});if(await Promise.race([closed.then(()=>false),timeout])){child.kill('SIGKILL');clearTimeout(timer);const forced=new Promise<boolean>(done=>{timer=setTimeout(()=>done(true),2000);});if(await Promise.race([closed.then(()=>false),forced]))throw new Fault('OWN_CHILD_CLOSE_TIMEOUT');}clearTimeout(timer);}
 }
 }

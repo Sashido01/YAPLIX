@@ -7,7 +7,9 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
  // DOMParser is inert and retains declarative shadow templates. Native parser
  // roots can bypass attachShadow, so their contents cannot earn strict evidence.
  const parserRoot=!!new DOMParser().parseFromString(html,'text/html').querySelector('template[shadowrootmode]');
- const records=new Map<HTMLCanvasElement,{context:string;draws:number;image:string;meaningful:boolean;preserved:boolean;drawFrame:number}>();
+ const records=new Map<HTMLCanvasElement,{context:string;draws:number;image:string;meaningful:boolean;sampling?:{width:number;height:number;colorBuckets:number;significantColors:number;largestColorPixels:number};preserved:boolean;drawFrame:number;textFrame:number;textDrawCount:number;texts:any[];seen:Map<string,number>;overlapSeen:Map<string,{count:number;lastFrame:number}>;unverifiedText:number;overlapUnverified:number}>();
+ const clipStates=new WeakMap<CanvasRenderingContext2D,{active:boolean;stack:boolean[]}>();
+ const contexts=new WeakMap<HTMLCanvasElement,CanvasRenderingContext2D>();
  // Expire non-preserved evidence even when the game stops scheduling frames.
  // This observer never draws or changes the game's context options.
  let frame=0;const nativeFrame=window.requestAnimationFrame.bind(window);
@@ -17,12 +19,19 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
  const nativeGet=HTMLCanvasElement.prototype.getContext;
  const nativeDraw=CanvasRenderingContext2D.prototype.drawImage;
  const nativePixels=CanvasRenderingContext2D.prototype.getImageData;
- const sample=(canvas:HTMLCanvasElement,record:{image:string;meaningful:boolean})=>{
+ const nativeMeasure=CanvasRenderingContext2D.prototype.measureText;
+ const nativeTransform=CanvasRenderingContext2D.prototype.getTransform;
+ let glyphCanvas:OffscreenCanvas|undefined,glyphContext:OffscreenCanvasRenderingContext2D|null=null;
+ const sample=(canvas:HTMLCanvasElement,record:{context:string;image:string;meaningful:boolean;sampling?:{width:number;height:number;colorBuckets:number;significantColors:number;largestColorPixels:number}})=>{
   try{
-   const probe=document.createElement('canvas');probe.width=32;probe.height=24;
+   // A non-preserved WebGL buffer must be read after every draw, before the
+   // next frame discards it. Keep 2D detail at 256 px and bound GPU readback.
+   const edge=record.context==='2d'?256:128;
+   const scale=Math.min(1,edge/Math.max(canvas.width,canvas.height));
+   const probe=document.createElement('canvas');probe.width=Math.max(1,Math.round(canvas.width*scale));probe.height=Math.max(1,Math.round(canvas.height*scale));
    const ctx=Reflect.apply(nativeGet,probe,['2d']) as CanvasRenderingContext2D;
-   Reflect.apply(nativeDraw,ctx,[canvas,0,0,32,24]);
-   const pixels=Reflect.apply(nativePixels,ctx,[0,0,32,24]).data;
+   Reflect.apply(nativeDraw,ctx,[canvas,0,0,probe.width,probe.height]);
+   const pixels=Reflect.apply(nativePixels,ctx,[0,0,probe.width,probe.height]).data;
    const colors=new Map<number,number>();let hash=2166136261;
    for(let i=0;i<pixels.length;i+=4){
     const color=pixels[i+3]<16?0:1+(pixels[i]>>4)*256+(pixels[i+1]>>4)*16+(pixels[i+2]>>4);
@@ -31,14 +40,41 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
    }
    record.image=String(hash>>>0);
    // A blank/solid clear, a lone pixel or a thin decorative line is insufficient.
-   record.meaningful=[...colors.values()].filter(n=>n>=8).length>=2;
-  }catch{record.image='';record.meaningful=false;}
+   const significantColors=[...colors.values()].filter(n=>n>=8).length;
+   record.meaningful=significantColors>=2;
+   record.sampling={width:probe.width,height:probe.height,colorBuckets:colors.size,significantColors,largestColorPixels:Math.max(0,...colors.values())};
+  }catch{record.image='';record.meaningful=false;record.sampling=undefined;}
+ };
+ const rasterizeInk=(ctx:CanvasRenderingContext2D,text:string,x:number,y:number,bounds:{left:number;top:number;right:number;bottom:number},stroke:boolean,maxWidth:boolean,clipActive:boolean,paintCertain:boolean):number[]|null=>{
+  // Rasterize isolated glyphs using the browser's own font rasterizer. A
+  // TextMetrics rectangle intersection alone never establishes a conflict.
+  if(typeof OffscreenCanvas==='undefined'||maxWidth||clipActive||!paintCertain||ctx.globalAlpha<.5||ctx.globalCompositeOperation!=='source-over')return null;
+  const left=Math.max(0,Math.floor(bounds.left)),top=Math.max(0,Math.floor(bounds.top));
+  const right=Math.min(ctx.canvas.width,Math.ceil(bounds.right)),bottom=Math.min(ctx.canvas.height,Math.ceil(bounds.bottom));
+  const width=right-left,height=bottom-top;if(width<1||height<1||width>2048||height>2048)return null;
+  try{
+   if(!glyphCanvas){glyphCanvas=new OffscreenCanvas(width,height);glyphContext=glyphCanvas.getContext('2d',{willReadFrequently:true});}
+   else if(glyphCanvas.width!==width||glyphCanvas.height!==height){glyphCanvas.width=width;glyphCanvas.height=height;}
+   const ink=glyphContext;if(!ink)return null;
+   const m=ctx.getTransform();ink.setTransform(m.a,m.b,m.c,m.d,m.e-left,m.f-top);
+   ink.font=ctx.font;ink.textAlign=ctx.textAlign;ink.textBaseline=ctx.textBaseline;ink.direction=ctx.direction;
+   for(const property of ['fontKerning','fontStretch','fontVariantCaps','letterSpacing','wordSpacing','textRendering','lang'] as const){const source=(ctx as any)[property];if(source!==undefined&&property in ink)(ink as any)[property]=source;}
+   ink.setLineDash(ctx.getLineDash());ink.lineDashOffset=ctx.lineDashOffset;
+   ink.fillStyle='#fff';ink.strokeStyle='#fff';ink.globalAlpha=1;ink.globalCompositeOperation='source-over';ink.shadowColor='transparent';ink.shadowBlur=0;ink.shadowOffsetX=0;ink.shadowOffsetY=0;ink.filter='none';
+   if(stroke){ink.lineWidth=ctx.lineWidth;ink.lineJoin=ctx.lineJoin;ink.miterLimit=ctx.miterLimit;ink.strokeText(text,x,y);}
+   else ink.fillText(text,x,y);
+   const pixels=ink.getImageData(0,0,width,height).data,result:number[]=[];
+   for(let py=0;py<height;py++)for(let px=0;px<width;px++)if(pixels[(py*width+px)*4+3]>=96)result.push((top+py)*ctx.canvas.width+left+px);
+   return result;
+  }catch{return null;}
  };
  HTMLCanvasElement.prototype.getContext=function(this:HTMLCanvasElement,...args:Parameters<HTMLCanvasElement['getContext']>){
   const result=Reflect.apply(nativeGet,this,args);
+  if(!result&&(args[0]==='webgl'||args[0]==='webgl2'))(window as any).__yaplixWebglUnavailable=args[0];
   if(result&&['2d','webgl','webgl2'].includes(args[0])&&!records.has(this)&&records.size<32)
-   records.set(this,{context:args[0],draws:0,image:'',meaningful:false,drawFrame:-10,
+   records.set(this,{context:args[0],draws:0,image:'',meaningful:false,sampling:undefined,drawFrame:-10,textFrame:-10,textDrawCount:0,texts:[],seen:new Map(),overlapSeen:new Map(),unverifiedText:0,overlapUnverified:0,
     preserved:args[0]==='2d'||!!(result as WebGLRenderingContext).getContextAttributes()?.preserveDrawingBuffer});
+  if(result&&args[0]==='2d'&&!clipStates.has(result as CanvasRenderingContext2D)){clipStates.set(result as CanvasRenderingContext2D,{active:false,stack:[]});contexts.set(this,result as CanvasRenderingContext2D);}
   return result;
  } as HTMLCanvasElement['getContext'];
  const wrap=(prototype:object,names:string[],draw=true)=>{
@@ -47,11 +83,36 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
    Object.defineProperty(prototype,name,{configurable:true,writable:true,value:function(this:{canvas:HTMLCanvasElement},...args:unknown[]){
     const result=Reflect.apply(native,this,args),record=records.get(this.canvas);
     if(record){
-     if(draw){record.draws++;record.drawFrame=frame;}
+     if(draw){record.draws++;record.drawFrame=frame;if(record.context==='2d'&&record.textFrame!==frame){record.textFrame=frame;record.textDrawCount=0;record.texts=[];record.unverifiedText=0;record.overlapUnverified=0;}}
+     if(record.context==='2d'&&(name==='fillText'||name==='strokeText')){
+      try{
+       const ctx=this as CanvasRenderingContext2D,canvas=this.canvas,text=String(args[0]??''),x=Number(args[1]),y=Number(args[2]);
+       const metrics=Reflect.apply(nativeMeasure,ctx,[text]) as TextMetrics,transform=Reflect.apply(nativeTransform,ctx,[]) as DOMMatrix,box=canvas.getBoundingClientRect();
+       const maxWidth=args.length>=4,clipActive=clipStates.get(ctx)?.active??true;
+       const paintStyle=ctx[name==='fillText'?'fillStyle':'strokeStyle'],opaque=typeof paintStyle==='string'&&paintStyle!=='transparent'&&!/^rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/i.test(paintStyle)&&!/^#(?:[\da-f]{3}0|[\da-f]{6}00)$/i.test(paintStyle)&&!/^hsla\([^)]*,\s*0(?:\.0+)?\s*\)$/i.test(paintStyle)&&!/^color\([^)]*\/\s*0(?:\.0+)?\s*\)$/i.test(paintStyle);
+       const fill=ctx.globalAlpha>0&&ctx.globalCompositeOperation==='source-over'&&opaque&&(name==='fillText'||ctx.lineWidth>0);
+       const dims={width:canvas.width,height:canvas.height,cssWidth:box.width,cssHeight:box.height};
+       const measured=[x,y,metrics.actualBoundingBoxLeft,metrics.actualBoundingBoxRight,metrics.actualBoundingBoxAscent,metrics.actualBoundingBoxDescent,transform.a,transform.b,transform.c,transform.d,transform.e,transform.f,dims.width,dims.height,dims.cssWidth,dims.cssHeight];
+       if(!text||measured.some(value=>!Number.isFinite(value))||dims.width<=0||dims.height<=0||dims.cssWidth<=0||dims.cssHeight<=0||metrics.width<=0||metrics.actualBoundingBoxAscent+metrics.actualBoundingBoxDescent<=0||!fill){record.unverifiedText++;record.overlapUnverified++;}
+       else {
+        const local=[[x-metrics.actualBoundingBoxLeft,y-metrics.actualBoundingBoxAscent],[x+metrics.actualBoundingBoxRight,y-metrics.actualBoundingBoxAscent],[x-metrics.actualBoundingBoxLeft,y+metrics.actualBoundingBoxDescent],[x+metrics.actualBoundingBoxRight,y+metrics.actualBoundingBoxDescent]];
+        const points=local.map(([lx,ly])=>({x:transform.a*lx+transform.c*ly+transform.e,y:transform.b*lx+transform.d*ly+transform.f}));
+        const bounds={left:Math.min(...points.map(p=>p.x)),top:Math.min(...points.map(p=>p.y)),right:Math.max(...points.map(p=>p.x)),bottom:Math.max(...points.map(p=>p.y))};
+        const clippedCss={left:Math.max(0,-bounds.left)*dims.cssWidth/dims.width,top:Math.max(0,-bounds.top)*dims.cssHeight/dims.height,right:Math.max(0,bounds.right-dims.width)*dims.cssWidth/dims.width,bottom:Math.max(0,bounds.bottom-dims.height)*dims.cssHeight/dims.height};
+        const edges=(Object.keys(clippedCss) as (keyof typeof clippedCss)[]).filter(edge=>clippedCss[edge]>1),certain=!maxWidth&&!clipActive;
+        let hash=2166136261;for(let i=0;i<text.length;i++)hash=Math.imul(hash^text.charCodeAt(i),16777619);
+        const rounded=Object.fromEntries(Object.entries(bounds).map(([key,value])=>[key,Math.round(value/2)*2]));
+        const simplePaint=typeof paintStyle==='string'&&!/(?:rgba|hsla|color\(|gradient|pattern)/i.test(paintStyle);
+        const inkPixels=record.textDrawCount++<24?rasterizeInk(ctx,text,x,y,bounds,name==='strokeText',maxWidth,clipActive,simplePaint):null;
+        if(!inkPixels?.length)record.overlapUnverified++;
+        record.texts.push({key:String(hash>>>0)+':'+JSON.stringify(rounded)+':'+edges.join(','),textHash:String(hash>>>0),length:text.length,edges,bounds,clippedCss,textAlign:ctx.textAlign,textBaseline:ctx.textBaseline,transform:[transform.a,transform.b,transform.c,transform.d,transform.e,transform.f],canvas:{width:dims.width,height:dims.height,cssWidth:Math.round(dims.cssWidth),cssHeight:Math.round(dims.cssHeight)},stableSamples:0,status:!certain?'NOT_VERIFIED':edges.length?'CLIPPED':'VISIBLE',drawOrder:record.texts.length+1,inkPixels,reason:!certain?(maxWidth?'max-width':'active-clip'):undefined});
+        if(record.texts.length>24)record.texts.shift();
+       }
+      }catch{record.unverifiedText++;record.overlapUnverified++;}
+     }
      if(record.context!=='2d'){
-      // Read at the end of this callback, after its synchronous draws/clears,
-      // before presentation can implicitly discard the drawing buffer.
-      record.image='';record.meaningful=false;dirty.add(this.canvas);
+      // Read after synchronous draws, before the non-preserved frame is lost.
+      dirty.add(this.canvas);
       if(!pending){pending=true;queueMicrotask(()=>{
        pending=false;for(const canvas of dirty){const current=records.get(canvas);if(current)sample(canvas,current);}dirty.clear();
       });}
@@ -61,6 +122,11 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
    }});
   }
  };
+ const nativeSave=CanvasRenderingContext2D.prototype.save,nativeRestore=CanvasRenderingContext2D.prototype.restore,nativeClip=CanvasRenderingContext2D.prototype.clip;
+ CanvasRenderingContext2D.prototype.save=function(this:CanvasRenderingContext2D){const result=Reflect.apply(nativeSave,this,[]),state=clipStates.get(this);if(state)state.stack.push(state.active);return result;};
+ CanvasRenderingContext2D.prototype.restore=function(this:CanvasRenderingContext2D){const result=Reflect.apply(nativeRestore,this,[]),state=clipStates.get(this);if(state?.stack.length)state.active=state.stack.pop()!;return result;};
+ Object.defineProperty(CanvasRenderingContext2D.prototype,'clip',{configurable:true,writable:true,value:function(this:CanvasRenderingContext2D,...args:unknown[]){const result=Reflect.apply(nativeClip,this,args);const state=clipStates.get(this);if(state)state.active=true;return result;}});
+ if(typeof CanvasRenderingContext2D.prototype.reset==='function'){const nativeReset=CanvasRenderingContext2D.prototype.reset;CanvasRenderingContext2D.prototype.reset=function(this:CanvasRenderingContext2D){const result=Reflect.apply(nativeReset,this,[]),state=clipStates.get(this);if(state){state.active=false;state.stack=[];}return result;};}
  wrap(CanvasRenderingContext2D.prototype,['fillRect','strokeRect','fill','stroke','drawImage','putImageData','fillText','strokeText']);
  wrap(WebGLRenderingContext.prototype,['drawArrays','drawElements']);
  if(typeof WebGL2RenderingContext!=='undefined')wrap(WebGL2RenderingContext.prototype,['drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced','drawRangeElements']);
@@ -72,7 +138,7 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
   const descriptor=Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype,name)!;
   Object.defineProperty(HTMLCanvasElement.prototype,name,{...descriptor,set(this:HTMLCanvasElement,value:number){
    Reflect.apply(descriptor.set!,this,[value]);
-   const record=records.get(this);if(record){record.draws=0;record.drawFrame=-10;record.image='';record.meaningful=false;}
+   const record=records.get(this);if(record){record.draws=0;record.drawFrame=-10;record.image='';record.meaningful=false;record.sampling=undefined;record.textDrawCount=0;record.texts=[];record.seen.clear();record.unverifiedText=0;record.overlapUnverified=0;const ctx=contexts.get(this);if(ctx)clipStates.set(ctx,{active:false,stack:[]});}
   }});
  }
  // Include closed shadow roots created by game scripts. No DOM is modified.
@@ -208,7 +274,28 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
     });
    }));
    const fresh=record&&(record.preserved||frame-record.drawFrame<=1);
-   return {id:ids.get(canvas)!,context:record?.context??'',draws:record?.draws??0,image:fresh?record.image:'',meaningful:!!fresh&&record.meaningful,
+   const texts=record?.texts.map((entry:any)=>{const count=(record.seen.get(entry.key)??0)+1;record.seen.set(entry.key,count);const {inkPixels,...publicEntry}=entry;return {...publicEntry,stableSamples:count};})??[];
+   const textOverlaps:any[]=[];let textOverlapCoverage=record?.context==='2d'&&!(record.overlapUnverified??1)?'VERIFIED':'NOT_VERIFIED';
+   if(record?.context==='2d'){
+    const ink=record.texts.filter((entry:any)=>entry.status==='VISIBLE'&&Array.isArray(entry.inkPixels)&&entry.inkPixels.length>0);
+    if(record.texts.some((entry:any)=>!Array.isArray(entry.inkPixels)||!entry.inkPixels.length))textOverlapCoverage='NOT_VERIFIED';
+    const activePairs=new Set<string>();
+    for(let i=0;i<ink.length;i++)for(let j=i+1;j<ink.length;j++){
+     const earlier=ink[i],later=ink[j];
+     const a=new Set<number>(earlier.inkPixels),b=new Set<number>(later.inkPixels),small=a.size<=b.size?a:b,large=small===a?b:a;
+     let intersectionPixels=0;for(const pixel of small)if(large.has(pixel))intersectionPixels++;
+     const overlapRatio=intersectionPixels/Math.min(a.size,b.size);if(intersectionPixels<4||overlapRatio<.05)continue;
+     if(earlier.textHash===later.textHash){textOverlapCoverage='NOT_VERIFIED';continue;}
+     const pairKey=`${canvas.width}x${canvas.height}|${earlier.key}|${later.key}|${intersectionPixels}`,prior=record.overlapSeen.get(pairKey)??{count:0,lastFrame:-1};activePairs.add(pairKey);
+     if(prior.lastFrame!==frame){prior.count++;prior.lastFrame=frame;}record.overlapSeen.set(pairKey,prior);
+     const roundedBounds=(v:any)=>Object.fromEntries(Object.entries(v).map(([key,value])=>[key,Math.round(Number(value)*100)/100]));
+     textOverlaps.push({earlierTextHash:earlier.textHash,laterTextHash:later.textHash,drawOrder:[earlier.drawOrder,later.drawOrder],earlierBounds:roundedBounds(earlier.bounds),laterBounds:roundedBounds(later.bounds),intersectionPixels,overlapRatio:Number(overlapRatio.toFixed(4)),stableSamples:prior.count,status:prior.count>=2?'CONFIRMED':'OBSERVED'});
+    }
+    for(const key of record.overlapSeen.keys())if(!activePairs.has(key))record.overlapSeen.delete(key);
+    if(record.overlapSeen.size>64)record.overlapSeen.clear();
+   }
+   if(record){const active=new Set(texts.map((entry:any)=>entry.key));for(const key of record.seen.keys())if(!active.has(key))record.seen.delete(key);if(record.seen.size>64)record.seen.clear();}
+   return {id:ids.get(canvas)!,context:record?.context??'',draws:record?.draws??0,image:fresh?record.image:'',meaningful:!!fresh&&record.meaningful,sampling:record?.sampling,layoutCoverage:record?.context==='2d'?'canvas2d-text-metrics':'NOT_VERIFIED',unverifiedText:record?.unverifiedText??0,textOverlapCoverage,textOverlaps:textOverlaps.slice(0,8),texts,
     fits:r.width>=20&&r.height>=20&&r.width<=innerWidth+2&&r.height<=innerHeight+2&&r.left>=-2&&r.right<=innerWidth+2&&canvas.width>0&&canvas.height>0,
     exposed};
   });
@@ -217,7 +304,56 @@ export function observeCanvas({key,html}:{key:string;html:string}) {
  }});
 }
 
-export interface CanvasSnapshot {canvases:{id:number;context:string;draws:number;image:string;meaningful:boolean;fits:boolean;exposed:boolean}[];dom:number;terminal?:boolean}
+export interface CanvasTextLayout {key?:string;textHash:string;length:number;edges:string[];bounds:{left:number;top:number;right:number;bottom:number};clippedCss:{left:number;top:number;right:number;bottom:number};textAlign:string;textBaseline:string;transform:number[];canvas:{width:number;height:number;cssWidth:number;cssHeight:number};stableSamples:number;status:'VISIBLE'|'CLIPPED'|'NOT_VERIFIED';reason?:string}
+export interface CanvasTextOverlapEvidence {earlierTextHash:string;laterTextHash:string;drawOrder:[number,number];earlierBounds:{left:number;top:number;right:number;bottom:number};laterBounds:{left:number;top:number;right:number;bottom:number};intersectionPixels:number;overlapRatio:number;stableSamples:number;status:'OBSERVED'|'CONFIRMED'}
+export interface CanvasSnapshot {canvases:{id:number;context:string;draws:number;image:string;meaningful:boolean;sampling?:{width:number;height:number;colorBuckets:number;significantColors:number;largestColorPixels:number};fits:boolean;exposed:boolean;layoutCoverage?:string;unverifiedText?:number;textOverlapCoverage?:'VERIFIED'|'NOT_VERIFIED';textOverlaps?:CanvasTextOverlapEvidence[];texts?:CanvasTextLayout[]}[];dom:number;terminal?:boolean}
+export interface CanvasProbe {point:[number,number];cssPoint?:[number,number];canvasId:number|null;hashChanged:boolean;drawDelta:number|null;before?:CanvasSnapshot['canvases'][number];after?:CanvasSnapshot['canvases'][number];tapAttempted?:boolean;tapCompleted?:boolean;startActionEvidence?:'unverified'}
+export function canvasTextLayoutEvidence(snapshot:CanvasSnapshot,viewport:{width:number;height:number},phase:string){
+ const text=snapshot.canvases.flatMap(canvas=>(canvas.texts??[]).map(item=>({...item,canvasId:canvas.id,coverage:canvas.layoutCoverage??'NOT_VERIFIED'})));
+ const clipped=text.filter(item=>item.status==='CLIPPED'&&item.stableSamples>=2);
+ const overflow=(item:CanvasTextLayout)=>Math.max(0,...Object.values(item.clippedCss));
+ const blockingClips=clipped.filter(item=>overflow(item)>2),minorClips=clipped.filter(item=>overflow(item)<=2);
+ const overlaps=snapshot.canvases.flatMap(canvas=>(canvas.textOverlaps??[]).filter(item=>item.status==='CONFIRMED').map(item=>({...item,canvasId:canvas.id})));
+ const coverage=snapshot.canvases.length>0&&snapshot.canvases.every(canvas=>canvas.layoutCoverage==='canvas2d-text-metrics'&&(canvas.unverifiedText??0)===0&&(canvas.texts??[]).every(item=>item.status!=='NOT_VERIFIED'))?'VERIFIED':'NOT_VERIFIED';
+ const overlapCoverage=snapshot.canvases.length>0&&snapshot.canvases.every(canvas=>canvas.textOverlapCoverage==='VERIFIED')?'VERIFIED':'NOT_VERIFIED';
+ const confirmed=blockingClips.length>0||overlaps.length>0;
+ return{status:confirmed?'FAIL':minorClips.length?'NOT_VERIFIED':coverage,confirmed,coverage,minorClippingWarning:minorClips.length?{count:minorClips.length,maxCssPixels:Math.max(...minorClips.map(overflow))}:undefined,overlapStatus:overlaps.length?'FAIL':overlapCoverage,overlapCoverage,viewport,dpr:2,phase,canvases:snapshot.canvases.map(canvas=>({id:canvas.id,context:canvas.context,layoutCoverage:canvas.layoutCoverage??'NOT_VERIFIED',unverifiedText:canvas.unverifiedText??0,textOverlapCoverage:canvas.textOverlapCoverage??'NOT_VERIFIED',observedTextCount:canvas.texts?.length??0,observedOverlapCount:canvas.textOverlaps?.length??0})),texts:text.slice(0,8).map(({key,...item})=>item),overlaps:overlaps.slice(0,4),semanticHitboxes:'NOT_VERIFIED'};
+}
+export function requireCanvasTextLayout(samples:CanvasSnapshot[],viewport:{width:number;height:number},phase:string):void {
+ const sample=samples.at(-1);if(!sample)return;
+ const evidence=canvasTextLayoutEvidence(sample,viewport,phase);
+ if(evidence.confirmed){const overlap=evidence.overlaps.length>0,code=overlap?'BROWSER_CANVAS_UI_OVERLAP':'BROWSER_CANVAS_TEXT_CLIPPED';const diagnosis=overlap?'Repeated Canvas 2D glyph raster masks share a material number of backing-store pixels across distinct text draws. The evidence records actual glyph pixels and draw order; text bounding rectangles alone are not used.':'Repeated Canvas 2D text glyph bounds extend beyond the backing bitmap. Keep the complete measured text bounds inside the Canvas and preserve the game mechanics.';const error=Object.assign(new Fault(code,502),{feedback:JSON.stringify({...evidence,diagnosis})});throw error;}
+}
+/** Compact evidence for diagnosis; never participates in acceptance. */
+export function canvasDiagnosticFeedback(code:string,phase:string,samples:CanvasSnapshot[],probes:CanvasProbe[]=[],viewport?:{width:number;height:number},jsErrors:string[]=[],screenshot?:{captureId:string;sha256:string}):string {
+ const selectedProbes=probes.slice(-4),relevantIds=new Set(selectedProbes.map(p=>p.canvasId).filter((id):id is number=>id!==null));
+ const selectedSamples=samples.length<=3?samples:[samples[0],...samples.slice(-2)];
+ const observations=selectedSamples.map((s,index)=>({sample:index,dom:s.dom,canvases:s.canvases.filter((c,i)=>i<2||relevantIds.has(c.id)).slice(0,4).map(c=>({id:c.id,context:c.context,draws:c.draws,meaningful:c.meaningful,sampling:c.sampling??null,fits:c.fits,exposed:c.exposed,hash:c.image||null}))}));
+ const diagnosis=code==='BROWSER_CANVAS_UI_OVERLAP'
+  ?'Repeated rasterized Canvas glyph masks overlap at the listed backing-store pixels. The conflict is between separate text draws in this viewport and draw order; no full label text or inferred control names are included.'
+  :code==='BROWSER_CANVAS_TEXT_CLIPPED'
+  ?'Repeated browser TextMetrics and the active transform prove that visible Canvas text extends beyond the backing bitmap; Canvas clip paths and maxWidth cases are excluded from this confirmed result.'
+  :code==='BROWSER_CANVAS_ACTIVITY_UNVERIFIED'
+  ?'No exposed meaningful Canvas change was observed after the recorded probes; this can mean static gameplay or an interaction point that missed the intended control.'
+  :code==='BROWSER_CANVAS_RENDER_UNVERIFIED'
+   ?'Canvas was missing, stale, hidden, empty, or lacked substantial sampled colors; compare draw counts, exposure and hashes.'
+   :'The protected browser check timed out; the recorded generic tap does not prove which game action was reached or whether its loop stalled.';
+ let layout=samples.at(-1)&&viewport?canvasTextLayoutEvidence(samples.at(-1)!,viewport,phase):null;
+ if(code==='BROWSER_CANVAS_TEXT_CLIPPED'&&layout&&viewport){
+  // The fault is raised when a previously stable clipped label is observed.
+  // Preserve that exact evidence even if a later frame no longer draws it.
+  const clipped=samples.flatMap(sample=>canvasTextLayoutEvidence(sample,viewport,phase).texts).filter(item=>item.status==='CLIPPED'&&item.stableSamples>=2).slice(-2);
+  if(clipped.length)layout={...layout,status:'FAIL',confirmed:true,coverage:'VERIFIED',texts:clipped};
+ }
+ const report={code,phase,viewport:viewport?{...viewport,dpr:2}:null,diagnosis,observations,canvasTextLayout:layout,probes:selectedProbes.map(p=>({point:p.point,cssPoint:p.cssPoint,canvasId:p.canvasId,hashChanged:p.hashChanged,drawDelta:p.drawDelta,tapAttempted:p.tapAttempted,tapCompleted:p.tapCompleted,before:p.before,after:p.after})),...(screenshot?{screenshot:{captureId:screenshot.captureId,sha256:screenshot.sha256}}:{}),startActionEvidence:'unverified: Canvas-only checker cannot identify the semantic action from a generic tap',jsErrors:jsErrors.slice(0,2).map(e=>e.slice(0,120))};
+ if(code==='BROWSER_CANVAS_TEXT_CLIPPED'&&layout&&Array.isArray(layout.texts))layout.texts=layout.texts.filter((item:any)=>item.status==='CLIPPED').slice(0,2);
+ if(code==='BROWSER_CANVAS_UI_OVERLAP'&&layout&&Array.isArray(layout.overlaps))layout.overlaps=layout.overlaps.filter((item:any)=>item.status==='CONFIRMED').slice(0,2);
+ let encoded=JSON.stringify(report);
+ while(encoded.length>2000&&report.probes.length){report.probes.shift();encoded=JSON.stringify(report);}
+ while(encoded.length>2000&&report.observations.length>1){report.observations.splice(1,1);encoded=JSON.stringify(report);}
+ while(encoded.length>2000&&layout&&Array.isArray(layout.texts)&&layout.texts.length>1){layout.texts.pop();encoded=JSON.stringify(report);}
+ return encoded;
+}
 export async function canvasSnapshot(frame:Frame,key:string):Promise<CanvasSnapshot>{
  return frame.evaluate(key=>(window as unknown as Record<string,()=>CanvasSnapshot>)[key](),key);
 }

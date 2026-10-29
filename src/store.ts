@@ -116,8 +116,19 @@ export class Store {
     const artifact=parseArtifact({html:row.html,method:metadata.method,provider:metadata.provider,model:metadata.model,generationStatus:metadata.generationStatus,validationStatus:metadata.validationStatus,...(metadata.generation?{generation:metadata.generation}:{})},'saved-metadata');
     return { ...metadata, ...artifact } as GameVersion;
   }
+  isSystemAuthoredVersion(id:string):boolean {
+    const metadata=this.db.prepare('SELECT metadata FROM versions WHERE version_id=?').get(uuid(id))?.metadata;
+    if(typeof metadata!=='string')return false;
+    const value=JSON.parse(metadata) as {method?:string;provider?:string;model?:string;sha256?:string};
+    const hashes:Record<string,string>={
+      'ember-blocks':'18b0ae7925cf163ac685c7d97a5e1d99d4cb60b8b24dc94864672ef2903807ca',
+      'prism-maze':'ac7b470f1d4e9658c0956f8358c86464a0cb0385e5f6fd91e6955c54516f3856',
+      'arena-target':'808ed0e52b41ec0dd825d5f0afa174d69ccb9b1836f2a2dc315dbe53207c2cac'
+    };
+    return value.method==='authored'&&value.provider==='YAPLIX'&&typeof value.model==='string'&&value.sha256===hashes[value.model];
+  }
   list() {
-    return this.db.prepare("SELECT metadata,(SELECT json_extract(first.metadata,'$.spec.prompt') FROM versions first WHERE first.game_id=versions.game_id ORDER BY first.rowid LIMIT 1) title FROM versions WHERE rowid IN (SELECT MAX(rowid) FROM versions GROUP BY game_id) ORDER BY rowid DESC LIMIT 50").all().map(row => ({...JSON.parse(row.metadata as string),title:String(row.title)}));
+    return this.db.prepare("SELECT metadata,(SELECT json_extract(first.metadata,'$.spec.prompt') FROM versions first WHERE first.game_id=versions.game_id ORDER BY first.rowid LIMIT 1) title FROM versions WHERE rowid IN (SELECT MAX(rowid) FROM versions GROUP BY game_id) AND NOT EXISTS(SELECT 1 FROM versions system WHERE system.game_id=versions.game_id AND json_extract(system.metadata,'$.method')='authored' AND json_extract(system.metadata,'$.provider')='YAPLIX' AND ((json_extract(system.metadata,'$.model')='ember-blocks' AND json_extract(system.metadata,'$.sha256')='18b0ae7925cf163ac685c7d97a5e1d99d4cb60b8b24dc94864672ef2903807ca') OR (json_extract(system.metadata,'$.model')='prism-maze' AND json_extract(system.metadata,'$.sha256')='ac7b470f1d4e9658c0956f8358c86464a0cb0385e5f6fd91e6955c54516f3856') OR (json_extract(system.metadata,'$.model')='arena-target' AND json_extract(system.metadata,'$.sha256')='808ed0e52b41ec0dd825d5f0afa174d69ccb9b1836f2a2dc315dbe53207c2cac'))) ORDER BY rowid DESC LIMIT 50").all().map(row => ({...JSON.parse(row.metadata as string),title:String(row.title)}));
   }
   lastSavedGeneration(provider?: string | null) {
     const row = this.db.prepare("SELECT metadata FROM versions WHERE json_extract(metadata,'$.method')='llm_code' AND json_extract(metadata,'$.provider')=? ORDER BY rowid DESC LIMIT 1").get(provider ?? '');
@@ -164,7 +175,7 @@ export class Store {
     });
   }
   private insertVersion(spec:GameSpec,artifact:Artifact,previousId?:string):GameVersion {
-    spec = parseSpec(spec); artifact = parseArtifact(artifact);
+    spec = parseSpec(spec,previousId?1200:500); artifact = parseArtifact(artifact);
     const previous = previousId ? this.getVersion(previousId) : null;
     const version: GameVersion = { ...artifact, spec, gameId: previous?.gameId ?? randomUUID(), versionId: randomUUID(), previousVersionId: previous?.versionId ?? null, sha256: hash(artifact.html), createdAt: new Date().toISOString() };
       const count = this.db.prepare('SELECT COUNT(*) n,COALESCE(SUM(bytes),0) total FROM versions').get() as { n: number; total: number };

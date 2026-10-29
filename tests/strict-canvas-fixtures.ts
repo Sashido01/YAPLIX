@@ -5,7 +5,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden}canvas{display:block;w
 </style></head><body><canvas aria-label="Game"></canvas>${kind==='2d'?'':'<canvas id="hud" aria-label="Game interface"></canvas>'}<script>
 const surface=document.querySelector('canvas'),hud=document.querySelector('#hud')||surface,ctx=hud.getContext('2d');
 let active=false,step=0,paused=false,muted=false;
-${kind==='2d'?'':`const gl=surface.getContext('${kind}',{preserveDrawingBuffer:true});
+${kind==='2d'?'':`const gl=surface.getContext('${kind}',{preserveDrawingBuffer:true});if(!gl)throw Error('WEBGL_CONTEXT_UNAVAILABLE:${kind}');
 const shader=(type,source)=>{const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);return s;};
 const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,'${kind==='webgl2'?'#version 300 es\\n in':'attribute'} vec2 p;uniform float shift;void main(){gl_Position=vec4(p.x+shift,p.y,0.,1.);}'));
 gl.attachShader(program,shader(gl.FRAGMENT_SHADER,'${kind==='webgl2'?'#version 300 es\\n precision mediump float;out vec4 color;':'precision mediump float;'}void main(){${kind==='webgl2'?'color':'gl_FragColor'}=vec4(1.,.7,.1,1.);}'));gl.linkProgram(program);gl.useProgram(program);

@@ -1,4 +1,6 @@
 import test from 'node:test';
+import {Store} from '../src/store.ts';
+import {artifact,spec} from './helpers.ts';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync,rmSync,mkdirSync,writeFileSync,symlinkSync,readFileSync,existsSync,readdirSync,statSync} from 'node:fs';
@@ -31,7 +33,7 @@ test('desktop starts once, reopens, saves a game and preserves it after full sto
   const base='http://127.0.0.1:'+first.port;
   assert.equal((await fetch(base+'/healthz',{headers:{Connection:'close'}})).status,200);
   assert.match(command(),/running/);assert.equal(state().instance,first.instance);
-  const saved=await fetch(base+'/api/gallery/prism-maze',{method:'POST',headers:{'Content-Type':'application/json',Connection:'close'},body:'{}'});assert.equal(saved.status,201);const version=await saved.json();
+  const setup=new Store(resolve(home,'data/yaplix.sqlite'));const version=setup.save(spec,artifact);setup.close();
   await stopped();assert.match(command('--status'),/stopped/);
   command();const second=state();assert.notEqual(second.instance,first.instance);
   const reopened=await(await fetch('http://127.0.0.1:'+second.port+'/api/versions/'+version.versionId,{headers:{Connection:'close'}})).json();assert.equal(reopened.html,version.html);

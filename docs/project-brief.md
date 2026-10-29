@@ -34,5 +34,5 @@ score_changed, game_won, game_lost, session_ended, game_error. Есть SQLite,
 primary, OpenRouter free only, Telegram тот же UI с HMAC/HTTPS. History/export/backup
 независимы от чужих проектов. Social/Media/Business — дальнейшие направления.
 Автоматической эволюции и причинного доказательства улучшений пока нет.
-[Архитектура](architecture.md), [приёмка](demo-readiness.md). Права/конкурсные условия
+[Архитектура](architecture.md), [приёмка](defense-readiness.md). Права/конкурсные условия
 проверяются отдельно. Private сохраняется, публичного релиза нет.

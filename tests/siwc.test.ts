@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {request as httpRequest} from 'node:http';
+import {ProxyAgent} from 'undici';
 import {generateKeyPair,exportJWK,SignJWT} from 'jose';
 import {LocalSiwc,SIWC} from '../src/experimental/siwc.ts';
 
@@ -13,23 +14,38 @@ const otherKeys=await generateKeyPair('RS256');
 
 // Public seam: signed OAuth -> account catalog -> one Responses stream.
 // OpenAI HTTP is synthetic; the callback uses a real loopback socket.
-async function probeSession(request:typeof fetch){
+async function probeSession(request:typeof fetch,networkEnv:NodeJS.ProcessEnv={YAPLIX_LLM_NETWORK:'direct'}){
  let authorization!:URL;
  const directory=mkdtempSync('.local/siwc-probe-test-');
+ const routed:Array<{url:string;viaProxy:boolean}>=[];
  const auth=new LocalSiwc({directory,request:async(input,init)=>{
   const url=String(input);
+  routed.push({url,viaProxy:(init as (RequestInit & {dispatcher?:unknown})|undefined)?.dispatcher instanceof ProxyAgent});
   if(url===SIWC.discovery)return Response.json({issuer:SIWC.issuer,authorization_endpoint:SIWC.authorize,token_endpoint:SIWC.token,jwks_uri:SIWC.jwks});
   if(url===SIWC.jwks)return Response.json({keys:[jwk]});
   if(url!==SIWC.token)return request(input,init);
   const token=await new SignJWT({nonce:authorization.searchParams.get('nonce')}).setProtectedHeader({alg:'RS256',kid:'offline-test'}).setIssuer(SIWC.issuer).setAudience('oaiapp_offline').setSubject('offline-subject').setIssuedAt().setExpirationTime('5m').sign(keys.privateKey);
   return Response.json({access_token:'offline-access-credential',refresh_token:'offline-refresh-credential',id_token:token,token_type:'Bearer',expires_in:3600,scope:scopes});
- },openBrowser:async value=>{
+ },networkEnv,openBrowser:async value=>{
   authorization=new URL(value);const callback=new URL(authorization.searchParams.get('redirect_uri')!);
   callback.search=new URLSearchParams({state:authorization.searchParams.get('state')!,code:'offline-code',client_id:'oaiapp_offline'}).toString();
   await fetch(callback);
  }});
- await auth.signIn();return{auth,directory};
+ await auth.signIn();return{auth,directory,routed};
 }
+
+test('ChatGPT OAuth discovery, token exchange and JWKS use the configured proxy',async()=>{
+ const {auth,routed}=await probeSession(async()=>{throw Error('unexpected request');},{YAPLIX_LLM_NETWORK:'proxy',YAPLIX_LLM_PROXY:'http://proxy.test:8080'});
+ try{assert.equal(auth.status().connected,true);assert.equal(routed.length,3);assert.ok(routed.every(item=>item.viaProxy));assert.deepEqual(routed.map(item=>new URL(item.url).hostname),['auth.openai.com','auth.openai.com','auth.openai.com']);}
+ finally{auth.dispose();}
+});
+
+test('ChatGPT OAuth reports safe HTTP status instead of a generic network failure',async()=>{
+ const directory=mkdtempSync('.local/siwc-http-status-');let opened=false;
+ const auth=new LocalSiwc({directory,networkEnv:{YAPLIX_LLM_NETWORK:'direct'},request:async()=>new Response('private body must not be exposed',{status:403}),openBrowser:async()=>{opened=true;}});
+ try{await assert.rejects(auth.signIn(),{message:'SIWC_DISCOVERY_HTTP_403'});assert.equal(opened,false);assert.equal(auth.status().connected,false);}
+ finally{auth.dispose();}
+});
 
 test('SIWC preserves streamed text when completed output is empty and retains safe diagnostics',async()=>{
  const {auth}=await probeSession(async input=>{
@@ -333,13 +349,13 @@ for(const [kind,expected] of [
  ['client','SIWC_CLIENT_INVALID'],['client-swap','SIWC_CLIENT_INVALID'],['code','SIWC_CALLBACK_INVALID'],['permission','SIWC_PLAN_PERMISSION_REQUIRED'],['scope','SIWC_SCOPES_REQUIRED'],
  ['signature','SIWC_ID_TOKEN_INVALID'],['issuer','SIWC_ID_TOKEN_INVALID'],['audience','SIWC_ID_TOKEN_INVALID'],
  ['expired','SIWC_ID_TOKEN_INVALID'],['nonce','SIWC_ID_TOKEN_INVALID'],['subject','SIWC_ID_TOKEN_INVALID'],['account','SIWC_ID_TOKEN_INVALID'],
- ['discovery','SIWC_DISCOVERY_INVALID'],['network','SIWC_NETWORK'],['token-network','SIWC_NETWORK'],
+ ['discovery','SIWC_DISCOVERY_INVALID'],['network','SIWC_NETWORK_UNAVAILABLE'],['token-network','SIWC_NETWORK_UNAVAILABLE'],
  ['browser','SIWC_AUTH_FAILED'],['timeout','SIWC_CANCELLED'],['abort','SIWC_CANCELLED'],
 ] as const)test('SIWC rejects '+kind+' and clears temporary authorization data',{timeout:10000},async()=>{
  const directory=mkdtempSync('.local/siwc-failure-');let authorization:URL|undefined,callback:URL|undefined,exchanges=0;
  if(kind==='account'||kind==='client-swap')writeFileSync(directory+'/registration.json',JSON.stringify({clientId:'oaiapp_offline',issuer:SIWC.issuer,subject:'original-subject'}));
  const cancelled=new AbortController();
- const auth=new LocalSiwc({directory,timeoutMs:kind==='timeout'?100:3000,request:async(input)=>{
+ const auth=new LocalSiwc({directory,timeoutMs:kind==='timeout'?100:3000,networkEnv:{YAPLIX_LLM_NETWORK:'direct'},request:async(input)=>{
   const url=String(input);
   if(kind==='network')throw Error('SENSITIVE_NETWORK_DETAIL');
   if(url===SIWC.discovery)return Response.json({issuer:SIWC.issuer,authorization_endpoint:SIWC.authorize,token_endpoint:kind==='discovery'?'https://invalid.test/token':SIWC.token,jwks_uri:SIWC.jwks});

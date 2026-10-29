@@ -6,7 +6,8 @@
 на уровне репозитория до 29 октября 2026. Проверенный REST state —
 `actions/permissions: enabled:false`; отсутствие новых runs не является CI PASS.
 До изменения были `enabled:true`, `allowed_actions:all`,
-`sha_pinning_required:false`. Workflow-файлы и FAST/FULL policy ниже не изменены.
+`sha_pinning_required:false`. FAST/FULL policy ниже остаётся политикой release;
+реализация workflow определяется текущими файлами в `.github/workflows/`.
 
 Исходно активны `Repository checks` (ID 379465037) и dynamic
 `Dependabot Updates` (ID 379465492). Dynamic workflow отверг отдельное disable

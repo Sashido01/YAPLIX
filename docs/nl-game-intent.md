@@ -1,5 +1,8 @@
 # NL-001+002.1: локальные подсказки Game Intent
 
+Последующий локальный словарь и его ограничения: [Game Vocabulary](game-vocabulary.md).
+Текущий checkout status и дата старых DEV evidence: [release status](release-status.md).
+
 Экспериментальный режим подготовки сообщений для существующего Full HTML
 генератора. По умолчанию остаётся прежний `direct`; UI и публичный GameSpec не
 меняются. Реальных LLM inference POST в этой задаче: **0**. Улучшение качества

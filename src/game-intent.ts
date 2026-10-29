@@ -1,3 +1,5 @@
+import { GAME_AUDIENCES, GAME_CONSTRAINTS, GAME_GENRES, GAME_MECHANICS, GAME_PRESENTATION, GAME_VOCABULARY, VOCABULARY_VERSION, normalizeVocabularyText, vocabularyOccurrences } from './game-vocabulary.ts';
+
 // Conservative, local hints for the opt-in prompt. This is not a language parser.
 // No corpus imports, generation, filesystem access or network operations.
 export type IntentSource = 'EXPLICIT' | 'INFERRED' | 'DEFAULT' | 'UNKNOWN';
@@ -6,6 +8,7 @@ export interface GameIntent {
   originalRequest: string;
   idea: Requirement<string>;
   genre: Requirement<string>;
+  archetypes: Requirement<string>[];
   audience: Requirement<string>;
   entities: Requirement<string>[];
   actions: Requirement<string>[];
@@ -15,6 +18,7 @@ export interface GameIntent {
   loss: Requirement<string>[];
   controls: Requirement<string>[];
   presentation: Requirement<string>[];
+  constraints: Requirement<string>[];
   // Verbatim clauses, not paraphrases of rules. Includes prohibitions and order.
   requirements: Requirement<string>[];
   conflicts: Requirement<string>[];
@@ -38,20 +42,8 @@ function hits(text: string, patterns: [string, RegExp][], source: IntentSource =
   });
 }
 function one<T>(items: Requirement<T>[]): Requirement<T> { return items.length === 1 ? items[0] : unknown<T>(); }
-const genreWords: [string, RegExp][] = [
-  ['arcade', /(?<![\p{L}])аркад[\p{L}]*/iu], ['platformer', /(?<![\p{L}])платформер[\p{L}]*/iu],
-  ['puzzle', /(?<![\p{L}])(?:головоломк[\p{L}]*|пазл[\p{L}]*)/iu], ['clicker', /(?<![\p{L}])кликер[\p{L}]*/iu],
-  ['shooter', /(?<![\p{L}])шутер[\p{L}]*/iu], ['racing', /(?<![\p{L}])гонк[\p{L}]*/iu],
-];
-const namedGames: [string, RegExp][] = [
-  ['arcade', /(?<![\p{L}])змейк[\p{L}]*/iu], ['puzzle', /(?<![\p{L}])тетрис[\p{L}]*/iu],
-  ['runner', /(?<![\p{L}])раннер[\p{L}]*/iu], ['maze', /(?<![\p{L}])лабиринт[\p{L}]*/iu],
-  ['platformer', /(?<![\p{L}])платформир[\p{L}]*/iu],
-];
-const audienceWords: [string, RegExp][] = [
-  ['kids', /для\s+(?:дет[\p{L}]*|реб[её]нк[\p{L}]*)/iu],
-  ['elderly', /для\s+пожил[\p{L}]*/iu], ['hardcore', /хардкор[\p{L}]*/iu], ['default', /для\s+всех/iu],
-];
+const genreWords = GAME_GENRES;
+const audienceWords = GAME_AUDIENCES;
 const actionWords: [string, RegExp][] = [
   ['jumping', /(?<![\p{L}])(?:прыга[\p{L}]*|прыг[а-яё]*|прыж[\p{L}]*|перепрыг[\p{L}]*)/iu],
   ['collection', /(?<![\p{L}])соб[ие]р[\p{L}]*/iu],
@@ -76,17 +68,23 @@ const explicitMechanics: [string, RegExp][] = [
   ['passive_income', /(?:приносит|да[её]т)\s+\d+(?:[.,]\d+)?\s+(?:монет[\p{L}]*|очк[\p{L}]*|яблок[\p{L}]*)\s+(?:в\s+секунду|каждые\s+\d+\s+секунд[\p{L}]*)/iu],
   ['levels', /\d+\s+уровн[\p{L}]*/iu], ['lives', /(?<![\p{L}])жизн[\p{L}]*/iu],
   ['no_timer', /без\s+таймера/iu], ['no_score', /без\s+очков/iu],
-  ['no_loss', /(?:без\s+(?:очков\s+и\s+)?поражения|проигрывать\s+нельзя)/iu],
+  ['no_loss', /(?:без\s+(?:очков\s+и\s+)?(?:поражения|проигрыша)|проигрывать\s+нельзя)/iu],
   ['endless_play', /(?:без\s+конца\s+игры|конца\s+игры\s+не\s+надо|бесконечн[\p{L}]*)/iu],
 ];
 const inferredMechanics: [string, RegExp][] = [
   ['snake_movement', /змейк/iu], ['food_collection', /змейк/iu], ['growth', /змейк/iu],
-  ['falling_blocks', /тетрис/iu], ['line_clear', /тетрис/iu], ['running', /раннер/iu],
+  ['snake_collision', /змейк/iu], ['score', /змейк/iu], ['falling_blocks', /тетрис/iu], ['line_clear', /тетрис/iu], ['piece_rotation', /тетрис/iu], ['running', /раннер/iu],
   ['obstacle_avoidance', /раннер/iu], ['clicking', /кликер/iu],
 ];
 const forbiddenInference: Record<string, RegExp> = {
   food_collection: /без\s+еды|ед[уы]\s+не\s+(?:собира|добавля)|не\s+собира[\p{L}]*\s+ед/iu,
-  growth: /без\s+роста|не\s+раст[её][\p{L}]*/iu,
+  growth: /без\s+(?:еды\s+и\s+)?роста|не\s+раст[её][\p{L}]*/iu,
+  score: /без\s+очк[\p{L}]*|без\s+сч[её]та/iu,
+  snake_collision: /без\s+столкновен[\p{L}]*|не\s+(?:проигрыва|заканчива)[\p{L}]*/iu,
+  piece_rotation: /без\s+поворот[\p{L}]*|не\s+поворачива[\p{L}]*/iu,
+  enemy_path:/без\s+(?:враг[\p{L}]*|противник[\p{L}]*)|no\s+enemies/iu,
+  range_attack:/без\s+(?:враг[\p{L}]*|противник[\p{L}]*)|no\s+enemies/iu,
+  lives:/без\s+жизн[\p{L}]*|no\s+lives/iu,
 };
 // Narrow host-instruction signals only. The system boundary remains mandatory
 // even for attacks this list does not recognise. No user text becomes system text.
@@ -96,12 +94,29 @@ function obviousFiller(text: string): boolean {
   // No vocabulary/genre whitelist. A title, unknown word, number or emoji may
   // be an idea. Reject only symbol-only input or corroborated placeholder runs.
   if (!/[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(text)) return true;
+  if (/^\s*(\p{L})\1{63,}\s*$/iu.test(text)) return true;
   if (/\p{Extended_Pictographic}/u.test(text)) return false;
   if (!/(\d)\1{2,}|[!?._]{3,}/u.test(text)) return false;
   const words = [...text.toLowerCase().matchAll(/\p{L}+/gu)].map(m => m[0]);
   if (!words.length) return /[!?._]{3,}/u.test(text);
   const runs = ['абвгдеёжзийклмнопрстуфхцчшщъыьэюя', 'abcdefghijklmnopqrstuvwxyz', 'qwertyuiop', 'asdfghjkl', 'йцукенгшщзхъ', 'фывапролджэ'];
   return words.every(word => word.length >= 5 && (runs.some(run => run.includes(word)) || /^(.)\1+$/u.test(word)));
+}
+
+function negatedMention(text:string,index:number):boolean{
+ const before=normalizeVocabularyText(text).slice(Math.max(0,index-48),index);
+ return /(?:^|[^\p{L}])(?:не|без|not|no)\s+(?:(?:a|the|игра|делай|создавай|создай|хочу|нужен|нужна|делать)\s+){0,2}$/u.test(before);
+}
+function vocabularyHits<T extends {id:string;aliases:readonly string[];source?:'EXPLICIT'|'INFERRED'}>(text:string,terms:readonly T[],source:IntentSource='EXPLICIT'){
+ const found:{index:number;requirement:Requirement<string>}[]=[];
+ for(const term of terms){
+  const match=vocabularyOccurrences(text,term.aliases).find(item=>!negatedMention(text,item.index));
+  if(!match)continue;
+  const before=normalizeVocabularyText(text).slice(Math.max(0,match.index-36),match.index);
+  if(/(?:название|называется|title|is called)\s*$/u.test(before))continue;
+  found.push({index:match.index,requirement:fact(term.id,match.evidence,term.source??source)});
+ }
+ const seen=new Set<string>();return found.sort((a,b)=>a.index-b.index).flatMap(item=>{const id=item.requirement.value!;if(seen.has(id))return[];seen.add(id);return[item.requirement];});
 }
 
 export function gameIntent(originalRequest: string): GameIntent {
@@ -118,21 +133,31 @@ export function gameIntent(originalRequest: string): GameIntent {
   if (originalRequest.slice(start).trim()) clauses.push(originalRequest.slice(start));
   const safeClauses = clauses.filter(s => !unsafe.test(withoutQuotes(s)));
   const text = withoutQuotes(safeClauses.join('\n'));
-  const explicitGenres = hits(text, genreWords);
-  const genre = explicitGenres.length ? one(explicitGenres) : one(hits(text, namedGames, 'INFERRED'));
-  let audience = one(hits(text, audienceWords));
+  const explicitGenres = vocabularyHits(text, genreWords);
+  const archetypes=vocabularyHits(text,GAME_VOCABULARY,'INFERRED');
+  const archetypeDefinitions=archetypes.flatMap(match=>{const item=GAME_VOCABULARY.find(entry=>entry.id===match.value);return item?[item]:[];});
+  const inferredGenres=[...new Set(archetypeDefinitions.map(item=>item.genre))].map(value=>fact(value,archetypeDefinitions.filter(item=>item.genre===value).map(item=>archetypes.find(match=>match.value===item.id)?.evidence??item.id).join('; '),'INFERRED'));
+  const genre = explicitGenres.length ? one(explicitGenres) : one(inferredGenres);
+  const audienceMatches=vocabularyHits(text,audienceWords);
+  let audience = one(audienceMatches.map(match=>match.value==='elderly'?fact(match.value!,match.evidence!,'INFERRED'):match));
   const childAge = text.match(/для\s+(?:сына|дочери)\s+(\d{1,2})\s+лет/iu);
   if (!audience.value && childAge && Number(childAge[1]) < 18) audience = fact('kids', childAge[0], 'INFERRED');
   const actions = hits(text, actionWords);
   // Negative requirements use their own label and keep the explicit negation.
   const negatives = hits(text, explicitMechanics.filter(([label]) => label.startsWith('no_') || label === 'endless_play'));
-  const positiveMechanics = [...actions, ...hits(text, explicitMechanics.filter(([label]) => !label.startsWith('no_') && label !== 'endless_play'))];
-  const mechanics = [...positiveMechanics, ...negatives, ...hits(text, inferredMechanics, 'INFERRED')
-    .filter(r => !positiveMechanics.some(a => a.value === r.value) && !forbiddenInference[r.value!]?.test(text))];
+  const positiveMechanics = [...actions, ...vocabularyHits(text,GAME_MECHANICS), ...hits(text, explicitMechanics.filter(([label]) => !label.startsWith('no_') && label !== 'endless_play'))];
+  const constraints=vocabularyHits(text,GAME_CONSTRAINTS);
+  const constraintSuppressions:Record<string,readonly string[]>={no_food:['food_collection','growth','catching','falling_objects'],no_growth:['growth'],no_score:['score'],no_loss:['snake_collision'],no_rotation:['piece_rotation'],no_enemies:['enemy_path','range_attack'],no_lives:['lives'],no_jumping:['jumping'],no_shooting:['shooting'],no_movement:['movement','steering','snake_movement','vehicle_motion','player_position','ship_movement'],no_collection:['collection','food_collection','catching','falling_objects'],no_matching:['matching','clear_matches','pair_match']};
+  const suppressedMechanics=new Set(constraints.flatMap(rule=>constraintSuppressions[rule.value??'']??[]));
+  const archetypeMechanics=archetypeDefinitions.flatMap(item=>item.mechanics.filter(value=>!suppressedMechanics.has(value)).map(value=>fact(value,archetypes.find(match=>match.value===item.id)?.evidence??item.id,'INFERRED')));
+  const mechanics = [...positiveMechanics, ...negatives, ...archetypeMechanics, ...hits(text, inferredMechanics, 'INFERRED')
+    .filter(r => !positiveMechanics.some(a => a.value === r.value) && !archetypeMechanics.some(a=>a.value===r.value) && !forbiddenInference[r.value!]?.test(text))]
+    .filter((r,index,all)=>all.findIndex(x=>x.value===r.value)===index && !forbiddenInference[r.value!]?.test(text));
   const win = safeClauses.filter(s => /побед|победить|выигр/iu.test(withoutQuotes(s))).map(s => fact(s, s));
   const loss = safeClauses.filter(s => /проигр|поражен|поражён|поражени/iu.test(withoutQuotes(s))).map(s => fact(s, s));
   const controls = safeClauses.filter(s => /пальц|тап|нажима|управлен|стрелк|клави|кнопк|мыш[ьи]/iu.test(withoutQuotes(s))).map(s => fact(s, s));
-  const presentation = safeClauses.filter(s => /оформлен|цвет|фон|пиксел|неон|крупн|звук|без\s+спешки|спокойн/iu.test(withoutQuotes(s))).map(s => fact(s, s));
+  const presentationClauses=safeClauses.filter(s=>/оформлен|цвет|фон|пиксел|неон|крупн|звук|без\s+спешки|спокойн/iu.test(withoutQuotes(s))).map(s=>fact(s,s));
+  const presentation = [...presentationClauses,...vocabularyHits(text,GAME_PRESENTATION).filter(match=>!presentationClauses.some(clause=>clause.value===match.evidence))];
   const numbers: GameIntent['numbers'] = [];
   // Retain literals and units only. Do not infer that an arbitrary number is a
   // victory target, purchase price, player age or count. Unknown roles stay raw.
@@ -162,14 +187,14 @@ export function gameIntent(originalRequest: string): GameIntent {
   const unsafeMatch = unquoted.match(unsafe);
   if (unsafeMatch) conflict('Untrusted host instructions cannot change security, reveal secrets or select paid providers.', unsafeMatch[0]);
   let inputStatus: GameIntent['inputStatus'] = unknown();
-  if (!originalRequest.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(originalRequest) || originalRequest.length > 500) inputStatus = fact('invalid', 'Empty, oversized or invalid control characters');
+  if (!originalRequest.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(originalRequest) || originalRequest.length > 1200) inputStatus = fact('invalid', 'Empty, oversized or invalid control characters');
   else if (obviousFiller(originalRequest)) inputStatus = fact('invalid', 'Symbol-only input or corroborated placeholder sequence');
   else if (unsafeMatch) inputStatus = fact('unsafe_instruction', unsafeMatch[0]);
   else if (conflicts.length) inputStatus = fact('needs_clarification', conflicts.map(c => c.evidence).join('; '));
   else if (/^\s*(?:подскажи|дай|напиши)\s+рецепт(?![\p{L}])/iu.test(text)) inputStatus = fact('off_topic', originalRequest);
   else if (genre.value || actions.length || /игр[ауы]|что-нибудь|про\s+[\p{L}]/iu.test(text)) inputStatus = fact('valid', originalRequest, 'INFERRED');
-  return { originalRequest, idea: originalRequest.trim() ? fact(originalRequest, originalRequest) : unknown(), genre, audience,
-    entities: hits(text, entityWords), actions, mechanics, numbers, win, loss, controls, presentation,
+  return { originalRequest, idea: originalRequest.trim() ? fact(originalRequest, originalRequest) : unknown(), genre, archetypes, audience,
+    entities: hits(text, entityWords), actions, mechanics, numbers, win, loss, controls, presentation, constraints,
     requirements: clauses.map(s => fact(s, s)), conflicts, inputStatus };
 }
 
@@ -177,14 +202,18 @@ export function gameIntent(originalRequest: string): GameIntent {
  * Detailed facts and evidence remain available internally through gameIntent.
  */
 export function compactGameIntent(intent: GameIntent) {
-  const groups: Partial<Record<'EXPLICIT' | 'INFERRED', { genre?: string; audience?: string; mechanics?: string[] }>> = {};
+  const groups: Partial<Record<'EXPLICIT' | 'INFERRED', { genre?: string; archetypes?:string[]; audience?: string; mechanics?: string[]; constraints?:string[] }>> = {};
   const seenMechanics = new Set<string>();
   for (const source of ['EXPLICIT', 'INFERRED'] as const) {
-    const group: { genre?: string; audience?: string; mechanics?: string[] } = {};
+    const group: { genre?: string; archetypes?:string[]; audience?: string; mechanics?: string[]; constraints?:string[] } = {};
     for (const key of ['genre', 'audience'] as const) {
       const requirement = intent[key];
       if (requirement.source === source && requirement.value !== null) group[key] = requirement.value;
     }
+    const archetypes=intent.archetypes.filter(requirement=>requirement.source===source&&requirement.value!==null).map(requirement=>requirement.value!);
+    if(archetypes.length)group.archetypes=archetypes;
+    const constraints=intent.constraints.filter(requirement=>requirement.source===source&&requirement.value!==null).map(requirement=>requirement.value!);
+    if(constraints.length)group.constraints=constraints;
     const mechanics: string[] = [];
     for (const requirement of intent.mechanics) {
       if (requirement.source !== source || requirement.value === null || seenMechanics.has(requirement.value)) continue;
@@ -195,6 +224,64 @@ export function compactGameIntent(intent: GameIntent) {
     if (Object.keys(group).length) groups[source] = group;
   }
   return { request: intent.originalRequest, ...groups };
+}
+
+const mechanicText: Record<string, string> = {
+  snake_movement: 'move a grid-based snake in four directions',
+  food_collection: 'place food and collect it', growth: 'grow the snake after food is collected',
+  snake_collision: 'handle wall and self-collision consistently with the requested loss rules',
+  score: 'show a simple food count',
+  falling_blocks: 'drop controllable falling blocks onto a board', line_clear: 'clear completed rows and compact the board',
+  piece_rotation: 'let the player rotate pieces when the request allows it',
+  running: 'move the player forward through a scrolling course', obstacle_avoidance: 'let the player avoid course obstacles',
+  clicking: 'make each deliberate tap change the game state',
+  steering:'steer the vehicle with responsive controls', vehicle_motion:'make vehicle input change its position',track_collision:'keep track boundaries meaningful',
+  paddle_control:'move the paddle with player input',ball_bounce:'make ball rebounds follow visible collisions',brick_collision:'remove or react to bricks only on collision',
+  grid_navigation:'move between valid neighboring grid cells',pathfinding:'make reachable paths and blocked cells clear',maze_exit:'provide a destination only when requested',
+  box_pushing:'push boxes with grid-aligned movement',goal_tiles:'use target cells only where the request calls for them',matching:'update the board after a valid match',
+  swap_adjacent:'allow only legal adjacent swaps',clear_matches:'remove valid matches and settle the board',grid_reveal:'reveal cells in response to input',mine_flagging:'let the player mark suspected hazards',
+  adjacent_mine_counts:'show counts based on neighboring cells',catching:'move the catcher to collect requested items',falling_objects:'make falling objects respond to game state',player_position:'map touch and keyboard input to player position',
+  ship_movement:'move the ship from direct input',shooting:'fire only when shooting is requested',projectile_collision:'resolve projectile hits visibly',
+  tower_placement:'place structures only on valid locations',enemy_path:'use an enemy route only if enemies are requested',range_attack:'resolve attacks within visible range',
+  incremental_progress:'show relevant progress after deliberate actions',passive_progress:'advance in real time only when idle progress is requested',
+  hidden_pairs:'keep paired items hidden until selected',reveal_pair:'reveal one selected item at a time',pair_match:'compare selected pairs and update state',
+  beat_timing:'synchronize player actions to visible beats',note_input:'make note input affect the rhythm state',word_building:'form words according to stated rules',letter_selection:'make selected letters visible and editable',
+  question_answer:'accept an answer to each presented question',answer_feedback:'show whether the selected answer matches',flipper_control:'make flippers respond to player input',ball_physics:'make ball motion and rebounds consistent',bumpers:'show ball response to bumper collisions',
+  tap_lift:'make each tap control lift',gravity:'apply consistent downward acceleration',puzzle_action:'provide a valid action that changes the puzzle',state_change:'redraw after a valid move',
+  survival:'use survival pressure only when requested',resource_management:'track resources only when the idea requires them',grid_turns:'alternate valid turns',place_marker:'place a marker in a free cell',line_win:'detect a completed line or draw',
+};
+
+/** Short, single-pass game archetype hints. The raw request always wins. */
+export function inferredGameBrief(intent: GameIntent): string | null {
+  const values=intent.mechanics.filter(x=>x.source==='INFERRED'&&x.value&&mechanicText[x.value]).map(x=>x.value!);
+  const selected=intent.archetypes.flatMap(match=>GAME_VOCABULARY.filter(item=>item.id===match.value));
+  const details:string[]=[];
+  for(const item of selected){
+    if(item.id==='snake'){
+      const parts=['start and restart'];if(values.includes('snake_movement'))parts.push('continuous grid movement');if(values.includes('food_collection'))parts.push('food collection');if(values.includes('growth'))parts.push('growth after eating');if(values.includes('snake_collision')&&!intent.mechanics.some(x=>x.value==='no_loss'))parts.push('collision and loss only if compatible with explicit rules');if(values.includes('score'))parts.push('visible food count');
+      details.push('Classic Snake loop: '+parts.join(', ')+'.');
+    }else if(item.id==='falling_blocks'){
+      const actions=['move and place blocks'];if(values.includes('piece_rotation'))actions.push('rotate pieces');details.push('Tetris loop: falling tetrominoes, '+actions.join(', ')+', completed rows disappear, the board updates after each placement, and restart; do not invent a score target or forced victory.');
+    }else if(item.id==='racing')details.push('Racing loop: steer and control speed on a readable course, show the vehicle and track clearly, and make each input affect motion; add laps, timer, score or finish rules only when requested or clearly implied.');
+    else if(item.id==='puzzle')details.push('Puzzle loop: present a legible board and a real player action that changes its state, show relevant progress, and provide a way to retry; do not assume a matching rule, timer, score or win condition absent from the request.');
+    else details.push(item.description);
+  }
+  if(intent.archetypes.length>1)details.push('The user named multiple game ideas; preserve each one and combine them without dropping its core rules.');
+  if(!selected.length&&values.length)details.push(values.map(x=>mechanicText[x]).join('; ')+'.');
+  if(intent.audience.value==='elderly')details.push('For an older player: calm pacing, large high-contrast elements and labels, clear instructions, and large touch targets; do not assume medical needs.');
+  return details.length?details.join(' '):null;
+}
+
+export function gameIntentDiagnostics(intent:GameIntent,extraHint:string,classificationMs:number){
+ const suppressions:Record<string,readonly string[]>={no_food:['food_collection','growth','catching','falling_objects'],no_growth:['growth'],no_score:['score'],no_loss:['snake_collision'],no_rotation:['piece_rotation'],no_enemies:['enemy_path','range_attack'],no_lives:['lives'],no_jumping:['jumping'],no_shooting:['shooting'],no_movement:['movement','steering','snake_movement','vehicle_motion','player_position','ship_movement'],no_collection:['collection','food_collection','catching','falling_objects'],no_matching:['matching','clear_matches','pair_match']};
+ const possible=new Set(intent.archetypes.flatMap(match=>GAME_VOCABULARY.find(item=>item.id===match.value)?.mechanics??[]));
+ const suppressedAssumptionCount=intent.constraints.reduce((count,rule)=>count+(suppressions[rule.value??'']??[]).filter(mechanic=>possible.has(mechanic)).length,0);
+ const appliedRules=new Set([...intent.archetypes.map(x=>'archetype:'+x.value),...(intent.genre.value?['genre:'+intent.genre.value]:[]),...(intent.audience.value?['audience:'+intent.audience.value]:[]),...intent.mechanics.filter(x=>x.value&&!/^no_/.test(x.value)).map(x=>'mechanic:'+x.value),...intent.presentation.map(x=>'presentation:'+x.value),...intent.constraints.map(x=>'constraint:'+x.value)]);
+ return {vocabularyVersion:VOCABULARY_VERSION,archetypeId:intent.archetypes.map(x=>x.value).filter((x):x is string=>Boolean(x)).join('-and-')||null,genreId:intent.genre.value??'UNKNOWN',
+  appliedRuleCount:appliedRules.size,
+  ruleSources:[...new Set([...intent.archetypes,intent.genre,intent.audience,...intent.mechanics,...intent.presentation,...intent.constraints].map(x=>x.source).filter(x=>x==='EXPLICIT'||x==='INFERRED'))],
+  suppressedAssumptionCount,
+  hintBytes:Buffer.byteLength(extraHint),classificationMs:Math.max(0,classificationMs)};
 }
 
 export const intentDefaults: Requirement<string>[] = [

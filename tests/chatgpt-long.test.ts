@@ -58,12 +58,12 @@ test('A1.7 all providers wait 29 minutes: '+mode+' durable='+durable,async t=>{
  t.mock.timers.tick(29*minute);assert.equal((await result).provider,provider);assert.equal(ctx.calls,1);
 });
 
-test('A1.7 durable deadline is 35 minutes for every live provider',async()=>{
+test('durable deadlines allow 35 minutes on single-post routes and 130 minutes for repairable Ollama jobs',async()=>{
  const store=new Store(':memory:'),jobs=new GenerationJobs(store,new GenerationEngine([route(),route('ollama.com'),route('openrouter')],{check:evidence}));
  try{
   for(const mode of ['chatgpt','ollama-cloud','openrouter'] as const){
    const before=Date.now(),job=jobs.create('owner','deadline-'+mode,{spec,mode:'live',providerMode:mode,telegramConsent:false});
-   const expected=35*minute;
+   const expected=mode==='ollama-cloud'?130*minute:35*minute;
    assert.ok(job.deadlineAt!>=before+expected&&job.deadlineAt!<=Date.now()+expected);
    jobs.cancel('owner',job.jobId);
   }
@@ -108,9 +108,9 @@ for(const reason of ['deadline','manual cancel'] as const)test('A1.7 stalled SSE
  }finally{session.disconnect();await jobs.close();store.close();}
 });
 
-test('A1.7 total engine deadline is finite at 35 minutes including validation',async t=>{
+test('configured engine deadline is finite at 35 minutes including validation',async t=>{
  t.mock.timers.enable({apis:['setTimeout']});let validationSignal:AbortSignal|undefined;
- const engine=new GenerationEngine([route('chatgpt',29*minute)],{check:async(_html,signal)=>{
+ const engine=new GenerationEngine([route('chatgpt',29*minute)],{timeoutMs:35*minute,check:async(_html,signal)=>{
   validationSignal=signal;await new Promise<void>((_yes,no)=>signal!.addEventListener('abort',()=>no(Error('cancelled')),{once:true}));return evidence();
  }});
  const result=engine.generate(spec,undefined,'llm_code',undefined,context().value).catch(error=>error);
@@ -132,7 +132,7 @@ test('A1.7 HTTP own absolute deadline bounds a silent response independently of 
  t.mock.timers.tick(1);assert.equal((await work).name,'AbortError');assert.equal(cancelled,1);
 });
 
-test('A1.7 durable wall-clock deadline cancels at 35 minutes and survives restart',async t=>{
+test('ChatGPT durable wall-clock deadline cancels at 35 minutes and survives restart',async t=>{
  t.mock.timers.enable({apis:['setTimeout','setInterval','Date'],now:Date.now()});
  const store=new Store(':memory:');let calls=0,aborted=false;
  const generator={generate:async(_spec:unknown,_previous:unknown,_method:unknown,signal?:AbortSignal,ctx?:GenerationContext)=>{

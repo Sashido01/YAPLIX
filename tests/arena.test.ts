@@ -7,7 +7,7 @@ import { ArenaConnection, arenaPort } from '../src/arena.ts';
 import { ArenaStore } from '../src/arena-store.ts';
 import { arenaDeclared } from '../src/arena-contract.ts';
 import { generationMessages } from '../src/generation.ts';
-import { openGallery } from '../src/gallery.ts';
+import { saveArenaFixture } from './arena-fixture.ts';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -35,7 +35,7 @@ test('Arena migration protects a v2 snapshot, keeps existing HTML and reopens re
     });
     assert.ok(snapshot);const copy=new DatabaseSync(resolve(backups,snapshot),{readOnly:true});
     try{assert.ok(healthyDatabase(copy));assert.equal(copy.prepare('PRAGMA user_version').get()?.user_version,2);}finally{copy.close();}
-    const arena=new ArenaStore(store),game=openGallery(store,'arena-target'),room=arena.create(game.versionId),p=arena.join(room.roomId,'Аня');
+    const arena=new ArenaStore(store),game=saveArenaFixture(store),room=arena.create(game.versionId),p=arena.join(room.roomId,'Аня');
     const attempt=arena.start(room.roomId,p.token);let sequence=0;
     for(const [type,data] of [['game_ready',{}],['game_started',{}],['score_changed',{score:30}],['session_ended',{}]] as const)arena.event(room.roomId,p.token,attempt.token,event(attempt,type,sequence++,Date.now(),data));
     store.close();store=new Store(path);
@@ -46,7 +46,7 @@ test('Arena migration protects a v2 snapshot, keeps existing HTML and reopens re
 });
 
 test('only completed actual-event streams improve personal records; duplicates and abandoned attempts cannot double count', () => {
-  const store=new Store(':memory:'),arena=new ArenaStore(store),v=openGallery(store,'arena-target'),r=arena.create(v.versionId),p=arena.join(r.roomId,'Игрок');
+  const store=new Store(':memory:'),arena=new ArenaStore(store),v=saveArenaFixture(store),r=arena.create(v.versionId),p=arena.join(r.roomId,'Игрок');
   try{
     let bestScore:number|null=null;let now=Date.now();const original=Date.now;Date.now=()=>now;
     try{
@@ -62,7 +62,7 @@ test('only completed actual-event streams improve personal records; duplicates a
 });
 
 test('completion and best record are atomic even if SQLite rejects the record update', () => {
-  const store=new Store(':memory:'),arena=new ArenaStore(store),v=openGallery(store,'arena-target'),r=arena.create(v.versionId),p=arena.join(r.roomId,'Игрок'),s=arena.start(r.roomId,p.token);
+  const store=new Store(':memory:'),arena=new ArenaStore(store),v=saveArenaFixture(store),r=arena.create(v.versionId),p=arena.join(r.roomId,'Игрок'),s=arena.start(r.roomId,p.token);
   try{
     arena.event(r.roomId,p.token,s.token,event(s,'game_ready',0));arena.event(r.roomId,p.token,s.token,event(s,'game_started',1));arena.event(r.roomId,p.token,s.token,event(s,'score_changed',2,Date.now(),{score:90}));
     const end=event(s,'session_ended',3);
@@ -77,14 +77,14 @@ test('score-v1 opt-in keeps ordinary generation and strict Canvas intact without
     assert.equal(arenaDeclared(artifact.html),false);
     assert.ok(!generationMessages(spec)[0].content.includes('Arena score-v1 is explicitly requested'));
     const messages=generationMessages({...spec,prompt:'Arena: точная игра с пятью бросками'});
-    assert.equal(messages.length,2);assert.match(messages[0].content,/ALL visible game UI inside Canvas/);assert.match(messages[0].content,/score_changed/);
-    const v=openGallery(store,'arena-target');assert.ok(arenaDeclared(v.html));assert.match(generationMessages({...spec,prompt:'Ускорить игру'},v)[0].content,/Arena score-v1 is explicitly requested/);
+    assert.equal(messages.length,2);assert.match(messages[0].content,/Canvas 2D or WebGL is the only visible game surface/);assert.match(messages[0].content,/Draw the world and all visible game UI.*in Canvas/);assert.match(messages[0].content,/score_changed/);
+    const v=saveArenaFixture(store);assert.ok(arenaDeclared(v.html));assert.match(generationMessages({...spec,prompt:'Ускорить игру'},v)[0].content,/Arena score-v1 is explicitly requested/);
     assert.throws(()=>new ArenaStore(store).create(store.save(spec,artifact).versionId),/ARENA_UNSUPPORTED/);
   }finally{store.close();}
 });
 
 test('one invitation admits ten independent clients, confines LAN scope, rejects forged or malformed events', async () => {
-  const store=new Store(':memory:'),arena=new ArenaConnection(store,testNetworks,0),v=openGallery(store,'arena-target');
+  const store=new Store(':memory:'),arena=new ArenaConnection(store,testNetworks,0),v=saveArenaFixture(store);
   try{
     const state=await arena.enable(v.versionId), url=new URL((state as {url:string}).url),base=url.origin+url.pathname;
     const post=(path:string,body:unknown,cookie?:string,token?:string,extra={})=>fetch(base+path,{method:'POST',headers:{Origin:url.origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{}),...(token?{Authorization:'Bearer '+token}:{}),...extra},body:JSON.stringify(body)});
@@ -123,7 +123,7 @@ test('one invitation admits ten independent clients, confines LAN scope, rejects
 test('fixed Arena port and remote owner restrictions preserve the read-only phone surface', async () => {
   assert.equal(arenaPort({}),52605);for(const port of ['0','65536','x',' 52605'])assert.throws(()=>arenaPort({YAPLIX_ARENA_PORT:port}),/ARENA_PORT_INVALID/);
   const store=new Store(':memory:'),blocker=createServer();await new Promise<void>(done=>blocker.listen(0,'127.0.0.1',done));
-  const port=(blocker.address() as {port:number}).port,arena=new ArenaConnection(store,testNetworks,port),v=openGallery(store,'arena-target');
+  const port=(blocker.address() as {port:number}).port,arena=new ArenaConnection(store,testNetworks,port),v=saveArenaFixture(store);
   try{
     await assert.rejects(arena.enable(v.versionId),/PORT_IN_USE/);assert.equal(arena.status().enabled,false);assert.throws(()=>arena.qr(),/ARENA_CLOSED/);assert.equal(blocker.listening,true);
     const policy=networkPolicy({YAPLIX_MODE:'lan',YAPLIX_HOST:'192.168.1.2',YAPLIX_ACCESS_KEY:'s'.repeat(43)}),app=createApp(store,undefined,undefined,policy,undefined,undefined,undefined,undefined,undefined,arena);

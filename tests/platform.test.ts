@@ -111,26 +111,25 @@ test('HTTP contracts: creation, versions, telemetry, readback, errors and hostil
   const app = createApp(store);
   const post = (path: string, body: unknown, headers = {}) => app.request(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
   assert.equal((await app.request('/api/health')).status, 200);
-  assert.equal((await post('/api/games', { spec })).status, 503);
-  const created = await post('/api/games', { spec, artifact }); assert.equal(created.status, 201);
-  assert.equal((await post('/api/games', { spec, artifact: { ...artifact, method: 'llm_code' } })).status, 400);
-  assert.equal((await post('/api/games', { spec, artifact: { ...artifact, validationStatus: 'passed' } })).status, 400);
-  const v = await created.json();
+  for(const body of [{spec},{spec,artifact},{spec,artifact:{...artifact,method:'llm_code'}},{spec,artifact:{...artifact,validationStatus:'passed'}}])
+    assert.equal((await post('/api/games',body)).status,404,'direct game writes stay removed');
+  const v = store.save(spec,artifact);
   assert.equal((await app.request(`/api/versions/${v.versionId}`)).headers.get('X-Content-Type-Options'), 'nosniff');
-  assert.equal((await post(`/api/games/${v.gameId}/versions`, { spec, previousVersionId: v.versionId, artifact })).status, 201);
-  assert.equal((await (await app.request(`/api/games/${v.gameId}`)).json()).versions.length, 2);
+  assert.equal((await post(`/api/games/${v.gameId}/versions`, { spec, previousVersionId: v.versionId, artifact })).status, 404);
+  assert.equal((await (await app.request(`/api/games/${v.gameId}`)).json()).versions.length, 1);
   const s = await (await post(`/api/versions/${v.versionId}/sessions`, {})).json();
   const e = event(s, 'game_started', 0);
   assert.equal((await post(`/api/sessions/${s.sessionId}/events`, e)).status, 401);
   assert.equal((await post(`/api/sessions/${s.sessionId}/events`, e, { Authorization: `Bearer ${s.token}` })).status, 200);
   assert.equal((await (await app.request(`/api/versions/${v.versionId}/analytics`)).json()).startedCount, 1);
-  for (const origin of ['null', 'https://attacker.example']) assert.equal((await post('/api/games', { spec, artifact }, { Origin: origin })).status, 403);
-  assert.equal((await app.request('http://attacker.example:3000/api/games', { method: 'POST', headers: { Origin: 'http://attacker.example:3000', 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-origin' }, body: JSON.stringify({ spec, artifact }) })).status, 403);
-  assert.equal((await post('/api/games', null)).status, 400);
+  for (const origin of ['null', 'https://attacker.example']) assert.equal((await post('/api/jobs', { spec, providerMode:'ollama-cloud', idempotencyKey:randomUUID() }, { Origin: origin })).status, 403);
+  assert.equal((await app.request('http://attacker.example:3000/api/jobs', { method: 'POST', headers: { Origin: 'http://attacker.example:3000', 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-origin' }, body: JSON.stringify({ spec, providerMode:'ollama-cloud',idempotencyKey:randomUUID() }) })).status, 403);
+  assert.equal((await app.request('/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,artifact})})).status,404);
+  assert.equal((await post('/api/jobs', null)).status, 400);
   assert.equal((await app.request('/api/versions/bad')).status, 400);
   assert.equal((await app.request(`/api/versions/${randomUUID()}`)).status, 404);
-  assert.equal((await app.request('/api/games', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status, 400);
-  assert.equal((await post('/api/games', { spec, artifact: { ...artifact, html: 'x'.repeat(1_300_000) } })).status, 413);
+  assert.equal((await app.request('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status, 400);
+  assert.equal((await post('/api/jobs', { spec, mode:'live',providerMode:'ollama-cloud',idempotencyKey:randomUUID(), padding:'x'.repeat(20_000) })).status, 413);
 });
 test('bridge rejects wrong window, origin, session, protocol, size and malformed messages', () => {
   const source = {} as Window, session = { sessionId: randomUUID(), versionId: randomUUID() };

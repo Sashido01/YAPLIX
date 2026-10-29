@@ -191,7 +191,7 @@ Source changes и единичный внешний ответ сами
 реальные Telegram /games/new/status, client/menu delivery, доступный внешний HTTPS,
 physical Android/iPhone/Telegram пока не заявляются. Официальный кейс предоставлен
 владельцем как локальный `docs/Keys_Bilayn.pdf` (2 страницы); [матрица обязательных
-требований и бонусов](demo-readiness.md) сопоставлена с его содержимым. Prompt,
+требований и бонусов](defense-readiness.md) сопоставлена с его содержимым. Prompt,
 реальный generated code, история и AI подтверждены в указанных границах;
 playable mechanics и WebView имеют сценарные/device ограничения. Команда 2–4
 человека и фактическая презентация 3–5 минут не подтверждены. Analytics display

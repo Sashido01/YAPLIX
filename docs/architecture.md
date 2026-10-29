@@ -1,9 +1,58 @@
 # Архитектура YAPLIX
 
-> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+Текущий пользовательский контракт не содержит встроенных игр или галереи.
+Библиотека показывает только сохранённые пользовательские версии; синтетические
+игры используются только из `tests/fixtures/` в проверках. Исторические описания
+ниже не меняют этот контракт.
+
+Текущая схема и известные trace gaps для локальной копии описаны в
+[диагностике](diagnostics.md) и [статусе](release-status.md). Подробности ниже,
+помеченные старой датой или SHA, остаются историческими.
+
+> Снимок 24 октября 2026 и текущие отличия от исторического описания ниже:
+> [PROJECT_CONTEXT](PROJECT_CONTEXT.md). Main a56fe00 уже включает #49/#51;
+> текущий production prompt требует весь видимый UI в Canvas/WebGL strict-v2.
+
+> MICRO-036.3 metadata correction was later merged. The MICRO-036.2 compatibility finding below is historical; it is not the current Save/Ready status.
 
 Аудит MICRO-036.2: 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`.
-Текущее ограничение Save/Ready: [несовместимость browser metadata](game-validation.md#контракт-browser-metadata--блокер-micro-0362).
+Текущие ограничения и evidence: [release status](release-status.md).
+
+# YAPLIX-FINAL-005 — каталог моделей и preflight
+
+## YAPLIX-RELEASE-006 — открытие сохранённой игры
+
+Карточки сохранённых игр переключают интерфейс обратно в
+рабочее пространство перед показом игры. Изображение версии остаётся в
+opaque `iframe sandbox="allow-scripts"` под CSP; sandbox не ослабляется.
+Проверка HTML до сохранения и пользовательский iframe — разные исполнения:
+checker PASS не означает gameplay PASS. В FINAL-005 ошибка storage была внесена
+Playwright init script в каждую frame; контрольный запуск точной версии без него
+ошибок не показал. Подробнее: [диагностика](diagnostics.md) и
+[статус релиза](release-status.md).
+
+Имена закреплённых моделей и UI labels берутся из `src/model-catalog.ts`.
+Ollama Cloud по умолчанию использует `gemma4:31b`; OpenRouter Free остаётся
+ручным маршрутом с динамической моделью upstream; ChatGPT — ручной маршрут с
+закреплённым `gpt-6.1-sol · medium`. UI показывает статический выбор и отдельно
+проверяет readiness перед созданием job. Этот preflight не делает inference и
+`dynamic_upstream_ready` не является доказательством выбранной модели или игрового
+PASS. Metadata-only lifecycle trace не содержит prompt или provider secrets.
+
+# Текущий create/edit и repair contract (YAPLIX-FINAL-001)
+
+Durable create и пользовательский edit используют один pipeline: один исходный
+POST, защищённая проверка полного HTML, затем максимум три последовательных
+repair POST той же закреплённой модели. Настроенный бюджет сохраняется в job,
+виден в diagnostics и ограничен четырьмя POST всего. Repair возможен только при
+подтверждённом исправимом дефекте; HTTP/сеть, неясный исход POST, лимит/авторизация
+и инфраструктурные ошибки repair не запускают. При рестарте неизвестный dispatch
+не повторяется: полный checkpoint можно локально проверить, неполный остаётся
+needs_attention. OpenRouter repair выключен, поскольку upstream у `openrouter/free`
+не закреплён. Technical gate и gameplay evidence независимы; неподтверждённые
+правила остаются NOT_VERIFIED. Эта политика описывает текущий код; предыдущие
+датированные разделы сохраняют исторические бюджеты и эксперименты.
+
 
 Один Node 24.18+ (24.x) процесс: Hono API, лёгкий frontend, собственный generator,
 SQLite и sandbox. TypeScript/esbuild; Node/Chromium/модели устанавливаются только
@@ -15,7 +64,7 @@ flowchart LR
   API --> Spec[GameSpec]
   Spec --> LLM[Ollama Cloud / OpenRouter Free]
   LLM --> Check[Extract / static / Chromium]
-  Check -. owner opt-in .-> Repair[Bounded repair]
+  Check -. confirmed Ollama-only, bounded .-> Repair[Bounded repair]
   Repair --> LLM
   Check --> DB[(SQLite / checked version)]
   DB --> Game[Opaque iframe / offline HTML]
@@ -69,7 +118,9 @@ legacy Auto checkpoint от OpenRouter при несовместимом route �
 но блокирует recovery без POST. Queue 20/3, jobs 1000, originals/checkpoints ≤100 MB.
 Первый raw ответ сохраняется в originalCheckpoint, последний — checkpoint;
 bounded diagnostics не попадают в summary/Git. Старые игры/версии/задания не мигрируются
-и не удаляются. Legacy DEMO API/fixtures доступны тестам, основной UI создаёт live.
+и не удаляются. DEMO API и production fixtures удалены. Старые задания с
+`mode: demo` остаются историческими записями и не исполняются после обновления;
+все новые версии создаются через durable user jobs. Synthetic fixtures лежат в `tests/fixtures`.
 
 [Validator](game-validation.md) сохраняет OS sandbox, opaque iframe/CSP,
 offline, runtime/Promise errors, startup/restart probes и bounded recovery.
@@ -84,12 +135,10 @@ Full HTML проверяет touch без keyboard fallback; hit-test избег
 стартовым overlay, после реального tap повторно наблюдаются открывшиеся controls.
 Landscape отклоняет лишь доказанно недоступные ранее наблюдавшиеся controls без
 реальной прокрутки (`BROWSER_CONTROLS_UNREACHABLE`), не все неизвестные состояния.
-Возврат этих трёх профилей сейчас несовместим с `parseArtifact`, который принимает
-только `[320,390]`: технический checker PASS ещё не гарантирует Save/Ready.
-[Точное ограничение и proof](micro-036-2-docs-audit.md#блокер-контракта-full-html).
-LLM repair production default off, максимум один после отдельного разрешения.
-`repairUsed` durable; Continue/restart не снимают cap. Только два deterministic
-format fixes: whole JSON string и missing doctype, с повторным gate.
+Историческая проблема несовместимости профилей `[320,390,844]` с parseArtifact
+зафиксирована в [MICRO-036.2 audit](micro-036-2-docs-audit.md#блокер-контракта-full-html);
+она не является текущим статусом этого checkout. Актуальные repair rules:
+[game validation](game-validation.md).
 
 Локальный `game-intent.ts` используется при opt-in `LLM_PROMPT_STYLE=intent`:
 консервативные EXPLICIT/INFERRED/DEFAULT/UNKNOWN hints и compact envelope, без
@@ -97,8 +146,7 @@ format fixes: whole JSON string и missing doctype, с повторным gate.
 адаптация произвольного ответа не следуют из разбора текста.
 
 Analytics доступна только играм с добровольным event bridge; базовая генерация
-его не требует. Авторские gallery HTML сохраняются authored/unverified и не
-подменяют LLM output. Экспериментальный orchestrator не интегрируется в этот core.
+его не требует. Встроенной authored gallery нет. Экспериментальный orchestrator не интегрируется в этот core.
 [Результаты и ограничения MICRO-023](micro-023-report.md).
 
 ## Экспериментальный orchestrator (TASK-013, architecture B)
@@ -291,6 +339,11 @@ winRate=won/started. Без наблюдений средние null. Comparison
 изоляцию; exported HTML теряет HTTP CSP и проверяется offline отдельно.
 
 ## Runtime / tunnel lifecycle
+
+Startup/bootstrap/desktop/install/maintenance используют отдельный metadata-only
+JSONL operation trace под data home. При создании durable job он связывается с
+текущим `operationId`; generation trace остаётся адресуемым по `jobId`.
+Подробности полей, хранения и поиска — в [diagnostics](diagnostics.md#операционный-trace).
 
 `npm run tunnel -- --menu`: совместимый local backend этого клона проверяется
 HTTP readiness + HMAC nonce/protocol/instance через `/api/runtime/tunnel`.

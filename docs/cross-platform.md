@@ -29,7 +29,7 @@ git diff --check
 
 На Windows замените python3 на python; все команды Git одинаковы. Свою ветку обновляйте по [CONTRIBUTING.md](../CONTRIBUTING.md) при чистом дереве. Инструменты ОС устанавливает владелец компьютера при необходимости; новых системных установок TASK-001 не требует.
 
-CI настроен на Windows и Ubuntu 24.04, но конфигурация workflow не доказывает успешное исполнение. Локальное выполнение через Git for Windows не является проверкой Linux. Даже успешный hosted CI не заменяет репетицию на физическом ноутбуке Ubuntu 24.04 по [demo-readiness.md](demo-readiness.md).
+CI настроен на Windows и Ubuntu 24.04, но конфигурация workflow не доказывает успешное исполнение. Локальное выполнение через Git for Windows не является проверкой Linux. Даже успешный hosted CI не заменяет репетицию на физическом ноутбуке Ubuntu 24.04 по [defense-readiness.md](defense-readiness.md).
 
 Lockfile фиксирует зависимости; Playwright проверяет автономный авторский HTML
 в Chromium desktop/mobile, WebKit mobile/tablet и Firefox desktop. Физический WebView требует отдельной проверки. Реальные LLM-артефакты
@@ -176,7 +176,7 @@ fixture-каталог: это наблюдаемые timings, а не прич�
 Gzip начального JS: 7035 → 8870 bytes, CSS: 2143 → 2332, critical: 11439 → 13752.
 Бюджеты 150000/30000/250000 bytes сохранены. Это browser laboratory profile,
 не physical Android/iOS PASS и не время успешной LLM генерации. Два отдельных
-одноразовых real OpenRouter pilots дали timeout без playable result; [границы](demo-readiness.md).
+одноразовых real OpenRouter pilots дали timeout без playable result; [границы](defense-readiness.md).
 
 ## TASK-010: измерение 14 октября 2026
 

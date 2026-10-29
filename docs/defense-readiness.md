@@ -1,6 +1,45 @@
 # Приёмка YAPLIX
 
-> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR слит 19 октября 2026 и включён в main `d389821`; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+> Исторические отчёты до RELEASE-007. Не является актуальной инструкцией для
+> пользовательского сценария: DEMO игры и галерея удаляются; синтетические
+> игровые HTML допустимы только в `tests/fixtures`. Используйте
+> [текущий release status](release-status.md) и
+> [RELEASE-007 report](../.local/yaplix-release-007/REPORT.md).
+
+## Обновление — YAPLIX-RELEASE-006, 28 октября 2026
+
+FINAL-005 storage SecurityError оказался внедрён Playwright `context.addInitScript`
+во все frame, а не вызван exact saved HTML: same version без этого injection
+открывается в YAPLIX player без ошибки. Открытие карточек Library исправлено и
+DEMO create/edit/version/export/restart/backup прошёл выбранный Chromium desktop
+сценарий. Synthetic gameplay последней версии проверялся отдельно; это не LIVE
+приёмка и не физическое мобильное устройство. Release остаётся `NOT_READY` из-за
+158 непогашенных browser FAIL и отсутствия полного release/secret/hosted CI gate.
+См. [release status](release-status.md) и локальный
+[RELEASE-006 report](../.local/yaplix-release-006/REPORT.md).
+
+## Обновление — YAPLIX-FINAL-001, 28 октября 2026
+
+Текущую LIVE-готовность повысить нельзя: confirmed Canvas repair теперь проходит
+same-model POST и повторяет защищённую проверку, но три реальные попытки не дали
+полностью принятой игры. Сохраняйте статус PARTIAL; не демонстрируйте эти
+черновики как готовые игры. Новый repair прошёл в Ollama Cloud
+`gemma4:31b`, однако конечный checker сообщил
+`BROWSER_CANVAS_RENDER_UNVERIFIED`. Gameplay PASS, пользовательский edit,
+экспорт и offline запуск не подтверждены. Подробности находятся в
+`.local/yaplix-final-001/REPORT.md`.
+
+## Актуальная граница демонстрации — 27 октября 2026
+
+Свежие LIVE-001/002 подтвердили получение и сохранение новых HTML-игр Ollama,
+но итог не COMPLETE: LIVE-001 оставил mobile/standalone части непроверенными;
+LIVE-002 gameplay gates прошёл, однако ручной осмотр выявил перекрытие HUD на
+мобильном экране. Успешный LIVE repair POST не подтверждён. Перед демонстрацией
+выберите версию без этого дефекта и перепроверьте полный пользовательский путь.
+Смотрите [release status](release-status.md); подробные local reports находятся
+в игнорируемом `.local/yaplix-live-001/` и `.local/yaplix-live-002/`.
+
+> Следующий исторический self-audit MICRO-036.2 относится к main `942387e` от 18 октября; выявленный им metadata blocker впоследствии исправлен. Текущая готовность — в начале документа и в [release status](release-status.md).
 
 ## Исторический статус — MICRO-036.2
 
@@ -147,7 +186,7 @@ VERIFIED — есть evidence ровно указанного свойства;
 | № | Требование | Статус | Реальное evidence и предел |
 | --- | --- | --- | --- |
 | M1 | Естественный текстовый запрос | VERIFIED | Форма и обработка идеи/изменения существуют: [UI](../src/ui.ts), [generationMessages](../src/generation.ts), [контролируемый UI сценарий](../tests/micro027.spec.ts). Проверено свойство входа, не качество любого результата. |
-| M2 | Настоящая LLM генерация кода | PARTIAL | [MICRO-027: POST 3, gemma4:31b, 9894 bytes](micro-027-report.md#live--four-post-no-hidden-retries), [TASK-010](task-010-report.md) — исторические реальные результаты. На текущем HEAD выявлен [metadata blocker](game-validation.md#контракт-browser-metadata--блокер-micro-0362); нового LIVE proof нет; provenance «Волк ловит яйца» неизвестен. |
+| M2 | Настоящая LLM генерация кода | PARTIAL | Исторические результаты перечислены в [MICRO-027](micro-027-report.md) и [TASK-010](task-010-report.md). Более поздние LIVE-001/002 создали новые игры через Ollama; смотрите [release status](release-status.md). LIVE-002 обнаружил mobile HUD overlap; наличие реализации не доказывает качество каждой игры. |
 | M3 | Начало → gameplay → победа/поражение, управление | PARTIAL | [Исторический gameplay MICRO-027](micro-027-report.md#ui--gameplay-proof-and-limits), [TASK-010](task-010-report.md). Owner-confirmed Android запуск не подтверждает оба финала или правила произвольного HTML. |
 | M4 | Self-contained HTML5+JS для WebView | PARTIAL | [Static/offline checker](../src/full-html-check.ts), [runtime/offline tests](../tests/runtime.spec.ts), [реальный export MICRO-027](micro-027-report.md). Физический embedded Android WebView/WKWebView не подтверждён; Brave не заменяет эти клиенты. |
 | M5 | Команда 2–4 человека | PARTIAL | [AUTHORS](../AUTHORS.md) заявляет команду из 3 человек, но участники №2/№3 и их вклад пока placeholders. Декларация есть; фактический состав независимо не подтверждён. Агенты не считаются командой. |
@@ -161,7 +200,7 @@ VERIFIED — есть evidence ровно указанного свойства;
 | --- | --- | --- | --- |
 | B1 | Аудитория | PARTIAL | Audience передаётся в [generationMessages](../src/generation.ts), есть [intent tests](../tests/game-intent.test.ts); отдельная проверка качества адаптации разным аудиториям не выполнена. |
 | B2 | Аналитика влияет на следующие генерации | NOT_VERIFIED | [Store analytics](../src/store.ts) считает события; [generationMessages](../src/generation.ts) не передаёт статистику для выбора успешных механик. Feedback loop не реализован, отображение аналитики не закрывает бонус. |
-| B3 | Итеративная доработка | PARTIAL | Полный previous HTML в [generationMessages](../src/generation.ts), версии в [Store](../src/store.ts), [исторические реальные edits](task-010-report.md), [synthetic UI](../tests/micro027.spec.ts). Новый Full HTML edit также затронут metadata blocker. |
+| B3 | Итеративная доработка | PARTIAL | Полный previous HTML в [generationMessages](../src/generation.ts), версии в [Store](../src/store.ts), [исторические реальные edits](task-010-report.md), [synthetic UI](../tests/micro027.spec.ts). Full HTML edit больше не относится к историческому metadata blocker; свежая реальная edit-проверка в LIVE-001/002 не выполнялась. |
 | B4 | AI графика/звук | PARTIAL | Исторические generated Canvas игры описаны в [TASK-010](task-010-report.md); отдельный проверенный AI image/audio asset pipeline не подтверждён. Код рисования не доказывает генерацию самостоятельных медиаресурсов. |
 | B5 | Touch и мобильное масштабирование | PARTIAL | [Phone регрессии MICRO-036.1](micro-036-stable-phone-port.md#проверки-качества), [owner-confirmed Android/Brave](micro-036-stable-phone-port.md#micro-0362--физическая-приёмка-подтверждение-владельца), [layout probes](../tests/generation.spec.ts). iOS, физический WebView, все игровые состояния/rotation/keyboard не закрыты этим сообщением. |
 | B6 | История/галерея/share | PARTIAL | [Store](../src/store.ts), [phone-only listener](../src/phone.ts), owner-confirmed QR/revoke; [архитектура shares](architecture.md#telegram-и-shares). Public HTTPS/Mini App delivery не подтверждены текущим аудитом. |

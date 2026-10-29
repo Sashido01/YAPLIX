@@ -29,7 +29,7 @@ for(const mode of ['ollama-cloud','openrouter','chatgpt'] as const)test('strict 
  const path=mkdtempSync('.local/strict-providers-')+'/games.sqlite';
  const transport=mode==='chatgpt'?new ChatGptTransport(session):new CloudTransport({base:mode==='ollama-cloud'?'https://ollama.com/v1':'https://openrouter.ai/api/v1',key:'synthetic-test-only',model:requested,networkEnv:()=>({YAPLIX_LLM_NETWORK:'direct'})});
  const engine=new GenerationEngine([transport],{allowLlmRepair:true,repairs:1});
- let store=new Store(path),jobs=new GenerationJobs(store,engine);
+ let store=new Store(path),jobs=new GenerationJobs(store,engine),app=createApp(store,undefined,undefined,undefined,undefined,undefined,jobs);
  const settled=async(id:string)=>{await expect.poll(()=>jobs.get('owner',id).stage,{timeout:30000}).toMatch(/^(completed|needs_attention|failed)$/);return jobs.get('owner',id);};
  try{
   if(mode==='chatgpt')await connected(session);
@@ -39,7 +39,7 @@ for(const mode of ['ollama-cloud','openrouter','chatgpt'] as const)test('strict 
   const edit=await settled(jobs.create('owner','strict-edit',{...request,previousVersionId:old.versionId}).jobId);expect(edit.stage).toBe('completed');expect(posts).toBe(2);
   const messages=mode==='chatgpt'?bodies[1].input:bodies[1].messages;expect(messages).toEqual(generationMessages(spec,old));
   if(mode==='chatgpt')expect(bodies[0]).toMatchObject({model:'gpt-6.1-sol',reasoning:{effort:'medium'},store:false,stream:true});
-  const latest=store.getVersion(edit.versionId!);const exported=await(await createApp(store).request('/api/versions/'+latest.versionId+'/export')).text();expect(exported).toBe(source);
+  const latest=store.getVersion(edit.versionId!);const exported=await(await app.request('/api/versions/'+latest.versionId+'/export')).text();expect(exported).toBe(source);
   const refusedJobs:string[]=[];
   for(const [index,markup] of [
    `<li style="position:fixed;left:160px;top:5px;list-style-type:'Score 100';color:white;font-size:20px"></li>`,

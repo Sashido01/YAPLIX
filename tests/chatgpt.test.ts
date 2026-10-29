@@ -45,6 +45,7 @@ test('signed server OAuth -> Responses -> unchanged create/edit prompt -> valida
   await connected(session);
   const first=jobs.create('owner','create-one',request);assert.equal(jobs.create('owner','create-one',request).jobId,first.jobId);
   const done=await settled(jobs,first.jobId);assert.equal(done.stage,'completed');assert.equal(done.attempts,1);
+  const diagnostic=jobs.report('owner',done.jobId);assert.equal(diagnostic.llmPostDispatches,1);assert.equal(diagnostic.llmPostHttpResponses,1);assert.equal(diagnostic.llmPostUnknownOutcomes,0);
   const original=store.getVersion(done.versionId!);assert.equal(original.provider,'chatgpt');assert.equal(original.model,'gpt-6.1-sol');
   const edit={...request,spec:{...spec,prompt:'Add enemies'},previousVersionId:original.versionId};
   const edited=await settled(jobs,jobs.create('owner','edit-one',edit).jobId);assert.equal(edited.stage,'completed');
@@ -108,6 +109,18 @@ test('ChatGPT-only configuration keeps default Auto unavailable and requires a d
  assert.equal(session.status().state,'DISCONNECTED');
 });
 
+test('ChatGPT status API exposes a sanitized OAuth HTTP failure code',async()=>{
+ const directory=resolve(mkdtempSync('.local/chatgpt-auth-status-'));
+ const session=new ChatGptSession(localPolicy,{directory,networkEnv:{YAPLIX_LLM_NETWORK:'direct'},request:async()=>new Response('private authorization response',{status:403}),openBrowser:async()=>{throw Error('browser must not open');}});
+ const store=new Store(':memory:');const app=createApp(store,undefined,undefined,localPolicy,undefined,undefined,undefined,undefined,session);
+ try{
+  session.connect();
+  for(let i=0;i<100&&session.status().state==='CONNECTING';i++)await new Promise(resolve=>setTimeout(resolve,10));
+  const response=await app.request('http://127.0.0.1:3210/api/chatgpt/status'),status=await response.json();
+  assert.equal(response.status,200);assert.equal(status.state,'ERROR');assert.equal(status.connected,false);assert.equal(status.error,'SIWC_DISCOVERY_HTTP_403');assert.ok(!JSON.stringify(status).includes('private authorization response'));
+ }finally{session.disconnect();store.close();}
+});
+
 const headers={'Content-Type':'application/json',Origin:'http://127.0.0.1:3210','X-Yaplix-ChatGPT':'owner'};
 test('sensitive API requires same Origin and owner action; status does no OAuth; tokens stay private',async()=>{
  let posts=0;const {session}=offlineChatGpt(async()=>{posts++;return sse([completed(html)]);});
@@ -122,9 +135,9 @@ test('sensitive API requires same Origin and owner action; status does no OAuth;
   const created=await post('/api/jobs',{...request,idempotencyKey:'api-create'});assert.equal(created.status,202);const done=await settled(jobs,(await created.json()).jobId);assert.equal(done.stage,'completed');assert.equal(posts,1);
   const repeated=await post('/api/jobs',{...request,idempotencyKey:'api-create'});assert.equal((await repeated.json()).jobId,done.jobId);assert.equal(posts,1);
   assert.equal((await post('/api/jobs',{...request,idempotencyKey:'telegram-attack'},{...headers,'X-Yaplix-Telegram-Session':'fake'})).status,403);
-  assert.equal((await post('/api/games',{spec,mode:'live',providerMode:'chatgpt'})).status,400);
-  assert.equal((await post('/api/games',{spec,mode:'live'})).status,503);
-  const version=store.getVersion(done.versionId!);assert.equal((await post('/api/games/'+version.gameId+'/versions',{spec,previousVersionId:version.versionId,mode:'live',providerMode:'chatgpt'})).status,400);
+  assert.equal((await post('/api/games',{spec,mode:'live',providerMode:'chatgpt'})).status,404);
+  assert.equal((await post('/api/games',{spec,mode:'live'})).status,404);
+  const version=store.getVersion(done.versionId!);assert.equal((await post('/api/games/'+version.gameId+'/versions',{spec,previousVersionId:version.versionId,mode:'live',providerMode:'chatgpt'})).status,404);
   const snapshot=await(await app.request('http://127.0.0.1:3210/api/chatgpt/status')).json();assert.deepEqual(Object.keys(snapshot).sort(),['available','connected','error','model','reauthorizationRequired','state']);assert.ok(!JSON.stringify(snapshot).includes('credential'));
   assert.equal((await post('/api/chatgpt/disconnect')).status,200);assert.equal(session.status().connected,false);assert.equal(store.getVersion(version.versionId).html,html.trim());
   const denied=await settled(jobs,jobs.create('owner','after-disconnect',request).jobId);assert.equal(denied.attempts,0);assert.equal(posts,1);
@@ -298,12 +311,14 @@ for(const [label,checkpoint,origin,allowed] of [
 });
 
 for(const mode of ['ollama-cloud','openrouter'] as const)test('A1.2 Continue keeps existing queue refusal status for '+mode,async()=>{
- const store=new Store(':memory:'),jobs=new GenerationJobs(store);
+ const provider=mode==='openrouter'?'openrouter':'ollama.com',model=mode==='openrouter'?'openrouter/free':'gemma4:31b';
+ const engine=new GenerationEngine([{provider,model,route:'primary',readiness:async()=>'ready',complete:async(_messages,signal)=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new Fault('REQUEST_CANCELLED')),{once:true}))}]);
+ const store=new Store(':memory:'),jobs=new GenerationJobs(store,engine);
  try{
-  const demo={spec,mode:'demo' as const,providerMode:mode,telegramConsent:false};
-  const first=jobs.create('owner','existing-continue',demo);jobs.cancel('owner',first.jobId);
+  const userRequest={spec,mode:'live' as const,providerMode:mode,telegramConsent:false};
+  const first=jobs.create('owner','existing-continue',userRequest);jobs.cancel('owner',first.jobId);
   assert.equal(jobs.list('owner')[0].canContinue,true);
-  for(let i=0;i<3;i++)jobs.create('owner','fill-queue-'+i,demo);
+  for(let i=0;i<3;i++)jobs.create('owner','fill-queue-'+i,userRequest);
   assert.equal(jobs.summary(jobs.get('owner',first.jobId)).canContinue,false);
   assert.throws(()=>jobs.continue('owner',first.jobId),(error:unknown)=>{assert.ok(error instanceof Fault);assert.equal(error.code,'JOB_QUEUE_FULL');assert.equal(error.status,429);return true;});
  }finally{await jobs.close();store.close();}

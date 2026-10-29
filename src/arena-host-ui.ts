@@ -36,6 +36,6 @@ void run(async()=>{
   if(!versionId)throw new Error('Откройте сохранённую игру в YAPLIX и нажмите «Общий рейтинг».');
   const version=await(await request('/api/versions/'+encodeURIComponent(versionId))).json();
   el('title').textContent=version.spec.prompt;el('version').textContent='versionId: '+version.versionId+' · SHA256: '+version.sha256;
-  if(!arenaDeclared(version.html))throw new Error('Рейтинг недоступен для этой версии. Нужна Arena-совместимая версия. Для локального демо откройте авторскую игру «Arena: Меткий бросок» в библиотеке.');
+  if(!arenaDeclared(version.html))throw new Error('Рейтинг недоступен для этой версии. Нужна Arena-совместимая версия. Создайте игру с Arena score-v1 bridge и сохраните её в библиотеке.');
   el('setup').hidden=false;await refresh();void poll();
 });

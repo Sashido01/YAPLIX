@@ -24,8 +24,7 @@ export function mountGame(container: HTMLElement, html: string, session: Runtime
   frame.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'");
   frame.referrerPolicy = 'no-referrer';
   frame.style.cssText = 'width:100%;height:100%;border:0;display:block';
-  // CSP is parsed before any attacker-controlled markup or script.
-  frame.srcdoc = `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${GAME_CSP}"><script>${UUID_COMPAT}</script>` + html;
+  const srcdoc = `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${GAME_CSP}"><script>${UUID_COMPAT}</script>` + html;
   let windowStart = Date.now(), count = 0;
   const receive = (message: MessageEvent) => {
     if (Date.now() - windowStart >= 1000) { windowStart = Date.now(); count = 0; }
@@ -36,5 +35,9 @@ export function mountGame(container: HTMLElement, html: string, session: Runtime
   window.addEventListener('message', receive);
   frame.addEventListener('load', () => frame.contentWindow?.postMessage({ channel: 'yaplix_init', protocolVersion: 1, sessionId:session.sessionId, versionId:session.versionId }, '*'));
   container.append(frame);
+  // Let the host lay out the iframe before inline game scripts measure their viewport.
+  const assignSource = () => { if (frame.isConnected) frame.srcdoc = srcdoc; };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(assignSource);
+  else setTimeout(assignSource, 0);
   return () => { window.removeEventListener('message', receive); frame.remove(); };
 }

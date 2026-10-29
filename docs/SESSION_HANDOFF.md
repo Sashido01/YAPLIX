@@ -1,6 +1,106 @@
-# Текущий статус — MICRO-036.2
+> Исторические handoff ниже сохранены для контекста. Актуальный статус: [YAPLIX-RELEASE-007F](release-status.md#yaplix-release-007f--28-октября-2026), полный отчёт — [`.local/yaplix-release-007f/REPORT.md`](../.local/yaplix-release-007f/REPORT.md). Candidate остаётся NOT_READY: strict WebGL gate и реальная победа игры не подтверждены; не публиковать.
 
-> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR ещё не слит; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+# Текущий статус — YAPLIX-RELEASE-007F
+
+`codex/arena-mvp`, HEAD `78492bfcbc1b35e1f0f77e2040c9e6c50c170300`; рабочее дерево уже было dirty до этого этапа и сохранено. Runtime mount исправлен и в targeted tests проходит; quick/integration PASS. LIVE create (2 POST, включая 1 repair) и настоящий пользовательский edit (1 POST) сохранены в изолированном профиле. Обе версии и связь parent сохранены в SQLite; точная edit version открылась после restart. Её export SHA совпадает и файл запускается `file://` без сетевых запросов. Canvas cold-open 20/20; старт/pause/resume/restart/keyboard movement проверены. Фактическая победа игры не подтверждена: управляемые проходы завершились поражением. Финальный `check:full`: 634 PASS / 3 FAIL / 2,207 SKIP; все strict WebGL/WebGL2 проверки прошли. Три FAIL были одной WebKit offline-export assertion, которая захватывала предшествующий `/host` POST до `file://`; test listener исправлен, адресный повтор 5/5 PASS. Полный suite после test-only правки не повторяли, `FULL=PARTIAL`. Gitleaks tree/staged PASS, Ubuntu Lite actual installer PASS, Windows/hosted CI/physical devices NOT_VERIFIED. Публикации нет.
+
+## YAPLIX-RELEASE-006 — handoff, 28 октября 2026
+
+Остаться на `codex/arena-mvp` HEAD `78492bfcbc1b35e1f0f77e2040c9e6c50c170300`;
+dirty files и исходная SQLite сохранены. FINAL-005 exact game `74ae7557-15db-4600-aafa-f0784104ff02`, version
+`15dcddd9-5c3a-4f97-94ad-423970a0cddc` открыта без ошибок в actual player,
+если убрать init-script harness injection; RELEASE-006 чинит library navigation
+и доступ к diagnostics. Проверки: mvp.spec desktop 3/3, mobile.spec desktop 5/5
+после исправления synthetic preflight fixture, micro022/023 27/27,
+typecheck/build/diff check PASS.
+Полная browser matrix и release gates не пройдены: исторические 158 FAIL,
+Gitleaks/hosted CI отсутствуют. Не запускать LIVE, remote Git или публикацию.
+Следующее: закрыть полный browser/secret/release gate перед любой публикацией;
+изолированный clone server :3319 остановить перед завершением.
+
+## YAPLIX-FINAL-001 — handoff на 28 октября 2026
+
+Root cause `BROWSER_CANVAS_TEXT_CLIPPED` repair refusal исправлен: checker evidence
+лежит в `canvasTextLayout`, и eligibility теперь проверяет вложенный confirmed
+record. Durable jobs сохраняют 1 initial + до 3 same-route repairs. Recovery не
+повторяет неизвестный POST; complete checkpoint может локально пройти validation.
+Фактический automatic recovery после backend restart отправил один repair POST
+на ту же `gemma4:31b`.
+
+Остановиться на PARTIAL: ни одна из трёх LIVE змей не создала готовую игру. Сводка
+job outcomes: text repair → `BROWSER_CANVAS_RENDER_UNVERIFIED`; другая генерация →
+`BROWSER_CANVAS_ACTIVITY_UNVERIFIED` в landscape; третья →
+`BROWSER_TIMEOUT_RENDER` в 320×700. Изолированная база не содержит принятой
+версии; edit/export/offline acceptance не проводились. Счётчик: 7 подтверждённых
+wire dispatch POST (3 из прошлых этапов + 4 этой задачи), остаток до cap 12 — 5.
+Не повторять ту же попытку без изменения условий/evidence. Подробности и точные
+job IDs: `.local/yaplix-final-001/REPORT.md`.
+
+## YAPLIX-GENERATION-RECOVERY-002 — handoff на 28 октября 2026
+
+Продолжать в прежнем dirty checkout `codex/arena-mvp`, HEAD
+`78492bfcbc1b35e1f0f77e2040c9e6c50c170300`; прежние изменения сохранены,
+коммитов/remote operations нет. Добавлена ChatGPT metadata instrumentation
+(dispatch + HTTP status) вокруг существующего единственного POST. Целевой файл
+ChatGPT tests 47/47 и typecheck проходят на Node 24.22.1. Порт :3000 сообщает
+иной commit `f681…`; владелец сервиса и browser tab не установлены, API закрыт
+401. Не читать user SQLite/private checkpoints до отдельного согласия. Реальный
+HTML replay остаётся `NOT_VERIFIED`. Детали: локальный
+`.local/yaplix-generation-recovery-002/REPORT.md`.
+
+## YAPLIX-GENERATION-RECOVERY-001 — handoff на 28 октября 2026
+
+Продолжать в той же dirty-копии и сохранять текущие branch/HEAD/изменения.
+Изменён `src/full-html-check.ts`: в общий Canvas tap search добавлены точки
+50%×45% и 50%×54%; `src/ui.ts` объясняет `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` по-русски и
+показывает технический код в деталях. Authored Chromium positive/inert controls,
+35 targeted unit tests, typecheck, build и `git diff --check` прошли. Полный
+Playwright CLI не выбрал тест: локальный webServer превысил 60-секундный startup.
+Не запускать LIVE. Восстановить авторизованный доступ к фактическому YAPLIX
+instance/diagnostics, сопоставить браузер и database без `.env`/записи, затем
+повторить сохранённые реальные HTML только если checkpoint удастся получить
+read-only. Сводка: `.local/yaplix-generation-recovery-001/REPORT.md`.
+
+## Handoff snapshot — 27 октября 2026
+
+Продолжать в текущей локальной копии `codex/arena-mvp` после локального commit
+`23b91bb` (его parent — исходный HEAD `e074974629c2c871589ec560e8e0d463ac456358`);
+не переключать ветку и не убирать dirty files. Локальные завершённые изменения можно коммитить после проверки.
+Remote operations запрещены без отдельного разрешения владельца. Текущие
+результаты/пробелы: [release status](release-status.md), [diagnostics](diagnostics.md).
+Текст ниже — датированные исторические handoff и не описывает автоматически
+HEAD этого снимка.
+
+### YAPLIX-DESKTOP-LOCK-GIT-001 — 27 октября 2026
+
+Desktop lifecycle smoke и все шесть launcher tests проходят на Node 24.22.1;
+typecheck/build и operation-trace tests также PASS. Проверены single-instance
+reuse, две параллельные изолированные базы, SQLite restart, safe foreign-lock
+handling и operation timeline. Отчёт: `.local/yaplix-desktop-lock-git-001/REPORT.md`.
+Локальный commit не создан: проверенный desktop cohort использует общие
+незакоммиченные launcher/runtime/trace файлы среди незавершённых UI/installer
+изменений; bounded scan есть, полноценный Gitleaks отсутствует. HEAD и ветка
+сохранены, remote операции не выполнялись. Full payload и установка остаются
+отдельной проверкой.
+
+> Историческая пометка MICRO-036.3 в первоначальном handoff отражала состояние до merge PR #46. Она сохранена здесь только как audit history; текущие статусы приведены в начале handoff и в [release status](release-status.md).
+
+### YAPLIX-OBSERVABILITY-GIT-001 — 27 октября 2026
+
+Operation trace схема и связи startup/desktop/install/maintenance описаны в
+[диагностике](diagnostics.md#операционный-trace). Фактические тесты и локальный
+Git статус этого задания — в `.local/yaplix-observability-git-001/REPORT.md`;
+этот отчёт не подтверждает remote CI.
+
+### Продолжение YAPLIX-UI-SMOKE-002 — 27 октября 2026
+
+Мобильные тесты теперь следуют разделам Create/Games/Arena и деталям задания
+в UI-002 вместо удалённых `#jobs-toggle`/«Обычный экран». Ошибки UI/API
+записываются в существующий trace версии с фиксированными безопасными кодами;
+текст исключения, URL, payload и секреты не копируются. Перед browser smoke
+запускайте `npm run build`, чтобы проверять актуальный статический bundle.
+Результаты, ограничения и решение по локальному Git находятся в
+`.local/yaplix-ui-smoke-002/REPORT.md` (приватное локальное свидетельство).
 
 18 октября 2026 (Europe/Moscow). Проверенный main/база:
 `942387eb1fc06792767bddf2ae766cd0ed4676ff` — merge PR #44, MICRO-036.1.
@@ -17,7 +117,7 @@
   воспроизвёл `INVALID_GENERATION_METADATA`, без LLM/SQLite. Код не меняется.
 - Исторические LLM successes — [MICRO-027](micro-027-report.md), [TASK-010](task-010-report.md).
   Новый LIVE в MICRO-036.2 не запускался, inference/repair POST **0**.
-- [Демонстрация 4:30 и матрица 8+7](demo-readiness.md): saved LLM fallback должен
+- [Демонстрация 4:30 и матрица 8+7](defense-readiness.md): saved LLM fallback должен
   быть проверен до выступления; выбранного подтверждённого резерва в этом аудите нет.
 - PR [#34](https://github.com/Sashido01/YAPLIX/pull/34) и
   [#37](https://github.com/Sashido01/YAPLIX/pull/37) — OPEN Draft, не изменялись.
@@ -425,3 +525,13 @@ Gameplay **PASS в проверенном scope**: восстановление 
 этап: physical network/device acceptance; перед release exact-commit manual FULL
 после явного разрешения владельца восстановить Actions. Новый inference требует
 отдельного разрешения и не нужен для открытия восстановленной игры.
+
+## YAPLIX-GAMEPLAY-RECOVERY-004 (2026-10-28)
+
+Editor readiness regression and long edit prompt contract were fixed and passed
+synthetic browser checks; creation remains limited to 500 chars, edit to 1200.
+One separately authorized LIVE Ollama Cloud POST returned HTML but protected
+Chromium rejected it at 320×700 (`BROWSER_CANVAS_TEXT_CLIPPED`) before save.
+Original version SHA remains unchanged; job is `needs_attention`, one attempt,
+zero repairs. No further POST was sent. Gameplay acceptance is NOT_VERIFIED and
+release NOT_READY. See `.local/yaplix-gameplay-recovery-004/REPORT.md`.

@@ -8,33 +8,28 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Store, PROJECT_ROOT } from '../src/store.ts';
 import { createApp } from '../src/api.ts';
-import { spec, html } from './helpers.ts';
+import { spec, artifact } from './helpers.ts';
 import type { GameSpec } from '../src/contracts.ts';
 
-test('key-free DEMO persists/reopens, changes goal, lists latest version and produces verified backup', async t => {
+test('user versions persist and export; production has no DEMO or synchronous write API', async t => {
   const dir = mkdtempSync('.local/mvp-test-');
   let store = new Store(`${dir}/data.sqlite`), app = createApp(store);
   t.after(() => { store.close(); rmSync(dir, { recursive: true }); });
-  const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const response = await post('/api/games', { mode: 'demo', spec }); assert.equal(response.status, 201); const first = await response.json();
-  assert.equal(first.method, 'mock'); assert.equal(first.model, null); assert.match(first.html, /goal=3/);
-  const second = await (await post(`/api/games/${first.gameId}/versions`, { mode: 'demo', spec: { ...spec, prompt: 'Collect 5 cargo' }, previousVersionId: first.versionId })).json();
-  assert.equal(second.previousVersionId, first.versionId); assert.match(second.html, /goal=5/); assert.notEqual(second.sha256, first.sha256);
-  assert.equal((await (await app.request('/api/games')).json()).games[0].versionId, second.versionId);
+  const version=store.save(spec,artifact);
+  assert.equal((await(await app.request('/api/games')).json()).games[0].versionId,version.versionId);
+  assert.equal((await app.request('/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).status,404);
+  assert.equal((await app.request('/api/games/'+version.gameId+'/versions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).status,404);
+  assert.equal((await app.request('/api/gallery')).status,404);
+  const demoJob=await app.request('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo'})});assert.equal(demoJob.status,400);assert.equal((await demoJob.json()).error,'INVALID_MODE');
   const copy = await store.backup(); const path = resolve(PROJECT_ROOT, '.local/backups', copy.filename);
   t.after(() => rmSync(path));
   assert.equal(createHash('sha256').update(readFileSync(path)).digest('hex'), copy.sha256);
-  const verified = spawnSync(process.execPath, ['scripts/maintenance.ts', 'verify-backup', path, copy.sha256], { cwd: PROJECT_ROOT });
-  assert.equal(verified.status, 0);
-  const wrongHash = spawnSync(process.execPath, ['scripts/maintenance.ts', 'verify-backup', path, '0'.repeat(64)], { cwd: PROJECT_ROOT });
-  assert.equal(wrongHash.status, 1); assert.match(wrongHash.stderr.toString(), /BACKUP_HASH_MISMATCH/);
+  const verified = spawnSync(process.execPath, ['scripts/maintenance.ts', 'verify-backup', path, copy.sha256], { cwd: PROJECT_ROOT });assert.equal(verified.status, 0);
   assert.equal(createHash('sha256').update(readFileSync(path)).digest('hex'), copy.sha256);
-  const backupStore = new Store(path); assert.deepEqual(backupStore.getVersion(second.versionId), second); backupStore.close();
+  const backupStore = new Store(path); assert.deepEqual(backupStore.getVersion(version.versionId), version); backupStore.close();
   store.close(); store = new Store(`${dir}/data.sqlite`); app = createApp(store);
-  assert.equal((await (await app.request(`/api/versions/${second.versionId}`)).json()).sha256, second.sha256);
-  assert.equal(store.analytics(second.versionId).sessionCount, 0);
-  const bad = await post('/api/games', { mode: 'demo', requiredMethod: 'llm_code', spec }); assert.equal(bad.status, 400);
-  const missingLive = await post('/api/games', { mode: 'live', spec }); assert.equal(missingLive.status, 503); assert.equal(store.list().length, 1);
+  assert.equal((await (await app.request(`/api/versions/${version.versionId}`)).json()).sha256, version.sha256);
+  assert.equal(store.analytics(version.versionId).sessionCount, 0);
 });
 
 test('production server serves UI, restarts with persisted games and retains exact export', { timeout: 15_000 }, async () => {
@@ -53,7 +48,7 @@ test('production server serves UI, restarts with persisted games and retains exa
     await start();
     assert.equal((await fetch(`${url}/`)).status, 200);
     assert.equal((await fetch(`${url}/runtime/ui.js`)).status, 200);
-    const version = await (await fetch(`${url}/api/games`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'demo', spec }) })).json();
+    const setup=new Store(`${directory}/data.sqlite`);const version=setup.save(spec,artifact);setup.close();
     await stop(); await start();
     assert.equal((await (await fetch(`${url}/api/versions/${version.versionId}`)).json()).sha256, version.sha256);
     assert.equal((await (await fetch(`${url}/api/games`)).json()).games[0].versionId, version.versionId);

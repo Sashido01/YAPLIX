@@ -1,5 +1,9 @@
 # Production game validation — текущее поведение
 
+Trace событий по job, подсчёт dispatch/HTTP/unknown POST и различие между
+`FAIL`, `NOT_VERIFIED` и `SKIPPED` описаны в [diagnostics](diagnostics.md).
+Последний общий LIVE результат остаётся PARTIAL: см. [release status](release-status.md).
+
 > A1.8.6: строгий `canvas-webgl-strict-v2` требует весь видимый игровой UI в
 > Canvas/WebGL. DOM HUD/controls/terminal overlays запрещены.
 > Исторический v1 их допускал; старые metadata не мигрируют.
@@ -9,16 +13,47 @@
 > Runtime/render evidence отделено от gameplay evidence. Неподтверждённое
 > рисование или активность Canvas блокируют новую версию, сохраняя draft в job.
 
-> MICRO-036.3, 19 октября 2026: в ветке [PR #46](https://github.com/Sashido01/YAPLIX/pull/46) metadata contract исправлен: текущий Full HTML сохраняет три профиля, исторические два читаются без добавления landscape. Полный offline job/checker/save/API путь проверяется тестами. PR слит 19 октября 2026 и включён в main `d389821`; LIVE и общий MVP этим не подтверждены. Аудит MICRO-036.2 ниже описывает исторический main `942387e`, а не исправленную ветку. [Исправление и границы](known-errors.md).
+## Проверка сохранённой версии в RELEASE-006
+
+Production checker для FINAL-005 exact version прошёл технический runtime
+validation, однако оставил input/gameplay, win/loss, restart как
+`NOT_VERIFIED`. Последующая ошибка player `localStorage SecurityError` оказалась
+инициирована Playwright `context.addInitScript`, исполненным во всех frame;
+с тем же HTML без init script player ошибок не сообщил. Реальная игра была
+проверена отдельно в UI с детерминированным test RNG: Start, еда, счёт, рост,
+touch/keyboard direction, collision/Game Over и restart наблюдались в 320×700 и
+390×700; landscape 844×390 имел лишь четыре колонки и быстрый повторный collision,
+поэтому игровой результат там ограничен. Это offline synthetic evidence, не LIVE
+качество, нативное устройство или автоматическое подтверждение механик checker.
+
+> MICRO-036.3 metadata correction was later merged. The MICRO-036.2 compatibility finding below is historical and does not describe the current gate. LIVE and general MVP are assessed separately in [release status](release-status.md).
 
 Аудит MICRO-036.2: 18 октября 2026, main `942387eb1fc06792767bddf2ae766cd0ed4676ff`.
 MICRO-023/022 ниже описывают базовые gates; MICRO-030/032 уточняют Full HTML.
-Текущий блокер Save/Ready приведён в конце, production в этом аудите не меняется.
+Исторические измерения Save/Ready приведены ниже; актуальные ограничения описаны в отдельном release status.
 
 `LLM → prepareDocument → static validation → browserCheck → bounded repair →
 revalidation → transaction Save/Ready`. Один production checker, без нового
 игрового движка. Game Orchestrator не изменён; из существующего gameplay checker
 повторно используется чистая функция `summarizeSession`.
+
+## YAPLIX-GENERATION-RECOVERY-001 — проверка Canvas Start
+
+Full HTML probe добавляет общие taps в центре Canvas на 45% и 54% высоты перед
+прежним набором касаний. Это помогает активировать распространённую центральную
+кнопку Start, не читает подписи, не использует DOM/игровые селекторы и не меняет HTML.
+Любая смена пикселей остаётся только runtime evidence: если после probes нет
+подтверждённого Canvas изменения, игра не сохраняется. `BROWSER_CANVAS_ACTIVITY_UNVERIFIED`
+остаётся уровнем неопределённости, пока исправная/неисправная механика не доказана;
+см. offline regression и реальные сохранённые traces в [отчёте](../.local/yaplix-generation-recovery-001/REPORT.md).
+
+## YAPLIX-GENERATION-RECOVERY-002 — граница реального replay
+
+Без исходных байтов checkpoint записанный trace SHA не пересчитывается и не
+заменяет replay. `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` не доказывает запуск
+конкретной игры; authored controls подтверждают только общий probe. Повторная
+проверка заданий `de96…` и `336f…` требует разрешённо полученного исходного HTML.
+См. [Recovery-002](../.local/yaplix-generation-recovery-002/REPORT.md).
 
 ## Историческая автоматическая проверка до строгого контракта
 
@@ -78,15 +113,19 @@ job сохраняются одной существующей transaction, idem
 Массовая миграция/перепроверка игр не добавлена; прежнее bounded recovery jobs
 после restart сохраняется.
 
-LLM repair production CloudTransport **по умолчанию выключен**. После отдельного
-разрешения владельца серверный `LLM_AUTO_REPAIR=1` позволяет максимум один rewrite
-на job. `LLM_REPAIRS=0` отключает его; legacy 2 принимается как cap 1. Это тот же
-выбранный route, компактная обратная связь ≤512 characters плюс исходные требования
-и rejected HTML, без всех logs. Repair не меняет provider и не открывает платный
-маршрут. Durable `repairUsed` записывается перед dispatch; Continue, restart,
-truncated/incomplete output и автоматический retry не разрешают второй repair.
-Полный candidate после crash можно перепроверить без POST. Timeout/неподтверждённый
-checker failure не запускают LLM repair. MICRO-022 проверяет его только на mocks.
+Ollama Cloud получает до `LLM_REPAIRS` автоматических repair requests (0..3,
+default 3); один первоначальный POST плюс repairs ограничены четырьмя вызовами
+на durable job. `LLM_AUTO_REPAIR=0` явно отключает их. Pinned ChatGPT transport
+также может выполнить последовательные запросы к `gpt-6.1-sol`. OpenRouter
+остаётся repair-disabled: `openrouter/free` не фиксирует upstream-модель. Каждая
+итерация получает исходные требования, полный HTML, структурированный defect и
+измерения checker-а; route/model не меняются. Durable счётчики и `repairInFlight`
+записываются до dispatch; unknown POST outcome никогда не replay-ится после
+restart/Continue, инфраструктурный отказ не расходует repair budget. Завершённый candidate сохраняется
+как checkpoint и проходит полный gate повторно; в историю игры попадает только
+прошедшая версия. При исчерпании лимита или ошибке draft и причина остаются в job.
+Timeout, неподтверждённый checker failure и инфраструктурные/security ошибки не
+запускают LLM repair. Целевые тесты покрывают эту цепочку на mocks.
 Draft без известного origin или без его configured route блокируется как
 `CHECKPOINT_ORIGIN_UNAVAILABLE`, не пересылается другому provider. Владелец может
 создать новый запрос; исходный job/draft сохраняется.
@@ -165,8 +204,25 @@ revalidate a complete checkpoint locally. OpenRouter cannot auto-repair a failed
 checkpoint after restart. Trace failures degrade diagnostics, not durable jobs.
 [Current LIVE and regression boundaries](micro-027-report.md).
 
+## Canvas text overlap gate
 
-## Контракт browser metadata — блокер MICRO-036.2
+The Canvas 2D layout observer separately rasterizes visible text glyph masks
+with the browser's own font engine and active transform. It blocks only a
+repeated, material pixel intersection between distinct text draw calls, with
+backing-store bounds and draw order; intersecting TextMetrics rectangles alone
+are not evidence. Full label contents are not placed in the diagnostic trace.
+Unknown paint, clipping, shaping, WebGL text, control hitboxes and text covered
+by arbitrary graphics remain `NOT_VERIFIED`. This gate does not infer button
+semantics from rectangles. A confirmed `BROWSER_CANVAS_UI_OVERLAP` saves a
+viewport screenshot/hash and can enter the existing bounded Ollama repair path;
+the full protected checker must pass again before save.
+
+
+## Контракт browser metadata — исторический блокер MICRO-036.2 (впоследствии исправлен)
+
+Этот раздел сохраняет точный вывод 18 октября для истории. Он не описывает
+текущий Save/Ready: позднейший metadata correction был объединён; смотрите
+[release status](release-status.md).
 
 На проверенном main [checkFullHtml](../src/full-html-check.ts) возвращает
 `profiles:[320,390,844]`. Legacy [browserCheck](../src/browser-check.ts) возвращает
@@ -187,3 +243,28 @@ checkpoint after restart. Trace failures degrade diagnostics, not durable jobs.
 В этом docs-only PR код, budgets, HTML и исторические verdict не изменяются.
 `MOBILE_VERIFIED` — техническая browser-emulation метка, не физический PASS и
 не подтверждение правил/win/loss. [Отчёт и воспроизведение](micro-036-2-docs-audit.md).
+
+## YAPLIX-GAMEPLAY-RECOVERY-004: текст Canvas обрезан на 320×700
+
+Для одного LIVE edit защищённый Chromium и Canvas text-metrics подтвердили, что
+две строки выходят за левую и правую границы backing bitmap на профиле 320×700.
+Gate корректно отклонил artifact до сохранения. Более широкие профили и игровая
+семантика не проверялись; нельзя переносить этот результат на touch, score,
+collision или restart. Снимок/trace и неизменность родительской версии записаны в
+`.local/yaplix-gameplay-recovery-004/REPORT.md`.
+
+## YAPLIX-FINAL-002: адаптивная выборка Canvas и независимый gameplay evidence
+
+Уменьшенная выборка сохраняет пропорции изображения Canvas и ограничивает длинную
+сторону 256 пикселями. Это позволяет не терять тонкие сегменты змейки и еду на
+широком landscape viewport; порог существенных цветов остаётся строгим. Общая
+Full HTML проверка также касается нижней зоны Canvas, где в исходном checkpoint
+находился Start. Ошибки event bridge без `game_ready` направляются в этот же
+строгий checker, а не трактуются как render timeout.
+
+Техническая browser проверка не подтверждает еду, score, рост, столкновения,
+restart или touch. Для этих выводов нужны наблюдаемые последствия ввода в самой
+игре. В FINAL-002 их проверяли отдельно на сохранённом HTML во всех трёх
+viewport; контролируемый RNG использовался только для расположения еды. Это
+headless browser evidence, не физическое Android/iOS устройство. Отчёт:
+`.local/yaplix-final-002/REPORT.md`.
