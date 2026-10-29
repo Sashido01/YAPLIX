@@ -94,7 +94,7 @@ async function serve(){
    }catch(error){if(!String(error?.code??'').startsWith('PORT_IN_USE'))throw error;lastConflict=true;}
   }
   if(lastConflict)throw Object.assign(Error('PORT_IN_USE'),{code:'PORT_IN_USE'});
- }finally{try{unlinkSync(lockFile);}catch{}try{unlinkSync(stateFile);}catch{}journal('STOPPED');}
+ }finally{unlinkSync(lockFile);try{unlinkSync(stateFile);}catch{}journal('STOPPED');}
 }
 async function main(){
  initialize();
@@ -117,13 +117,6 @@ if(process.argv.includes('--serve')){try{await serve();}catch(error){journal('ST
  if(process.argv.includes('--status')){console.log(instance?'running':'stopped');return;}
  if(process.argv.includes('--stop')){
   if(instance){const {stopOwnedBackend}=await import('./app-runtime.ts');const {runtimeKey}=await import('../src/runtime-control.ts');if(!await stopOwnedBackend(state.port,runtimeKey(),instance))throw Error('STOP');}
-  for(let i=0;i<30&&existsSync(lockFile);i++)await delay(100);
-  if(existsSync(lockFile)){
-   try{const {pid}=JSON.parse(readFileSync(lockFile,'utf8'));if(Number.isInteger(pid)&&pid>0)try{process.kill(pid,'SIGTERM');}catch{}}catch{}
-   for(let i=0;i<20&&existsSync(lockFile);i++)await delay(100);
-   try{unlinkSync(lockFile);}catch{}
-   try{unlinkSync(stateFile);}catch{}
-  }
   return;
  }
  if(instance){if(!process.argv.includes('--no-open'))openTarget('http://127.0.0.1:'+state.port+'/');console.log('running '+state.port);return;}

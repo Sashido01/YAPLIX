@@ -18,8 +18,8 @@ async function open(url){
 function acquire(){
  for(let i=0;i<2;i++)try{writeFileSync(lock,JSON.stringify({pid:process.pid}),{flag:'wx',mode:0o600});locked=true;return;}catch(e){
   if(e.code!=='EEXIST')throw e;if(lstatSync(lock).isSymbolicLink())throw new InstallError('PERMISSION');
-  try{const state=JSON.parse(readFileSync(lock,'utf8'));if(Number.isSafeInteger(state.pid)&&state.pid>0&&state.pid!==process.pid)try{process.kill(state.pid,'SIGTERM');}catch{}}catch{}
-  try{unlinkSync(lock);}catch{}
+  const state=JSON.parse(readFileSync(lock,'utf8'));if(!Number.isSafeInteger(state.pid)||state.pid<1)throw new InstallError('BUSY');
+  try{process.kill(state.pid,0);throw new InstallError('BUSY');}catch(error){if(error.code!=='ESRCH')throw error;unlinkSync(lock);}
  }
  throw new InstallError('BUSY');
 }
