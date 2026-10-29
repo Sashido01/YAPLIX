@@ -94,6 +94,9 @@ test('late active job poll cannot detach the timer or hide an opened game on mob
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.setViewportSize({width:390,height:700});
   await page.goto('/');
+  // Let the initial library fetch settle before replacing this document.
+  // Windows WebKit reports an unloading fetch as an access-control page error.
+  await expect(page.locator('body')).toHaveAttribute('data-ready','true');
   const created=await page.request.post('/api/jobs',{data:{spec:{...spec,prompt:'Собери 3 груза'},providerMode:'ollama-cloud',idempotencyKey:crypto.randomUUID()}});
   const {jobId}=await created.json();
   await expect.poll(async()=>{const result=await page.request.get('/api/jobs/'+jobId);return(await result.json()).stage;},{timeout:15000}).toBe('completed');

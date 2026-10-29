@@ -91,3 +91,13 @@ installer и payload overlay; Linux ELF test не компилируется н�
 переносимая fixture/редакция домашнего пути. Windows installer workflow сохранён.
 Hosted Actions активны. Результаты старого run не являются проверкой нового SHA;
 незавершённые checks и полная матрица не считаются PASS.
+
+## FINAL-CI — итог исходного run 40824915530
+
+Коммит 1151694: оба unit/backend suite PASS и hosted secret scan SUCCESS.
+Ubuntu browser: 697 PASS / 3 FAIL; Windows browser: 692 PASS / 8 FAIL.
+Windows Lite/Full build PASS, installer acceptance FAIL на удалённом gallery API.
+Адресные исправления QR, начальной навигации теста и isolated installer fixtures
+проверяются новым SHA. Полный статус нового run фиксируется отдельно.
+Canvas input-works/gameplay-observed остаются NOT_VERIFIED; причинный P1 открыт.
+Merge/release до обязательных gates не заявляются.

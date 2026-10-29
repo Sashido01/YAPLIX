@@ -401,7 +401,7 @@ const jobCancelButton=document.getElementById('job-cancel');jobCancelButton?.add
 el('gen-launch').addEventListener('click',()=>{if(current)void attempt(signal=>play(current!,signal), true);});
 el<HTMLFormElement>('create').addEventListener('submit',event=>{event.preventDefault();void submitJob('generate',prompt.value);});
 el<HTMLFormElement>('iterate').addEventListener('submit',event=>{event.preventDefault();if(current)void submitJob('improve',el<HTMLTextAreaElement>('change').value,current.versionId);});
-async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;view('library');el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);el('phone').scrollIntoView({block:'start'});}finally{phoneOpening=false;}}
+async function phoneFor(versionId:string){if(phoneOpening)return;phoneOpening=true;try{el('phone').dataset.version=versionId;view('library');el<HTMLDetailsElement>('phone').open=true;const path='/runtime/phone-connect-ui.js';await(await import(path)).connectPhone(versionId);(el('phone-ready').hidden?el('phone'):el('phone-qr')).scrollIntoView({block:'center'});}finally{phoneOpening=false;}}
 el('phone-game').addEventListener('click',()=>{if(current)void attempt(()=>phoneFor(current!.versionId));});
 el('arena-game').addEventListener('click',()=>{if(current){syncArenaVersion(current.versionId);}view('arena');});
 

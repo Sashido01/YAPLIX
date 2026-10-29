@@ -1,3 +1,25 @@
+## FINAL-CI: QR на мобильном экране и Windows acceptance без DEMO
+
+Run 40824915530: Ubuntu и Windows unit/backend PASS; browser gate отказал на
+QR visibility 320/360/390, Windows WebKit дополнительно на незавершённом запросе
+начальной библиотеки при навигации. Windows Lite/Full build PASS, acceptance
+ошибочно вызывал удалённый /api/gallery и разбирал 404 как JSON.
+
+- QR: прокрутка к началу длинного details оставляла код ниже экрана. После
+  готовности подключения прокручиваем сам QR к центру; при ошибке — details.
+  Исходный chromium-320 воспроизвёл RED; после исправления 320/360/390 прошли
+  полный synthetic create/edit/export/phone scenario (3/3). Локально нужен
+  документированный browser proxy bypass: один env -u не исключает системный
+  proxy для private-IP Chromium (502); это отдельное ограничение хоста.
+- Windows acceptance теперь сначала требует 404 от gallery и пустую библиотеку,
+  затем сохраняет три fixtures только в явно изолированный CI data home через
+  installed Store. API content SHA, restart и SQLite assertions сохранены.
+  Точный seed-код проверен установленным Linux runtime; native Windows — CI.
+- Mobile race test ждёт data-ready перед новой навигацией: Windows WebKit trace
+  показал ошибку initial /api/games именно при замене ещё загружаемой страницы.
+  Проверка отсутствия page errors не удалена. Новый hosted run — отдельное
+  доказательство; старые 697/692 browser PASS не означают общий gate PASS.
+
 ## FINAL-30: порядок CI и переносимые проверки
 
 Run 40821319327 запускал Python packaging test до npm ci/build. Suite перенесён
