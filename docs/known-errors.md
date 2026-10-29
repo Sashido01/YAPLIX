@@ -1,3 +1,14 @@
+## Arena with no selected game
+
+Release replay on an empty isolated library reproduced `GET /api/arena?versionId=`
+and `INVALID_STRING` after opening **Комната и QR** or refreshing status. The UI
+now stops before the request, shows «Сначала откройте игру в библиотеке.» and
+scrolls that message into view on compact screens. Browser regression covers an
+empty library at 1440×900 and 390×780 and asserts that no empty `versionId` is
+sent. A local attempt to join a valid room was blocked by this host's proxy
+routing for its private LAN address. The existing selected-game Arena scenario
+remains unchanged; hosted results on the #72 patch are pending.
+
 ## RELEASE-011: «На телефон» при открытии новой версии
 
 PR run 40921598800 на Windows: один phone-version assertion оставался на старой

@@ -455,7 +455,8 @@ async function refreshArenaRoom(silent = false) {
   const st = el('arena-status'), room = el('arena-room-status');
   try {
     const sel = el<HTMLSelectElement>('arena-version');
-    const vid = sel.value || current?.versionId || '';
+    const vid = sel.value || current?.versionId;
+    if (!vid) { st.textContent = 'Сначала откройте игру в библиотеке.'; st.scrollIntoView({ block: 'center' }); return; }
     const data = await arenaFetch('/api/arena?versionId=' + encodeURIComponent(vid));
     const state = data.status as { enabled: boolean; roomId: string; expiresAt: number; url: string };
     el('arena-room').hidden = false;
