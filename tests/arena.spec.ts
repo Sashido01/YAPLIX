@@ -108,11 +108,12 @@ test('Arena room status explains an empty library without requesting an empty ve
   const emptyRequests:string[]=[];
   page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/arena'&&url.searchParams.has('versionId')&&!url.searchParams.get('versionId'))emptyRequests.push(url.href);});
   try{
+    await page.goto(server.origin);
     for(const viewport of [
       {width:320,height:700},{width:360,height:700},{width:390,height:780},
       {width:430,height:700},{width:768,height:1024},{width:1440,height:900},
     ]){
-      await page.setViewportSize(viewport);await page.goto(server.origin);
+      await page.setViewportSize(viewport);
       await page.getByRole('button',{name:'Арена',exact:true}).click();
       await page.getByRole('button',{name:'Комната и QR',exact:true}).click();
       await expect(page.locator('#arena-status')).toHaveText('Сначала откройте игру в библиотеке.');
