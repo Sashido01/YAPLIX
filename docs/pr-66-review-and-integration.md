@@ -1,9 +1,9 @@
 # Review PR #66 — выборочная интеграция редизайна
 
-**PR:** https://github.com/Sashido01/YAPLIX/pull/66  
-**Автор:** @jeanhayl  
-**Head на момент review:** `ae13df974513fcb59604878f9b12ac50367618cd`  
-**Base:** `main` `b6a64abb4e973a49a3372229690a5bf49d5bb8ca`  
+**PR:** https://github.com/Sashido01/YAPLIX/pull/66
+**Автор:** @jeanhayl
+**Head на момент review:** `ae13df974513fcb59604878f9b12ac50367618cd`
+**Base:** `main` `b6a64abb4e973a49a3372229690a5bf49d5bb8ca`
 **Изменения:** 10 файлов, +1443 / -203. Автор написал «Тесты не запускались».
 
 ## Что полезно перенести
