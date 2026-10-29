@@ -18,7 +18,7 @@ verified payload. Устаревшие/удалённые assets в кэше о�
 приёмки, не доказанный запуск игры. `input-works` остаётся NOT_VERIFIED; не
 объявлять FULL_GAMEPLAY_PASS и не отправлять repair из-за отсутствия evidence.
 Исправление связи input→gameplay не завершено; release gate закрыт. Подробности
-в [статусе сдачи](submission-status.md).
+в [техническом статусе](submission-status.md).
 
 # Известные ошибки и восстановление YAPLIX
 

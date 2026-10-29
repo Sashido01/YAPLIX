@@ -2,6 +2,9 @@
 
 ## Начало работы
 
+[Продуктовая презентация](presentation.html) · [Обзор сценария](defense-runbook-2026.md) · [Техническое состояние](submission-status.md)
+
+
 - [README и обзор проекта](../README.md)
 - [Установка Ubuntu portable](../INSTALL.md)
 - [Разработка и локальное обслуживание](development-setup.md)
@@ -27,7 +30,7 @@
 - [Telegram](telegram.md)
 - [Известные ошибки](known-errors.md)
 - [Текущий статус и release readiness](release-status.md)
-- [Демо readiness](defense-readiness.md)
+- [Исторические результаты пользовательских сценариев](defense-readiness.md)
 - [Cross-platform и device boundaries](cross-platform.md)
 - [CI economy](ci-economy.md)
 - [Licensing](licensing.md)

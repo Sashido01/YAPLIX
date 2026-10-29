@@ -4,6 +4,15 @@ import {strictCanvas} from './strict-canvas-fixtures.ts';
 import {canvasGame} from './canvas-fixtures.ts';
 import {observeCanvas,canvasSnapshot,requireCanvas} from '../src/canvas-check.ts';
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Production validator uses Chromium.'));
+test('animated START with no-op input never verifies control or gameplay',async({browser})=>{
+ // Same independently authored negative source as the preserved idle-noop.html.
+ const source=strictCanvas().replace('function act(){','function act(){return;')
+  .replace('resize();\n</script>','resize();function idle(){step=(step+1)%3;draw();requestAnimationFrame(idle);}requestAnimationFrame(idle);\n</script>');
+ const report=await checkFullHtml(browser,source,AbortSignal.timeout(18000));
+ expect(report.checks).toContainEqual({aspect:'input-works',level:'NOT_VERIFIED'});
+ expect(report.checks).toContainEqual({aspect:'gameplay-observed',level:'NOT_VERIFIED'});
+ // This guards classification only; causal input detection remains an open P1.
+});
 test('strict Canvas rejects a visible HTML HUD',async({browser})=>{
  const source=canvasGame(); // Previously accepted visible HTML Start/Move/HUD.
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
