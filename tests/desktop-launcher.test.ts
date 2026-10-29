@@ -92,10 +92,11 @@ test('two independent profiles start concurrently on distinct ports', {timeout:6
  const {setTimeout:delay}=await import('node:timers/promises');
  const base=mkdtempSync(resolve('.local/desktop-parallel-'));
  const portStart=(path:string)=>createHash('sha256').update(path).digest().readUInt32BE(0)%20;
- const first=resolve(base,'profile-one');let second='';
- for(let i=0;i<100;i++){const candidate=resolve(base,'profile-two-'+i);if(portStart(candidate)===portStart(first)){second=candidate;break;}}
- assert.ok(second,'could not make a deterministic same-port fixture');
- const homes=[first,second];
+ // Desktop uses 20 base-port buckets, so 21 unique paths guarantee a collision.
+ const candidates=Array.from({length:21},(_,i)=>resolve(base,'profile-'+i));
+ const seen=new Map<number,string>();let homes:string[]=[];
+ for(const candidate of candidates){const bucket=portStart(candidate),previous=seen.get(bucket);if(previous){homes=[previous,candidate];break;}seen.set(bucket,candidate);}
+ assert.equal(homes.length,2,'could not make a deterministic same-port fixture');
  for(const home of homes){mkdirSync(home,{recursive:true,mode:0o700});writeFileSync(resolve(home,'.env'),'# isolated concurrent desktop test\n',{mode:0o600});}
  const run=(home:string)=>new Promise<{code:number|null;out:string;err:string}>((done)=>{
   const env=desktopEnv(home);
