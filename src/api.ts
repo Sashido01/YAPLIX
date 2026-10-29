@@ -308,7 +308,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
   app.get('/ui/style.css', c => staticFile(c, 'assets/style.css', 'text/css; charset=utf-8'));
   app.get('/arena',c=>{if(policy&&policy.mode!=='local')throw new Fault('ARENA_LOCAL_ONLY',403);c.header('Content-Security-Policy',UI_CSP);return staticFile(c,'assets/arena-host.html','text/html; charset=utf-8',false);});
   app.get('/arena/style.css',c=>staticFile(c,'assets/arena.css','text/css; charset=utf-8',false));
-  for (const file of ['ui', 'access-ui', 'connection-ui','phone-connect-ui','telegram-ui','arena-host-ui']) app.get(`/runtime/${file}.js`, async c => {
+  for (const file of ['ui', 'access-ui', 'connection-ui','phone-connect-ui','telegram-ui','arena-host-ui','lan-setup-ui']) app.get(`/runtime/${file}.js`, async c => {
     try { return await staticFile(c, `build/public/${file}.js`, 'text/javascript; charset=utf-8'); }
     catch { throw new Fault('RUNTIME_BUILD_REQUIRED', 503); }
   });
