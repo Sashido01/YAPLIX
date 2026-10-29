@@ -57,9 +57,23 @@ compact 0/2. Переключения production нет. Repair-сравнени
 
 Typecheck/build, 25 целевых units, 6 desktop lifecycle tests, keyboard/no-op
 regression, повторный create/edit/export и mobile navigation regressions: PASS.
-Полный прогон на стабилизированном commit ожидается. Исторические 578 unit /
+На runtime-кандидате `c7c6dfa` полный unit: **608 PASS, 0 FAIL, 1 platform SKIP**; полный browser прогон выполняется. Ubuntu Lite из этого кандидата: защищённая установка в отдельный профиль, открытие сохранённого Canvas и restart — PASS. Исторические 578 unit /
 638 browser PASS относятся к предыдущей копии, не к текущему commit.
 Gitleaks дерева/diff/new history был PASS перед первым push и повторяется перед
 публикацией обновлений. Hosted Actions отключены владельцем и не считаются PASS.
 
 Полный локальный отчёт: `.local/yaplix-submission-009/REPORT.md`.
+
+## Оставшийся блокер release gate
+
+Независимое review и неизменный локальный пример подтвердили: анимированный
+START с полностью no-op обработчиком управления проходит технический checker
+за счёт изменения пикселей. `input-works`, победа, поражение и Restart остаются
+NOT_VERIFIED, но принятие произвольной игры ещё не доказывает рабочий Start.
+Поэтому merge/release пока не разрешён; успешный конкретный LIVE-сценарий выше
+не распространяется на любой ответ модели. Локальный reproducer:
+`.local/yaplix-submission-009/idle-noop.html`, результат `idle-noop-result.json`.
+Нужна проверка связи ввода с запуском/изменением игры, не новая серия LLM-вызовов.
+
+Навигация по уточнению владельца: только **Создать · Игры · Арена**. Скрытый
+четвёртый пункт удалён; контекстный возврат из редактора сохранён.
