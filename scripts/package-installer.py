@@ -8,6 +8,13 @@ manifest=json.loads((base/'integrity.json').read_text())
 for name,value in manifest.items():
  f=(base/name).resolve()
  if not f.is_relative_to(base) or digest(f)!=value:raise RuntimeError('Base payload integrity mismatch: '+name)
+# A cached payload may predate DEMO removal or the current UI. Never silently
+# publish those assets alongside current runtime overlays; rebuild the payload.
+for name in manifest:
+ if name.startswith('assets/'):
+  source=ROOT/name
+  if not source.is_file() or digest(source)!=manifest[name]:
+   raise RuntimeError('STALE_PAYLOAD_ASSETS: rebuild the reviewed current payload: '+name)
 out=(a.output or ROOT/'.local/install-002/packages').resolve();out.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='pack-',dir=out.parent) as tmp:
  stage=pathlib.Path(tmp);app=stage/'payload';app.mkdir()

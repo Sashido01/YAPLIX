@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(shutil.which("gcc"), "Linux package smoke requires gcc")
 class PackageInstallerTests(unittest.TestCase):
-    def test_ubuntu_package_uses_current_assets_and_excludes_retired_demo_files(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / ".local/yaplix-release-007f") as temporary:
+    def test_ubuntu_package_rejects_stale_assets_and_uses_current_verified_payload(self):
+        with tempfile.TemporaryDirectory(prefix="package-test-", dir=ROOT) as temporary:
             work = Path(temporary)
             payload = work / "payload"
             payload.mkdir()
@@ -35,6 +35,27 @@ class PackageInstallerTests(unittest.TestCase):
             (payload / "integrity.json").write_text(json.dumps(entries), encoding="utf-8")
 
             output = work / "packages"
+            result = subprocess.run(
+                [sys.executable, "scripts/package-installer.py", "--payload", str(payload),
+                 "--mode", "lite", "--output", str(output)],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("STALE_PAYLOAD_ASSETS", result.stderr)
+            # A freshly reviewed payload carries the current assets/runtime.
+            # A stale cache is rejected before any source overlay is packaged.
+            shutil.rmtree(payload)
+            payload.mkdir()
+            entries = {}
+            for name in ["assets/index.html", "src/model-catalog.ts",
+                         "build/src/model-catalog.js", "build/src/server.js",
+                         "build/public/ui.js"]:
+                path = payload / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                contents = (ROOT / name).read_bytes()
+                path.write_bytes(contents)
+                entries[name] = hashlib.sha256(contents).hexdigest()
+            (payload / "integrity.json").write_text(json.dumps(entries), encoding="utf-8")
             result = subprocess.run(
                 [sys.executable, "scripts/package-installer.py", "--payload", str(payload),
                  "--mode", "lite", "--output", str(output)],
