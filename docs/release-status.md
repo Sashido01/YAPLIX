@@ -1,3 +1,21 @@
+# Выпуск YAPLIX MVP — RELEASE-011
+
+Актуальные условия выпуска и границы доказательств: [release policy](submission-status.md#release-policy-mvp--release-011).
+Состояние публикации: [PR #69](https://github.com/Sashido01/YAPLIX/pull/69),
+[main](https://github.com/Sashido01/YAPLIX/tree/main) и GitHub Release artifacts.
+
+MVP объединяет техническую проверку и фактическую LIVE-приёмку конкретного
+сценария create/edit/repair/save/restart/export. NOT_VERIFIED механики не
+объявляются дефектом или подтверждённым gameplay. Универсальный Canvas input-proof
+остаётся открытым известным ограничением [#70](https://github.com/Sashido01/YAPLIX/issues/70).
+Подтверждённые ошибки отдельных версий сохраняют свою классификацию; checker,
+sandbox/CSP и бюджеты не ослаблены. Физические устройства не объявляются PASS.
+
+Ниже сохранены исторические отчёты этапов; их NOT_READY и старые CI-результаты
+относятся к указанным датам/commit, а не автоматически к опубликованному main.
+
+---
+
 # YAPLIX-RELEASE-007F — 28 октября 2026
 
 ## Текущий контрольный статус

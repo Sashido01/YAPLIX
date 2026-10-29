@@ -1,3 +1,9 @@
+> Release policy MVP: технический PASS и наблюдённый gameplay конкретного HTML
+> разделены. NOT_VERIFIED не считается доказанным дефектом; подтверждённый no-op
+> конкретной версии не объявляется gameplay PASS. Универсальный причинный
+> input-proof — открытая [P1 #70](https://github.com/Sashido01/YAPLIX/issues/70),
+> не обязательный universal gameplay gate MVP. [Условия выпуска](submission-status.md#release-policy-mvp--release-011).
+
 # A1.8.6 — Strict Canvas / WebGL game contract
 
 Этот файл описывает текущий контракт, а не подтверждение качества каждой

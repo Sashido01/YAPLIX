@@ -1,6 +1,7 @@
 # Установка YAPLIX: Ubuntu и Windows
 
 [Обзор приложения, скриншоты и создание первой игры](README.md).
+[Готовые установщики и SHA256](https://github.com/Sashido01/YAPLIX/releases/latest).
 
 > **Клонировали код из GitHub?** Выполните `sh install.sh` в Ubuntu или откройте `YAPLIX.cmd` в Windows. Bootstrap подготовит проверенный изолированный Node и передаст пакет общему мастеру. На Ubuntu он выбирает Lite при совместимом Google Chrome, иначе Full с закреплёнными Chromium и headless-shell. Нужен чистый Git-клон. Первый запуск исходников обычно требует сеть для npm и браузера, если их нет в проверенном кэше. Готовые `.run`/`.exe` автономны и не входят в Git.
 
