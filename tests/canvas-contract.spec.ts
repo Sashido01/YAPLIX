@@ -41,6 +41,15 @@ test('full HTML reaches a Start control near the bottom of a Canvas',async({brow
  expect(result.rendering?.profiles).toEqual([320,390,844]);expect(viewports).toEqual(['320x700','390x700','844x390']);
 });
 
+test('full HTML exercises keyboard gameplay inside the opaque iframe after Canvas Start',async()=>{
+ const source='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0}canvas{display:block;width:100vw;height:100vh;touch-action:none}</style></head><body><canvas width="320" height="700"></canvas><script>const c=document.querySelector("canvas"),x=c.getContext("2d");let active=false,position=0;function draw(){x.fillStyle="#15253a";x.fillRect(0,0,320,700);x.fillStyle="#4caf50";x.fillRect(40,200,100,80);x.fillStyle="#ff5252";x.fillRect(active?80+position:200,active?400:300,50,50);x.fillStyle="white";x.font="20px sans-serif";x.fillText(active?"Score "+position:"START",130,350)}c.addEventListener("pointerdown",()=>{if(!active){active=true;draw()}});addEventListener("keydown",e=>{if(active&&e.key==="ArrowRight"){position+=20;draw()}});draw();</script></body></html>';
+ const evidence=await browserCheck(source,AbortSignal.timeout(18000));
+ expect(evidence.checks).toContainEqual({aspect:'html-runs',level:'VERIFIED'});
+ expect(evidence.checks).toContainEqual({aspect:'gameplay-observed',level:'NOT_VERIFIED'});
+ // A Start-only visual change must still fail when gameplay ignores controls.
+ await expect(browserCheck(source.replace('if(active&&e.key===','if(false&&e.key==='),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
+});
+
 test('full HTML reaches a centered Canvas Start control around y=0.58',async({browser})=>{
  const source='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}canvas{display:block;width:100vw;height:100vh;touch-action:none}</style></head><body><canvas width="320" height="700"></canvas><script>const c=document.querySelector("canvas"),x=c.getContext("2d");let active=false,n=0;function draw(){x.fillStyle="#15253a";x.fillRect(0,0,c.width,c.height);if(!active){x.fillStyle="#4caf50";x.fillRect(c.width*.2,c.height*.55,c.width*.6,c.height*.08)}else{x.fillStyle="#ff5252";x.fillRect(40+n*17,120,24,24);x.fillStyle="#4caf50";x.fillRect(100,220,32,32)}}c.addEventListener("pointerdown",e=>{if(!active&&e.clientY/innerHeight>.55&&e.clientY/innerHeight<.63)active=true;else if(active)n++;draw()});draw();</script></body></html>';
  const result=await checkFullHtml(browser,source,AbortSignal.timeout(18000));

@@ -9,7 +9,7 @@ test('strict Canvas rejects a visible HTML HUD',async({browser})=>{
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
 test('strict Canvas leaves an off-center Start behavior unverified when generic taps do not reach it',async({browser})=>{
- const source=strictCanvas().replace('return;}act();});\naddEventListener','return;}if(!active&&!(x>surface.width*.2&&x<surface.width*.8&&y>surface.height*.4&&y<surface.height*.48))return;act();});\naddEventListener');
+ const source=strictCanvas().replace('return;}act();});\naddEventListener','return;}if(!active&&!(x>surface.width*.2&&x<surface.width*.8&&y>surface.height*.4&&y<surface.height*.48))return;act();});\naddEventListener').replace("if(e.key==='ArrowRight'||e.key===' ')act();", "if(active&&(e.key==='ArrowRight'||e.key===' '))act();");
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
 });
 test('strict Canvas reaches a below-midpoint Start without verifying deep gameplay',async({browser})=>{

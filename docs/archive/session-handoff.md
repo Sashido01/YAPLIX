@@ -19,7 +19,7 @@
   воспроизвёл `INVALID_GENERATION_METADATA`, без LLM/SQLite. Код не меняется.
 - Исторические LLM successes — [MICRO-027](micro-027-report.md), [TASK-010](task-010-report.md).
   Новый LIVE в MICRO-036.2 не запускался, inference/repair POST **0**.
-- [Демонстрация 4:30 и матрица 8+7](../demo-readiness.md): saved LLM fallback должен
+- [Демонстрация 4:30 и матрица 8+7](demo-readiness-2026-10-18.md): saved LLM fallback должен
   быть проверен до выступления; выбранного подтверждённого резерва в этом аудите нет.
 - PR [#34](https://github.com/Sashido01/YAPLIX/pull/34) и
   [#37](https://github.com/Sashido01/YAPLIX/pull/37) — OPEN Draft, не изменялись.

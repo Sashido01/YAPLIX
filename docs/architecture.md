@@ -136,7 +136,7 @@ Full HTML проверяет touch без keyboard fallback; hit-test избег
 Landscape отклоняет лишь доказанно недоступные ранее наблюдавшиеся controls без
 реальной прокрутки (`BROWSER_CONTROLS_UNREACHABLE`), не все неизвестные состояния.
 Историческая проблема несовместимости профилей `[320,390,844]` с parseArtifact
-зафиксирована в [MICRO-036.2 audit](micro-036-2-docs-audit.md#блокер-контракта-full-html);
+зафиксирована в [MICRO-036.2 audit](archive/micro-036-2-docs-audit.md#блокер-контракта-full-html);
 она не является текущим статусом этого checkout. Актуальные repair rules:
 [game validation](game-validation.md).
 
@@ -147,7 +147,7 @@ Landscape отклоняет лишь доказанно недоступные 
 
 Analytics доступна только играм с добровольным event bridge; базовая генерация
 его не требует. Встроенной authored gallery нет. Экспериментальный orchestrator не интегрируется в этот core.
-[Результаты и ограничения MICRO-023](micro-023-report.md).
+[Результаты и ограничения MICRO-023](archive/micro-023-report.md).
 
 ## Экспериментальный orchestrator (TASK-013, architecture B)
 
@@ -256,8 +256,8 @@ RNG/таймерам/победе или вызова игровых функц�
 неизменённые HTML и metadata TASK-016; никакого LLM dispatch. Результаты,
 action/sample timelines и PNG пишутся в новый `.local/task-017/<timestamp>/`.
 Для clean clone доступны controlled tests; исходные LIVE HTML локальны.
-Реальные результаты и пределы: [TASK-017 report](task-017-report.md),
-[переносимое evidence](task-017-evidence.json). Решение — ITERATE.
+Реальные результаты и пределы: [TASK-017 report](archive/task-017-report.md),
+[переносимое evidence](archive/task-017-evidence.json). Решение — ITERATE.
 
 ## Runtime и доступ
 
@@ -286,7 +286,7 @@ LAN IPv4. Default TCP 52604, override `YAPLIX_PHONE_PORT` из локально�
 random fallback. Owner API на этом listener отсутствует. TTL 30 минут, fragment
 → bounded POST → HttpOnly/SameSite cookie; refresh отзывает старый token/cookie,
 disable/shutdown закрывают listener. Firewall автоматически не меняется.
-[Owner-confirmed Android/Brave scope и пределы provenance](micro-036-stable-phone-port.md#micro-0362--физическая-приёмка-подтверждение-владельца).
+[Owner-confirmed Android/Brave scope и пределы provenance](archive/micro-036-stable-phone-port.md#micro-0362--физическая-приёмка-подтверждение-владельца).
 
 ## Telegram и shares
 

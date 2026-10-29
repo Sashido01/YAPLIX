@@ -1,40 +1,65 @@
 # Статус сдачи YAPLIX — 29 октября 2026
 
-**Product status: PARTIAL / NOT_READY. Release merge запрещён до приёмки.**
+**Product status: PARTIAL / release gate выполняется.**
+[Draft PR #69](https://github.com/Sashido01/YAPLIX/pull/69), Issue #68.
+Main остаётся `b6a64abb`; merge не выполнен.
 
-Интеграционная ветка `codex/submission-009` объединяет точный allowlist-снимок
-локального RELEASE-007F с `origin/main` `b6a64abb`. Основной checkout
-`codex/arena-mvp @ 78492bf`, его индекс и пользовательские данные сохранены.
-Снимок исключает `.env`, `.local`, SQLite, приватные HTML и личный PDF.
+## Сохранность и интеграция
 
-## Проверено на текущем интеграционном дереве
+Точный allowlist-снимок `15c6393` опубликован отдельно. Исходный checkout
+`codex/arena-mvp @ 78492bf`, его индекс, SQLite и личные файлы сохранены.
+Интеграция ведётся в отдельном worktree; installer/Windows CI из main сохранены.
+Палитра PR #66 от jeanhayl выборочно адаптирована; process/lock/install changes
+из этого PR не переносились. Материалы PR #67 интегрированы и обновлены.
 
-- Typecheck и build: PASS (Node 24.18.0).
-- Windows installer CI и workflow из main сохранены.
-- Секреты проверяются по точному дереву, diff и новым коммитам перед push.
-- Полный unit/browser и реальная пользовательская приёмка на интеграции ещё
-  не выполнены. Прошлые 578 unit / 638 browser PASS относятся к предыдущей
-  изолированной копии и не являются PASS этого commit.
-- Hosted Actions отключены владельцем; Windows native и физические мобильные
-  устройства: NOT_VERIFIED.
+## Подтверждённый LIVE путь на отдельной SQLite
 
-## Генерация
+- Через настоящий UI выбран Ollama Cloud `gemma4:31b` и создана новая аркада:
+  2 POST, включая 1 automatic same-provider repair; durable job completed.
+- Игра открыта из Library. Пользовательский edit цвета корабля выполнен через UI:
+  1 POST, durable job completed, предыдущая версия сохранена.
+- Сервер штатно остановлен и запущен с той же тестовой SQLite: integrity `ok`,
+  SHA всех трёх сохранённых версий совпадают с записями до restart.
+- Export изменённой версии: 11 171 bytes; SHA256
+  `80e39de1a6da0fc4d7683a51ee65092955e3dbbcdb3097d11a79da18b698580a`
+  совпал с SQLite и HTTP заголовком.
+- Offline Chromium на этом LIVE export наблюдал клавиатурное и эмулированное
+  сенсорное движение, рост счёта и естественный Game Over без JS exceptions
+  и внешних запросов. В отдельном контролируемом browser-clock/seed прогоне того же неизменного
+  HTML наблюдались ROUND COMPLETE → уровень 2 → GAME OVER → RESTART
+  со счётом 0 / уровнем 1. Это branch evidence, а не физическое устройство
+  или гарантия качества любой сгенерированной игры.
+- Физические Android/iOS/Telegram и Windows native: NOT_VERIFIED.
 
-Последняя согласованная прямая LIVE-серия Ollama Cloud `gemma4:31b`:
-5 жанров, 8 POST, 4 bounded repair, 0/5 accepted, 0/4 successful repair,
-0 неизвестных исходов. Итог: overlap ×2, clipping ×1, activity unverified ×2.
-В предыдущей durable-серии точный replay сохранённого HTML дал 3/5 технических
-PASS. Это не подтверждает глубокую игровую прогрессию и сохранение durable jobs.
+## Диагноз генерации и A/B
 
-Следующие шаги: проверить provenance и неизменный HTML, устранить причины
-неподтверждённого Start/activity, сократить prompt, выполнить ограниченный A/B
-и один полный UI create/edit/Library/restart/export сценарий. NOT_VERIFIED
-не считается доказанной неисправностью; security/CSP/sandbox сохраняются.
+Восстановлено SHA-происхождение пяти checkpoint предыдущей durable-серии.
+Точный replay в интеграции дал 3/5 технических PASS. Snake действительно не
+помещается при 844×390; Racing имеет значимое clipping текста при том же размере.
+NOT_VERIFIED не трактуется как доказанная неисправность.
 
-## Интеграция и публикация
+Исправлена подтверждённая ошибка checker: после Canvas Start клавиатурная проба
+выполнялась только standalone, а iframe отклонялся раньше. Теперь при недостающей
+activity внутри обоих режимов выполняются максимум две адресные стрелки. No-op
+контроль всё ещё отклоняется; глубокая игровая проверка не объявляется полной.
 
-Draft PR связан с [Issue #68](https://github.com/Sashido01/YAPLIX/issues/68).
-Draft сохраняет разработку для ревью и не является релизом. PR #66 пока не
-интегрирован; установщик и управление процессами из него не переносились.
-Материалы PR #67 ожидают выборочной интеграции и обновления доказательств.
-Локальный подробный отчёт: `.local/yaplix-submission-009/REPORT.md`.
+Последняя серия SUBMISSION-008 имела 8 POST и **3 repair**, а не 4. Отклонённые
+ответы её прямой driver не сохранил — эти конкретные HTML нельзя воспроизвести.
+Статистика v2 исключена из-за двух одновременных запусков, писавших в общую папку.
+
+Версии prompt: production `long-v1`, экспериментальная `compact-v2` с раздельными
+экранами состояний. Ограниченный A/B, одинаковые Snake/Arcade: first-pass long 1/2,
+compact 0/2. Переключения production нет. Repair-сравнение НЕВАЛИДНО: обёртка
+тестового транспорта не передала observesDispatch и дважды считала budget.
+На wire ушли 4 POST, все 4 ответа сохранены с SHA. Повтор A/B не запускался.
+
+## Проверки и границы
+
+Typecheck/build, 25 целевых units, 6 desktop lifecycle tests, keyboard/no-op
+regression, повторный create/edit/export и mobile navigation regressions: PASS.
+Полный прогон на стабилизированном commit ожидается. Исторические 578 unit /
+638 browser PASS относятся к предыдущей копии, не к текущему commit.
+Gitleaks дерева/diff/new history был PASS перед первым push и повторяется перед
+публикацией обновлений. Hosted Actions отключены владельцем и не считаются PASS.
+
+Полный локальный отчёт: `.local/yaplix-submission-009/REPORT.md`.

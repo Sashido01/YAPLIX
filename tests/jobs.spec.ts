@@ -79,6 +79,21 @@ test('saved-game edit sends one complete-source job, preserves the parent, and t
  }finally{release();await jobs.close();store.close();}
 });
 
+test('second creation restores Create availability while the prior game stays open',async({page,context,baseURL})=>{
+ const store=new Store(':memory:');
+ const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async()=>({code:html,model:'gemma4:31b'})}],{repairs:0,check:async()=>({profiles:[320,390,844],offline:true,errors:0,scope:'full-html',rendering:{contract:'canvas-webgl-strict-v2',contexts:['2d'],profiles:[320,390,844]}})});
+ const jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
+ await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+ try{
+  await page.goto('/');await createAndOpen(page,'Создать игру',false);
+  const first=await page.locator('#versions').inputValue();
+  await page.locator('#prompt').fill('A second independent game');await page.locator('#generate').click();
+  await expect.poll(()=>jobs.list('owner').filter(j=>j.stage==='completed').length).toBe(2);
+  await expect(page.locator('#generate')).toBeEnabled();
+  expect(await page.locator('#versions').inputValue()).toBe(first);
+ }finally{await jobs.close();store.close();}
+});
+
 test('MICRO-023 create, edit with Ollama, old version, reopen and export (mocked inference)',async({page,context,baseURL},info)=>{
  test.setTimeout(30000);
  const store=new Store(':memory:');const messages:any[]=[];
@@ -129,7 +144,7 @@ test('controlled LIVE worker runs while touch round continues; completed checked
   expect(jobs.list('owner').map(job=>job.jobId)).toContain(created.jobId);
   const listed=await app.request('/api/jobs');expect(listed.status).toBe(200);
   expect((await listed.json()).jobs.map((job:any)=>job.jobId)).toContain(created.jobId);
-  await page.locator('#create-more > summary').click();await page.locator('#job-info > summary').click();await expect(page.locator('#job-status')).toContainText('Генерация');await expect(page.locator('#versions')).toBeEnabled();await page.locator('#create-more > summary').click();await page.getByRole('button',{name:'К игре',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).tap();await expect(game.locator('#score')).toHaveText('2');release();await expect(page.locator('#job-toast-open')).toBeVisible({timeout:16000});await expect(game.locator('#score')).toHaveText('2');expect(await realm!.evaluate(node=>node===document.querySelector('iframe'))).toBe(true);await expect(page.locator('#export')).toHaveAttribute('href','/api/versions/'+previous.versionId+'/export');const completed=jobs.list('owner')[0];expect(completed.stage).toBe('completed');expect(store.getVersion(completed.versionId!).validationStatus).toBe('passed');}finally{release();await jobs.close();store.close();}
+  await page.locator('#create-more > summary').click();await page.locator('#job-info > summary').click();await expect(page.locator('#job-status')).toContainText('Генерация');await expect(page.locator('#versions')).toBeEnabled();await page.locator('#create-more > summary').click();await page.getByRole('button',{name:'Игровой экран',exact:true}).click();await game.getByRole('button',{name:'Point',exact:true}).tap();await expect(game.locator('#score')).toHaveText('2');release();await expect(page.locator('#job-toast-open')).toBeVisible({timeout:16000});await expect(game.locator('#score')).toHaveText('2');expect(await realm!.evaluate(node=>node===document.querySelector('iframe'))).toBe(true);await expect(page.locator('#export')).toHaveAttribute('href','/api/versions/'+previous.versionId+'/export');const completed=jobs.list('owner')[0];expect(completed.stage).toBe('completed');expect(store.getVersion(completed.versionId!).validationStatus).toBe('passed');}finally{release();await jobs.close();store.close();}
 });
 test('background completion preserves live round, iframe realm, touch, navigation, single toast and durable job',async({page,context,isMobile,baseURL})=>{
   test.setTimeout(60000);const store=new Store(':memory:');let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);

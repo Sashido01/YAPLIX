@@ -10,7 +10,7 @@
 > sandbox origin `null`. Следовательно, старый вывод об источнике в game HTML
 > отменён evidence новой проверки. Checker PASS при сохранении всё равно не
 > подтверждает механику; gameplay и варианты доказательств перечислены в
-> [release report](../.local/yaplix-release-006/REPORT.md).
+> release report (локально: `../.local/yaplix-release-006/REPORT.md`).
 
 Ollama Cloud edit и последующий repair выполнены через UI. Job
 `fb42b696-9938-4a14-bd89-641f6f38f692` сохранил версию
@@ -34,7 +34,7 @@ Ollama Cloud генерации, один same-model repair и перезапу�
 `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` и `BROWSER_TIMEOUT_RENDER`. Готовой версии
 не сохранено; Technical PASS и Gameplay PASS отсутствуют. Все job traces, private
 snapshots и отчёт находятся в изолированном локальном каталоге; см.
-[YAPLIX-FINAL-001 report](../.local/yaplix-final-001/REPORT.md). Счётчик включает
+YAPLIX-FINAL-001 report (локально: `../.local/yaplix-final-001/REPORT.md`). Счётчик включает
 четыре POST текущей задачи и три trace-confirmed POST предыдущих YAPLIX этапов.
 
 Документ описывает локальный checkout на 27 октября 2026 года. Job и операции
@@ -46,7 +46,7 @@ snapshots и отчёт находятся в изолированном лок�
 Четыре trace от 27 октября показывают разные точки отказа: два Ollama ответа
 дошли до HTML/browser gate, OpenRouter остановился на ограничении размера ответа,
 ChatGPT дошёл до Canvas activity gate. Snapshots, hashes и счётчики POST
-перечислены в локальном [отчёте](../.local/yaplix-generation-recovery-001/REPORT.md).
+перечислены в локальном отчёте (локально: `../.local/yaplix-generation-recovery-001/REPORT.md`).
 У ChatGPT trace не содержит wire-dispatch/HTTP-событий, поэтому число POST по
 этой записи `NOT_VERIFIED`; не выводите его из длительности задания. API текущего
 `:3000` требует авторизацию (`/api/jobs` и `/api/diagnostics` вернули 401), а
@@ -63,7 +63,7 @@ Health на :3000 сообщает commit `f681b1359f6a0b8ecb9f2c49a88ac72b75bde
 Текущий ChatGPT transport пишет dispatch перед единственным POST и HTTP status
 при получении ответа. Это metadata-only: без OAuth, headers, body или prompt.
 Synthetic test подтверждает counters; старые traces не изменяются. См. локальный
-[Recovery-002 report](../.local/yaplix-generation-recovery-002/REPORT.md).
+Recovery-002 report (локально: `../.local/yaplix-generation-recovery-002/REPORT.md`).
 
 ## Операционный trace
 

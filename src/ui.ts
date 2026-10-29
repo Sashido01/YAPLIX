@@ -169,7 +169,7 @@ function setGenState(state: GenState) {
     const hint = document.getElementById('mobile-empty-hint');
     if (hint instanceof HTMLElement) hint.hidden = Boolean(frame) || innerWidth > 760;
     if (genTimer) { clearInterval(genTimer); genTimer = undefined; }
-    syncEditorAvailability();return;
+    syncCreateAvailability();syncEditorAvailability();return;
   }
   const frame = game.querySelector('iframe');
   if (state === 'working') {
@@ -195,7 +195,7 @@ function setGenState(state: GenState) {
     }, 500);
   }
   if (state !== 'working' && genTimer) { clearInterval(genTimer); genTimer = undefined; }
-  syncEditorAvailability();
+  syncCreateAvailability();syncEditorAvailability();
 }
 function remember(version: GameVersion) { versions.delete(version.versionId); versions.set(version.versionId,version); if(versions.size>3)versions.delete(versions.keys().next().value!); }
 async function readVersion(id:string,signal?:AbortSignal):Promise<GameVersion> { const cached=versions.get(id); if(cached)return cached; const version=await api('/api/versions/'+id,undefined,undefined,signal); remember(version); return version; }
@@ -252,7 +252,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   if(version.generation)el('provenance').textContent+=' · техническая проверка пройдена · '+(version.generation.browser.checks?.some(c=>c.aspect==='gameplay-observed'&&c.level==='VERIFIED')?'gameplay проверен частично':'механика не проверена')+'; победа и поражение не подтверждены';
   const restart=version.generation?.browser.checks?.find(c=>c.aspect==='restart-works');
   if(restart?.level==='VERIFIED')el('provenance').textContent+=' · повторный запуск проверен';
-  el<HTMLButtonElement>('phone-game').disabled=false;el<HTMLButtonElement>('edit-game').disabled=false;el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;el<HTMLButtonElement>('view-game').hidden=false;
+  el<HTMLButtonElement>('phone-game').disabled=false;el<HTMLButtonElement>('edit-game').disabled=false;el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;
   const download=el<HTMLAnchorElement>('export');download.href=`/api/versions/${version.versionId}/export`;download.removeAttribute('aria-disabled');
   const select=el<HTMLSelectElement>('versions');select.replaceChildren();select.disabled=busy;
   history.versions.forEach((v:Omit<GameVersion,'html'>,i:number)=>{const option=document.createElement('option');option.value=v.versionId;option.textContent=`Версия ${i+1} · ${new Date(v.createdAt).toLocaleString()}`;option.selected=v.versionId===version.versionId;select.append(option);});
@@ -275,7 +275,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   });
 }
 const providerSelect=el<HTMLSelectElement>('provider-mode'),editProviderSelect=el<HTMLSelectElement>('edit-provider-mode');
-function syncCreateAvailability(){const configured=providerConfiguration.has(providerSelect.value)?providerConfiguration.get(providerSelect.value)!:null;el<HTMLButtonElement>('generate').disabled=busy||configured===false||el<HTMLTextAreaElement>('prompt').value.trim().length<2;}
+function syncCreateAvailability(){const configured=providerConfiguration.has(providerSelect.value)?providerConfiguration.get(providerSelect.value)!:null;el<HTMLButtonElement>('generate').disabled=busy||genState==='working'||configured===false||el<HTMLTextAreaElement>('prompt').value.trim().length<2;}
 for(const select of [providerSelect,editProviderSelect])for(const option of select.options){const item=modelForMode(option.value);if(item)option.textContent=item.label;}
 let restoredMode='ollama-cloud';try{const saved=localStorage.getItem('yaplix-provider-mode');if(saved&&modelForMode(saved))restoredMode=saved;}catch{}
 providerSelect.value=restoredMode;
@@ -393,7 +393,7 @@ async function submitJob(buttonId:string,text:string,previousVersionId?:string){
     pendingSubmitKey = null;
     if (!(action?.signal.aborted)) { genStartedAt = 0; setGenState('idle'); el('job-status').textContent = 'Задание не создано: сервер недоступен или отклонил запрос.'; }
   }
-  finally{submitting.delete(buttonId);syncEditorAvailability();}
+  finally{submitting.delete(buttonId);syncCreateAvailability();syncEditorAvailability();}
 }
 async function cancelTrackedJob(){if(!genCancelJobId)return;await api('/api/jobs/'+genCancelJobId+'/cancel',{});el('gen-stage').textContent='Отменяем задание…';await pollJobs();}
 el('gen-cancel').addEventListener('click',()=>void attempt(cancelTrackedJob));
@@ -531,7 +531,6 @@ el('replay').addEventListener('click',()=>{if(current)void attempt(signal=>play(
 el('versions').addEventListener('change',()=>void attempt(async signal=>show(await readVersion(el<HTMLSelectElement>('versions').value,signal),signal)));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>button.addEventListener('click',()=>{view(button.dataset.view!);}));
 el('focus-game').addEventListener('click',()=>{const active=document.body.classList.toggle('game-focus');el('focus-game').textContent=active?'Обычный экран':'Игровой экран';});
-el('view-game').addEventListener('click',()=>{view('create');document.body.classList.add('game-focus');el('focus-game').textContent='Обычный экран';});
 el<HTMLAnchorElement>('export').addEventListener('click',()=>traceUi('ui.export_opened'));
 let lastViewportTrace='';
 function recordViewport(){const key=innerWidth+'x'+innerHeight;if(key===lastViewportTrace)return;lastViewportTrace=key;traceUi('ui.viewport_changed');}
@@ -633,6 +632,7 @@ function syncGenFromJobs(jobs:JobSummary[]) {
   }
   // Терминал — только по отслеживаемому заданию; чужие задания область не трогают.
   if (tracked && trackedJobId && ['failed','cancelled','needs_attention','completed'].includes(tracked.stage)) {
+    if (tracked.stage === 'completed' && tracked.versionId && genState === 'working') { genStartedAt=0;setGenState('ready'); }
     if (tracked.stage === 'completed' && !tracked.versionId) { trackedJobId = null; genCancelJobId = ''; pendingSubmitKey = null; }
   }
   if (tracked && trackedJobId && ['failed','cancelled','needs_attention'].includes(tracked.stage) && genState !== 'ready') {

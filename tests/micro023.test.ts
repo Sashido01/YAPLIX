@@ -38,6 +38,22 @@ test('opaque game sandbox rejects actual browser storage use but not names in so
   });
 });
 
+test('compact version sends state-specific UI instructions and preserves the complete edit source',async()=>{
+ const seen:Message[][]=[];
+ const route=source('ollama.com',async messages=>{seen.push(structuredClone(messages));return {code:html,model:'gemma4:31b'};});
+ const store=new Store(':memory:');
+ try{
+  const previous=store.save(spec,{html,method:'mock',provider:'authored-test',model:null,generationStatus:'succeeded',validationStatus:'unverified'});
+  const engine=new GenerationEngine([route],{check:evidence,repairs:0,promptVersion:'compact-v2'});
+  await engine.generate({...spec,prompt:'Make the player blue; preserve the rules'},previous);
+  assert.ok(seen[0][0].content.length<GAME_GENERATION_CONTRACT.length*.7);
+  assert.match(seen[0][0].content,/one state at a time/);
+  assert.match(seen[0][0].content,/START.*PLAYING.*ROUND COMPLETE.*NEXT LEVEL.*GAME OVER.*RESTART/s);
+  assert.ok(seen[0][1].content.endsWith(previous.html));
+  assert.equal(store.getVersion(previous.versionId).html,previous.html);
+ }finally{store.close();}
+});
+
 test('default and legacy Auto never dispatch OpenRouter on Ollama failure or missing key',async()=>{
   let cloud=0,router=0;
   const a=source('ollama.com',async()=>{cloud++;throw new ProviderFailure('LLM_AUTH');}),b=source('openrouter',async()=>{router++;return{code:html,model:'cohere/north-mini-code:free'};});

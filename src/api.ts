@@ -22,6 +22,8 @@ import type { PhoneConnection } from './phone.ts';
 import type {ChatGptSession} from './chatgpt.ts';
 import type { ArenaConnection } from './arena.ts';
 import type {LanSetup} from './lan-setup.ts';
+import {localArenaHtml,prepareLocalArena,arenaPreparationPrompt} from './arena-prepare.ts';
+import {arenaMetric,arenaGoalRequired} from './arena-contract.ts';
 import {OperationTrace} from '../scripts/operation-trace.mjs';
 import {MODEL_CATALOG} from './model-catalog.ts';
 
@@ -171,7 +173,7 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     return c.json(await manager.enable(uuid(body.versionId), body.address as string | undefined));
   });
   app.delete('/api/phone', async c => { object(await json(c.req.raw, 32), []); return c.json(await localPhone().disable()); });
-  app.get('/api/phone/qr.svg', c => c.body(localPhone().qr(), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' }));
+  app.get('/api/phone/qr.svg', async c => {const manager=localPhone(),state=manager.status();await lan?.beforeQr(state.enabled&&'url' in state&&state.url?new URL(state.url).hostname:undefined);return c.body(manager.qr(), 200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });});
   const localArena = (c:{req:{url:string;header(name:string):string|undefined}}) => {
     if (!arena || policy && policy.mode!=='local' || c.req.header('X-Yaplix-Telegram-Session') || telegram.user(c.req.header('Cookie'))) throw new Fault('ARENA_LOCAL_ONLY',403);
     return arena;
@@ -180,14 +182,29 @@ export function createApp(store: Store, adapter?: Generator, diagnostics: () => 
     const manager=localArena(c), versionId=uuid(c.req.query('versionId'));
     return c.json({status:manager.status(),rooms:manager.records.rooms(versionId),networks:await manager.networks()});
   });
+  app.get('/api/arena/compatibility/:versionId',c=>{
+    localArena(c);const v=store.getVersion(uuid(c.req.param('versionId')));
+    return c.json({metric:arenaMetric(v.html),localPreparation:localArenaHtml(v.html)!==null,goalRequired:arenaGoalRequired(v.html)});
+  });
+  app.post('/api/arena/prepare',async c=>{
+    localArena(c);
+    const body=object(await json(c.req.raw,2048),['versionId','mode','goal','consent','providerMode','idempotencyKey']);
+    const v=store.getVersion(uuid(body.versionId));
+    if(body.mode==='local')return c.json(prepareLocalArena(store,v.versionId),201);
+    if(body.mode!=='llm'||body.consent!==true)throw new Fault('ARENA_PREPARATION_CONSENT',409);
+    if(!['ollama-cloud','openrouter'].includes(String(body.providerMode)))throw new Fault('PROVIDER_MODE_INVALID');
+    const prompt=arenaPreparationPrompt(body.goal);
+    return c.json(jobManager().create(principal(c.req.header('Cookie')),body.idempotencyKey,{spec:{...v.spec,prompt},mode:'live',providerMode:providerMode(body.providerMode),previousVersionId:v.versionId,telegramConsent:false}),202);
+  });
   app.post('/api/arena',async c=>{
     const manager=localArena(c),body=object(await json(c.req.raw,512),['versionId','address','roomId']);
     if(body.address!==undefined&&typeof body.address!=='string')throw new Fault('HOST_NOT_AVAILABLE');
     assertUserVersion(uuid(body.versionId));
+    await lan?.beforeQr(body.address as string|undefined);
     return c.json(await manager.enable(uuid(body.versionId),body.address as string|undefined,body.roomId===undefined?undefined:uuid(body.roomId)),201);
   });
   app.delete('/api/arena',async c=>{object(await json(c.req.raw,32),[]);return c.json(await localArena(c).disable());});
-  app.get('/api/arena/qr.svg',c=>c.body(localArena(c).qr(),200,{'Content-Type':'image/svg+xml; charset=utf-8'}));
+  app.get('/api/arena/qr.svg',async c=>{const manager=localArena(c),state=manager.status();await lan?.beforeQr(state.enabled&&'url' in state&&state.url?new URL(state.url).hostname:undefined);return c.body(manager.qr(),200,{'Content-Type':'image/svg+xml; charset=utf-8'});});
   app.get('/api/arena/rooms/:roomId',c=>c.json(localArena(c).records.board(uuid(c.req.param('roomId')))));
   const owner=(c:{req:{header(name:string):string|undefined}})=>principal(c.req.header('Cookie'),c.req.header('X-Yaplix-Telegram-Session'));
   const assertUserVersion=(versionId:string)=>{if(store.isSystemAuthoredVersion(versionId))throw new Fault('VERSION_NOT_FOUND',404);return store.getVersion(versionId);};

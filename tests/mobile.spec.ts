@@ -2,6 +2,15 @@ import {test,expect} from '@playwright/test';
 import {html,spec} from './helpers.ts';
 import {prepareSyntheticProviderUI,restoreUnconfiguredUIReadiness} from './ui-jobs-helper.ts';
 
+test('section navigation shows only the selected mobile workspace',async({page})=>{
+ await page.goto('/');
+ await expect(page.locator('nav.navigation button')).toHaveText(['Создать','Игры','Арена']);
+ await page.locator('[data-view="library"]:visible').click();
+ await expect(page.locator('#library')).toBeVisible();await expect(page.locator('#arena')).toBeHidden();
+ await page.locator('[data-view="create"]:visible').click();
+ await expect(page.locator('#create')).toBeVisible();await expect(page.locator('#library')).toBeHidden();await expect(page.locator('#arena')).toBeHidden();
+});
+
 async function createAndOpen(page:import('@playwright/test').Page,button='Создать игру',fixture=true){
   if(fixture)await prepareSyntheticProviderUI(page);
   const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
@@ -103,7 +112,7 @@ test('late active job poll cannot detach the timer or hide an opened game on mob
   if(isMobile)await frame.getByRole('button',{name:'Start',exact:true}).tap();else await frame.getByRole('button',{name:'Start',exact:true}).click();
   if(isMobile)await frame.getByRole('button',{name:'Point',exact:true}).tap();else await frame.getByRole('button',{name:'Point',exact:true}).click();
   await expect(frame.locator('#score')).toHaveText('1');
-  await page.getByRole('button',{name:'К игре',exact:true}).click();
+  await page.getByRole('button',{name:'Игровой экран',exact:true}).click();
   await expect(page.locator('#game iframe')).toBeVisible();
   await page.getByRole('button',{name:'Обычный экран',exact:true}).click();
   await page.getByRole('button',{name:'Игры',exact:true}).click();

@@ -1,4 +1,5 @@
-:root{--bg:#10141B;--surface:#19212B;--surface-2:#232D3B;--ink:#F5F4F0;--dim:#A8B0BE;--amber:#FFD84D;--amber-ink:#191305;--sky:#71D3FF;--line:#2B3646;font-family:"Inter",ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--bg);color-scheme:dark}
+/* Palette adapted from jeanhayl, PR #66 ae13df9; current UI-002 layout retained. */
+:root{--bg:#060914;--surface:#0E162C;--surface-2:#141F3C;--ink:#F2F6FF;--dim:#9EB0D6;--amber:#FFCC00;--amber-ink:#191305;--sky:#00F0FF;--line:rgba(95,135,225,.24);font-family:"Inter",ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--bg);color-scheme:dark}
 *{box-sizing:border-box}body{margin:0;height:100svh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:var(--bg);overscroll-behavior:contain}
 header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-shrink:0}
 header strong{font-size:16px;letter-spacing:.16em;font-weight:850}

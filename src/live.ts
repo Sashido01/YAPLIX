@@ -4,11 +4,12 @@ import { CloudTransport, CloudOutputFailure, ProviderFailure } from './transport
 import type { CodeTransport, Generator, GenerationContext, TokenUsage, ProviderMode } from './transport.ts';
 import { browserCheck, checkerReady, BrowserFailure } from './browser-check.ts';
 import { prepareGenerationMessages, validateDocument } from './generation.ts';
-import type { PromptStyle } from './generation.ts';
+import type { PromptStyle,PromptVersion } from './generation.ts';
 import { prepareDocument } from './validation.ts';
 import {generationTimeouts,LIVE_RESPONSE_TIMEOUT_MS,LIVE_JOB_TIMEOUT_MS} from './generation-timeouts.ts';
 import {createHash} from 'node:crypto';
 import {modelForMode} from './model-catalog.ts';
+import {arenaDeclared,arenaGoalRequired} from './arena-contract.ts';
 
 export class GenerationFailure extends Fault {
   readonly attempts: GenerationAttempt[];
@@ -49,15 +50,17 @@ export class GenerationEngine implements Generator {
   readonly routes: CodeTransport[]; readonly repairLimit:number; private timeout: number; private repairs: number; private active?: AbortController;
   private requestTimeout:number; private cooldowns=new Map<string,{until:number;code:string}>();
   private promptStyle:PromptStyle;
+  private promptVersion:PromptVersion;
   private check: typeof browserCheck;
   private defaultMode:ProviderMode;
   private allowLlmRepair:boolean;
-  constructor(routes: CodeTransport[],options:{timeoutMs?:number;requestTimeoutMs?:number;repairs?:number;allowLlmRepair?:boolean;check?:typeof browserCheck;promptStyle?:PromptStyle;defaultMode?:ProviderMode}={}){
+  constructor(routes: CodeTransport[],options:{timeoutMs?:number;requestTimeoutMs?:number;repairs?:number;allowLlmRepair?:boolean;check?:typeof browserCheck;promptStyle?:PromptStyle;promptVersion?:PromptVersion;defaultMode?:ProviderMode}={}){
     const requestedRepairs=options.repairs??3;
     this.defaultMode=options.defaultMode??'auto';this.routes=routes;this.timeout=options.timeoutMs??LIVE_JOB_TIMEOUT_MS;this.repairs=Math.min(requestedRepairs,3);this.check=options.check??browserCheck;
     if(!routes.length||routes.length>3||!Number.isSafeInteger(this.timeout)||this.timeout<1000||this.timeout>LIVE_JOB_TIMEOUT_MS||!Number.isSafeInteger(requestedRepairs)||requestedRepairs<0||requestedRepairs>3)throw new Fault('INVALID_LLM_CONFIGURATION');
     this.requestTimeout=options.requestTimeoutMs??Math.min(this.timeout,LIVE_RESPONSE_TIMEOUT_MS);
     this.allowLlmRepair=options.allowLlmRepair??!routes.some(r=>r instanceof CloudTransport);this.repairLimit=this.allowLlmRepair?this.repairs:0;
+    this.promptVersion=options.promptVersion??'long-v1';if(!['long-v1','compact-v2'].includes(this.promptVersion))throw new Fault('INVALID_LLM_CONFIGURATION');
     this.promptStyle=options.promptStyle??'direct';if(!['spec','direct','intent'].includes(this.promptStyle))throw new Fault('INVALID_LLM_CONFIGURATION');
     if(!Number.isSafeInteger(this.requestTimeout)||this.requestTimeout<1000||this.requestTimeout>this.timeout||this.requestTimeout>LIVE_RESPONSE_TIMEOUT_MS)throw new Fault('INVALID_LLM_CONFIGURATION');
   }
@@ -103,6 +106,7 @@ export class GenerationEngine implements Generator {
           if(prepared.repair){context?.preserveOriginal?.(raw);context?.validation?.({level:'NOT_VERIFIED',code:prepared.repair,phase:'format',feedback:'Format repair requires full revalidation.'},prepared.repair);}
           context?.trace?.('html.extracted',{outputBytes:Buffer.byteLength(prepared.html),durationMs:Math.round(performance.now()-formatBegan),next:'html-validation',details:{htmlBytes:Buffer.byteLength(prepared.html),htmlSha256:createHash('sha256').update(prepared.html).digest('hex')}});
           const issues=validateDocument(prepared.html);if(issues.length){context?.trace?.('html.validated',{status:'FAIL',errorCode:'LLM_UNSAFE_ARTIFACT',durationMs:Math.round(performance.now()-formatBegan),details:{blockers:issues.slice(0,16)}});throw new BrowserFailure('LLM_UNSAFE_ARTIFACT',issues.join(', '));}
+          if((/\barena\b|арена|общий рейтинг|общего рейтинга/iu.test(spec.prompt)||previous&&arenaDeclared(previous.html))&&!arenaDeclared(prepared.html)&&!arenaGoalRequired(prepared.html))throw new BrowserFailure('ARENA_CONTRACT_REQUIRED','The explicitly requested Arena declaration is missing. Preserve the draft; no automatic repair.');
           context?.trace?.('html.validated',{status:'PASS',durationMs:Math.round(performance.now()-formatBegan),next:'browser'});browserBegan=performance.now();context?.trace?.('browser.started',{status:'STARTED'});
           const evidence=await this.check(prepared.html,controller.signal,{trace:context?.trace,saveSnapshot:context?.saveBrowserSnapshot});
           if(controller.signal.aborted)throw new Fault('REQUEST_CANCELLED',499);
@@ -131,7 +135,7 @@ export class GenerationEngine implements Generator {
               recoveryIssue=error instanceof BrowserFailure?error.code+': '+error.feedback:error instanceof Fault?error.code:'BROWSER_STARTUP_FAILED';
               const confirmedCanvasText=error instanceof Fault&&confirmedCanvasTextFault(error.code,feedback),confirmedCanvasOverlap=error instanceof Fault&&confirmedCanvasUiOverlapFault(error.code,feedback);
               const canvasLayoutFault=error instanceof Fault&&['BROWSER_CANVAS_TEXT_CLIPPED','BROWSER_CANVAS_UI_OVERLAP'].includes(error.code),confirmedCanvasLayout=confirmedCanvasText||confirmedCanvasOverlap;
-              const unsupported=error instanceof Fault&&(/^BROWSER_CANVAS_|^BROWSER_DOM_GAME_WORLD/.test(error.code)&&!confirmedCanvasLayout||error.code==='BROWSER_DOM_GAME_UI'&&route.provider!=='ollama.com');
+              const unsupported=error instanceof Fault&&(error.code==='ARENA_CONTRACT_REQUIRED'||/^BROWSER_CANVAS_|^BROWSER_DOM_GAME_WORLD/.test(error.code)&&!confirmedCanvasLayout||error.code==='BROWSER_DOM_GAME_UI'&&route.provider!=='ollama.com');
               const ambiguous=error instanceof Fault&&/TIMEOUT|SANDBOX|INSTALL_REQUIRED|TEMP_PATH_TOO_LONG|INCONCLUSIVE|^INVALID_GENERATION_METADATA$/.test(error.code);
               const blocker=route.provider==='openrouter'?'PROVIDER_REPAIR_DISABLED':!this.allowLlmRepair?'REPAIR_DISABLED':repairCount>=repairBudget?'REPAIR_BUDGET_EXHAUSTED':repairInFlight?'REPAIR_ALREADY_IN_FLIGHT':ambiguous?'AMBIGUOUS_OR_INFRASTRUCTURE_EVIDENCE':canvasLayoutFault&&!confirmedCanvasLayout?'CANVAS_LAYOUT_NOT_CONFIRMED':unsupported?'UNSUPPORTED_OR_UNVERIFIED_DEFECT':'';
               if(error instanceof Fault&&['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED','BROWSER_TEMP_PATH_TOO_LONG'].includes(error.code))skipRepair(error.code,'BROWSER_INFRASTRUCTURE_FAILURE',repairBudget-repairCount);
@@ -157,7 +161,7 @@ export class GenerationEngine implements Generator {
         if(context?.blockedRoutes?.includes(key)){lastCode='JOB_RESTART_UNCERTAIN';context?.trace?.('repair.eligibility',{status:'SKIPPED',errorCode:lastCode,details:{repairNumber:repairCount+1,repairBudgetRemaining:Math.max(0,repairBudget-repairCount),blockers:['UNKNOWN_POST_OUTCOME']}});continue;}
         if(cooldown&&cooldown.until>Date.now()){lastCode=cooldown.code;if(Number.isFinite(cooldown.until))context?.retryAt?.(cooldown.until);continue;}
         const partialResumable=Boolean(partial)&&!freshIssues.includes(lastCode);
-        const prepared=prepareGenerationMessages(spec,previous,this.promptStyle),messages=prepared.messages,promptJson=JSON.stringify(messages),vocab=prepared.vocabulary;context?.trace?.('provider.selected',{provider:route.provider,requestedModel:route.model});context?.trace?.('prompt.prepared',{status:'PASS',inputBytes:Buffer.byteLength(promptJson),next:'request',details:{promptBytes:Buffer.byteLength(promptJson),promptSha256:createHash('sha256').update(promptJson).digest('hex'),promptStyle:this.promptStyle,requestBudget:context?.maxCalls??4,repairBudget,...vocab}});context?.captureMessages?.(messages);
+        const prepared=prepareGenerationMessages(spec,previous,this.promptStyle,this.promptVersion),messages=prepared.messages,promptJson=JSON.stringify(messages),vocab=prepared.vocabulary;context?.trace?.('provider.selected',{provider:route.provider,requestedModel:route.model});context?.trace?.('prompt.prepared',{status:'PASS',inputBytes:Buffer.byteLength(promptJson),next:'request',details:{promptBytes:Buffer.byteLength(promptJson),promptSha256:createHash('sha256').update(promptJson).digest('hex'),promptStyle:this.promptStyle,requestBudget:context?.maxCalls??4,repairBudget,...vocab}});context?.captureMessages?.(messages);
         if(partial&&partialResumable)messages.push({role:'assistant',content:partial},{role:'user',content:'Recover this draft using the original requirements. Return one complete concise HTML document, not a continuation fragment. Preserve working mechanics. Never concatenate unverified fragments. '+recoveryIssue});
         const checkpointRepair=recoveryRoute===route,requestLimit=checkpointRepair?repairBudget-repairCount:1+repairBudget;
         for(let repair=0;repair<requestLimit;repair++){
@@ -203,7 +207,7 @@ export class GenerationEngine implements Generator {
             const rawBrowserFeedback=error instanceof BrowserFailure?error.feedback:error instanceof Fault?(error as Fault&{feedback?:string}).feedback:undefined;
             const confirmedCanvasText=confirmedCanvasTextFault(lastCode,rawBrowserFeedback),confirmedCanvasOverlap=confirmedCanvasUiOverlapFault(lastCode,rawBrowserFeedback);
             const canvasLayoutFault=['BROWSER_CANVAS_TEXT_CLIPPED','BROWSER_CANVAS_UI_OVERLAP'].includes(lastCode),confirmedCanvasLayout=confirmedCanvasText||confirmedCanvasOverlap;
-            const unsupported=lastCode==='INVALID_GENERATION_METADATA'||/^BROWSER_(?:CANVAS_|WEBGL_CONTEXT_UNAVAILABLE|DOM_GAME_WORLD)/.test(lastCode)&&!confirmedCanvasLayout||lastCode==='BROWSER_DOM_GAME_UI'&&route.provider!=='ollama.com';
+            const unsupported=lastCode==='ARENA_CONTRACT_REQUIRED'||lastCode==='INVALID_GENERATION_METADATA'||/^BROWSER_(?:CANVAS_|WEBGL_CONTEXT_UNAVAILABLE|DOM_GAME_WORLD)/.test(lastCode)&&!confirmedCanvasLayout||lastCode==='BROWSER_DOM_GAME_UI'&&route.provider!=='ollama.com';
             if(unsupported){if(canvasLayoutFault||/^BROWSER_CANVAS_|^BROWSER_DOM_GAME_WORLD/.test(lastCode))context?.trace?.('repair.eligibility',{status:'SKIPPED',errorCode:lastCode,details:{repairNumber:repairCount+1,repairBudgetRemaining:Math.max(0,repairBudget-repairCount),blockers:[canvasLayoutFault?'CANVAS_LAYOUT_NOT_CONFIRMED':'UNSUPPORTED_OR_UNVERIFIED_DEFECT']}});throw new GenerationFailure(lastCode,attempts);}
             if(['BROWSER_SANDBOX_UNAVAILABLE','BROWSER_SANDBOX_CONFIGURATION','BROWSER_INSTALL_REQUIRED','BROWSER_TEMP_PATH_TOO_LONG'].includes(lastCode)){skipRepair(lastCode,'BROWSER_INFRASTRUCTURE_FAILURE',repairBudget-repairCount);throw new GenerationFailure(lastCode,attempts,503);}
             const repairable=error instanceof BrowserFailure||/^(?:BROWSER_|JAVASCRIPT_EXCEPTION|LLM_INVALID_HTML|LLM_UNSAFE_ARTIFACT|LLM_OUTPUT_TRUNCATED)/.test(lastCode);

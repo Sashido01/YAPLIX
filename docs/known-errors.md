@@ -1,5 +1,25 @@
 # Известные ошибки и восстановление YAPLIX
 
+## SUBMISSION-009 — адресный ввод и достоверность evidence
+
+После первого Canvas Start статичная turn-based сцена ожидала клавишу, но checker
+пробовал ArrowRight только в standalone и раньше останавливался в opaque iframe.
+RED воспроизведён на authored Start + keyboard-only board; условная дополнительная
+проверка ArrowRight/ArrowLeft в обоих режимах даёт GREEN, no-op board по-прежнему
+отклоняется. Начальная смена картинки Start сама по себе не достаточна.
+
+В SUBMISSION-008 v3 сохранены только принятые HTML, rejected raw responses потеряны;
+точный replay этих отказов невозможен. Журнал показывает 8 POST / 3 repair, не 4.
+В v2 два параллельных запуска писали в одну папку: summary нельзя связывать с HTML.
+Для новых экспериментов используйте отдельную UUID-папку, durable job, immutable
+response files с SHA и журнал wire dispatch/response. Transport wrapper должен
+сохранять observesDispatch, иначе бюджет одного POST ошибочно считается дважды.
+
+UI regression: второе создание при уже открытой игре оставляло Create disabled;
+terminal job теперь снимает working-state без замены предыдущего player. Mobile
+навигация также применяет скрытие невыбранных разделов вне desktop media query.
+Оба дефекта воспроизведены до исправления и покрыты браузерными regressions.
+
 ### YAPLIX-SUBMISSION-FINAL-008 follow-up — 29 октября 2026
 
 После добавления в production prompt явной компоновки 844×390 чистый повтор
@@ -68,7 +88,7 @@ browser timeout остаются `NOT_VERIFIED` и не расходуют repai
 сохраняет собственную дату, среду и границы доказательства.
 
 Справочник действий по текущему коду. Реальные результаты и ограничения сети
-TASK-008 зафиксированы в [отчёте](task-008-report.md), TASK-010 — в [едином отчёте](task-010-report.md); они не доказывают причину
+TASK-008 зафиксированы в [отчёте](archive/task-008-report.md), TASK-010 — в [едином отчёте](archive/task-010-report.md); они не доказывают причину
 каждого будущего сбоя. Сначала сохраните запрос/черновик и проверьте этап,
 код ошибки, состояние задания и диагностику. Не прикладывайте `.env`, ключи,
 initData или необработанные журналы. [Запуск и обслуживание](../README.md).
@@ -144,9 +164,9 @@ body cap и не повторяйте inference автоматически. Де
 | A1.8: falling-blocks проходит lifecycle, но получает `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` | Наблюдённый probe сначала нажимал Pause и затем проверял движение в паузе. Общий Full HTML probe теперь пропускает служебные Pause/Resume/Restart в игровых действиях и снимает Canvas после каждого реального игрового нажатия, прежде чем противоположное направление отменит изменение. Исходный Orchestrator fixture проходит без изменения правил, Canvas gate и его порогов. |
 | A1.8: нарисованный Canvas имеет нулевые наблюдённые draw-вызовы | В Chromium для `srcdoc` наблюдалась гонка: game inline script получил контекст до init instrumentation. Gate теперь загружает HTML через точный локально fulfilled document URL, до parsing устанавливая observer. Внешнего GET нет; opaque `allow-scripts` и CSP сохранены. Реальные Canvas 2D/WebGL fixtures и production job проверяются offline. Не отключайте gate и не добавляйте instrumentation в сохраняемый HTML. |
 | `BROWSER_CANVAS_REQUIRED`, `BROWSER_CANVAS_LAYOUT`, `BROWSER_CANVAS_RENDER_UNVERIFIED`, `BROWSER_CANVAS_ACTIVITY_UNVERIFIED`, `BROWSER_DOM_GAME_WORLD` | Новая версия не получила достаточного Canvas/WebGL evidence или обнаружен DOM/SVG world. Draft и причина остаются в job, новая версия не сохраняется; автоматического repair/fallback нет. Continue перепроверяет полный checkpoint локально. Исправление требует нового явного запроса владельца. Старые HTML продолжают открываться и экспортироваться. [Границы проверки](canvas-rendering-contract.md). |
-| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
+| MICRO-036.2: Full HTML checker проходит, но artifact отклоняется с INVALID_GENERATION_METADATA | На main 942387eb checker возвращает profiles [320,390,844], parseArtifact принимает только [320,390]. Synthetic metadata-only probe воспроизвёл ACCEPTED для двух и отказ для трёх профилей, без сети/SQLite. Требуется отдельное согласование контракта и checker→save regression; не удалять landscape evidence, не запускать новый inference для диагностики. [Аудит и воспроизведение](archive/micro-036-2-docs-audit.md#блокер-контракта-full-html). Это исторический P0 на `942387e`; в ветке PR #46 исправлен MICRO-036.3 (раздел ниже), без нового inference. |
 | NL-004: обе змейки теряют управление при 844×390 | Сохранённые DEV HTML рассчитывают поле без достаточного учёта высоты, body overflow:hidden блокирует прокрутку. Общее требование landscape не обеспечило адаптацию. MICRO-030 отклоняет подтверждённо недоступные controls; MICRO-031 уточняет общий prompt: три размера, все основные состояния, CSS shrink/reflow либо настоящая прокрутка без глобальной блокировки жестов. Offline tests проверяют подготовку сообщений; улучшение новых игр NOT_VERIFIED до отдельного разрешённого A/B. Исходные HTML не исправляются. [Контракт и границы](nl-game-intent.md#micro-031-доступность-управления). |
-| MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](micro-028n-phone-connectivity.md). |
+| MICRO-028N: QR listener отвечает с ПК, физический телефон не открывает страницу | В наблюдаемой сессии physical Wi-Fi имел Public profile, ActiveStore — enabled Inbound TCP Block для фактического node.exe на любом порту. IP QR/API совпал с bind, ПК получил `/phone` 200. После отдельного разрешения владельца: только этот доверенный Wi-Fi переведён в Private, добавлен Allow для exact Node/IP/interface/TCP port/local subnet. Владелец подтвердил physical Android / Brave: QR/start/touch/progress/restart/rotation/reopen/revoke PASS. Public Block сохранён; packet capture не выполнялся, другие сети не проверены. MICRO-036.1: порт по умолчанию 52604 постоянный при refresh/restart, `YAPLIX_PHONE_PORT` сохраняется в локальном `.env`; `PORT_IN_USE` не вызывает fallback. При смене IP/интерфейса/профиля сначала проверить применимость узкого правила; широкое разрешение Node не добавлять. Self-probe не доказывает LAN reachability. [Диагностика и STOP-GATE](archive/micro-028n-phone-connectivity.md). |
 | MICRO-026: unit `tunnel.test.ts` ждёт TUNNEL_CLOSED, но получает BACKEND_NOT_READY | Один параллельный replay при browser/build нагрузке не успел поднять synthetic backend; полный последовательный `node --test --test-concurrency=1 tests/*.test.ts` прошёл 235/235 без изменения timeouts/production. Это наблюдение локального теста, не доказательство внешнего tunnel отказа. |
 | MICRO-026: старые `production.spec.ts` LIVE fixtures падают при локальных model endpoints | На неизменённом main 37653b9 повторён `FREE_MODEL_REQUIRED`: HTTP-disconnect fixture задаёт CLOUD_BASE_URL=localhost, запрещённый MICRO-019. Старые OLLAMA_BASE_URL fixtures также не настраивают текущий cloud route. В расширенном smoke 7 FAIL; production routes не ослаблять. Использовать актуальные isolated transport unit tests и отдельный runtime smoke; обновление legacy harness требует отдельной задачи. Это пробел тестов, не внешний inference proof. |
 | MICRO-026: `eval` через Playwright evaluate не показывает запрет CSP | DevTools execution может обходить ограничение unsafe-eval. Проверенный способ: отдельный обычный inline script внутри allow-scripts opaque iframe выполняет security probe, Playwright только читает результат. Обычный eval/network заблокированы; parent DOM/storage недоступны. Это проверка браузерной изоляции, не доказательство безопасности произвольной игровой логики. |
@@ -186,7 +206,7 @@ body cap и не повторяйте inference автоматически. Де
 | `LLM_INVALID_RESPONSE` / `LLM_INVALID_HTML` / `LLM_UNSAFE_ARTIFACT` / `BROWSER_*` | Неполный документ/отказ проверки не создаёт passed version. Repair получает исходный prompt, полезный HTML и конкретную ошибку. TASK-010 устраняет потерю raw response при extract failure и уточняет порядок game_started до score events. Для BROWSER_INSTALL_REQUIRED установите checker; sandbox ОС исправляйте по [setup](development-setup.md), не выключайте. Gate startup-input-pause не доказывает весь gameplay. |
 | `JOB_RESTART_UNCERTAIN` | Восстанавливаются original deadline/budget/cooldown и допустимые автоматические действия. Неизвестный potentially billed route исключается; полный checkpoint с совместимым origin может пройти повторную validation без POST. MICRO-023 не допускает автоматическую смену provider. Без ресурсов/бюджета остаётся needs_attention. Ручной Continue запускает новый bounded cycle, не обнуляет lifetime attempts. |
 | `BROWSER_RESUME_NOT_WORKING` | После паузы checker не увидел фактического продолжения. Сделайте видимую Resume/Continue/data-yaplix-resume либо работающий pause toggle; одно изменение надписи не доказывает resume. Общий gate не заменяет полный сценарий gameplay/win/loss. |
-| `game_won` без доказанного порога / rules-aware NOT_VERIFIED | TASK-017: событие само по себе не доказывает победу. Отдельный offline-аудит читает сохранённые rules, сверяет numeric HUD, реальные действия, стабильный видимый terminal и end; для змейки дополнительно сверяет пиксельные контакты головы с яблоками. Unknown/compound rule, исходно неоднозначный/конфликтный target, отсутствие безопасного пути или исчерпание бюджета остаются NOT_VERIFIED; изменение уже установленной цели — FAILED. HTML и очки не подменяются. См. [результаты и evidence](task-017-report.md). |
+| `game_won` без доказанного порога / rules-aware NOT_VERIFIED | TASK-017: событие само по себе не доказывает победу. Отдельный offline-аудит читает сохранённые rules, сверяет numeric HUD, реальные действия, стабильный видимый terminal и end; для змейки дополнительно сверяет пиксельные контакты головы с яблоками. Unknown/compound rule, исходно неоднозначный/конфликтный target, отсутствие безопасного пути или исчерпание бюджета остаются NOT_VERIFIED; изменение уже установленной цели — FAILED. HTML и очки не подменяются. См. [результаты и evidence](archive/task-017-report.md). |
 | TASK-016 LIVE-тетрис не падает и не реагирует на Drop | Подтверждено TASK-017: 30 s, score 0/200, фигура остаётся в строках 0–1 после 41 Drop при работающем горизонтальном вводе. В исходной логике секунды `dt` сравниваются с `800`, а Drop меняет неиспользуемое `piece.dy`. Это дефект артефакта, не cloud/network timeout и не повод увеличить generation timeout. Исправление генерации не выполнялось в TASK-017; победа остаётся NOT_VERIFIED. |
 | `JOB_QUEUE_FULL` / `RATE_LIMIT` | Один worker, до 20 pending глобально и 3 на владельца при creation/continue. LIVE creation при настроенном generator: 6/min owner, 12/min global. Отдельно такие же лимиты фактических provider dispatch, включая repair/Continue. Подождите завершения/отмените своё ненужное задание. Cancel не удаляет запрос и checkpoint. |
 | `JOB_WORKER_BUSY` | После successful bind lease защищает одну DB от второго backend, в том числе на другом порте. Закройте только свой writer штатно. После crash подтверждённо отсутствующий PID позволяет restart сразу; живой/непроверяемый PID сохраняет lease до 60 s. Чужой процесс/lease не удаляйте, игры и записанные checkpoints сохраните. |
@@ -199,7 +219,7 @@ body cap и не повторяйте inference автоматически. Де
 | Mini App недоступна / нет HTTPS | Текстовый bot и HTTPS Mini App — разные каналы. Loopback/LAN не заменяют публичный HTTPS. Меню/кнопки публикуются только для подтверждённого текущего экземпляра; при недоступном Quick Tunnel используйте отдельно подготовленный защищённый [HTTPS host](telegram.md), не anonymous LLM endpoint. |
 | `SCHEMA_INVALID` / `SCHEMA_TOO_NEW` / `BACKUP_*` | Не пересоздавайте и не удаляйте базу. Остановите свой writer, сохраните DB/WAL/SHM и protective `before-v2-*` snapshots. Неизвестная схема/неисправная копия блокируют запуск. Restore выполняйте только из проверенной копии по [setup](development-setup.md). |
 | Hosted repository-checks падает на тяжёлых browser-тестах | Windows shared runners близки к 20-минутному лимиту job'а: полный browser suite ~13.5 m суммарно с setup и unit-тестами превышал бюджет (TASK-013: три прогона подряд — упавшие тесты каждый раз разные, затем step cancelled при пройденных 218 тестах). Теперь budget 30 m. Медленный runner не доказывает дефект кода: сначала проверьте, совпадает ли тест между прогонами и прошёл ли тот же коммит в другой раз. MICRO-018 сохраняет suite для FULL, но не устанавливает browsers для docs-only; [policy и ограничения](ci-economy.md). |
-| Actions быстро расходует квоту, timing API показывает нулевые billable | MICRO-018: у main run 38868311721 timing API вернул `total_ms:0` при 21 min workflow wall time. Это не нулевой счёт: используйте job started/completed timestamps, отдельно округляйте каждый job вверх и подписывайте оценку, а не billable факт. Billing GET без user scope вернул 404; остаток 189 min из старого письма не подтверждён. MICRO-019 владелец временно выключил repository Actions до 29 октября 2026; отсутствие run не PASS. Dynamic Dependabot workflow не отключается отдельно (422), repository actions/permissions enabled:false — authoritative state. Восстановление только по команде владельца: [порядок](ci-economy.md). Scopes/тариф автоматически не меняются. [Baseline](micro-018-report.md). |
+| Actions быстро расходует квоту, timing API показывает нулевые billable | MICRO-018: у main run 38868311721 timing API вернул `total_ms:0` при 21 min workflow wall time. Это не нулевой счёт: используйте job started/completed timestamps, отдельно округляйте каждый job вверх и подписывайте оценку, а не billable факт. Billing GET без user scope вернул 404; остаток 189 min из старого письма не подтверждён. MICRO-019 владелец временно выключил repository Actions до 29 октября 2026; отсутствие run не PASS. Dynamic Dependabot workflow не отключается отдельно (422), repository actions/permissions enabled:false — authoritative state. Восстановление только по команде владельца: [порядок](ci-economy.md). Scopes/тариф автоматически не меняются. [Baseline](archive/micro-018-report.md). |
 | main a902343: Windows browser suite красный после merge PR 23 | Run 38868311721: jobs background/offline test исчерпал 20 s при ожидании Start после reload; unresponsive gameplay вернул правильный timeout verdict, но wall time 24881 ms превысил assertion 22000 ms. Это два наблюдаемых отказа; точная причина race/нагрузки и remedy не подтверждены. MICRO-018 не отключает эти тесты, не повышает таймауты и не добавляет retries. Локальный PASS не заменяет новый hosted FULL. |
 | TASK-017 unresponsive-fixture возвращает NOT_VERIFIED вместо watchdog FAILED в CI | Ubuntu run 38861148019 закончился за 2.0 s до ввода; Windows run 38862850604 показал ту же проблему при 6 s (Start tap 2.58 s, setup/baseline съели drive budget). Активный rules-aware budget теперь начинается после настоящего `game_started`; общий hard watchdog budget + 12 s по-прежнему включает startup. Fixture имеет 6 s и требует `BROWSER_GAMEPLAY_TIMEOUT`; отдельная delayed-Start регрессия с тем же 6 s budget проверяет игру после анимированного Start. Generation/LIVE audit budgets не меняются. |
 | Gameplay checker сообщает FAILED при настоящем terminal overlay между наблюдением и FIRE/Pause | Windows trace run 38862850604: змейка закончила run, пока Playwright проверял actionability; `#yapOverlay` перехватил FIRE. Pending click отменяется только при наблюдаемом terminal event, затем обычный независимый proof всё равно сверяет цель/HUD/screen/end. Клик сквозь overlay и изменение состояния запрещены; другие click errors не скрываются. |
@@ -254,7 +274,7 @@ body cap и не повторяйте inference автоматически. Де
   Программный scrollIntoView не доказывает доступность: он умеет прокручивать hidden.
 - Сохранённые игры не исправлялись; булочная по-прежнему проходит техническую
   проверку. Это не доказательство gameplay/win или физических Android/iOS.
-  Детали и границы: [MICRO-030](micro-030-report.md).
+  Детали и границы: [MICRO-030](archive/micro-030-report.md).
 
 ## MICRO-036.3: Full HTML прошёл checker, но не сохраняется
 
@@ -326,7 +346,7 @@ body cap и не повторяйте inference автоматически. Де
   HTTP/SSE-сервером, проверяют max POST 1,
   отсутствие refresh/retry и утечек, включая 401/429/5xx/timeout/expired token.
   HTTP200 или SSE без completed + text не дают PASS. Реальный probe не запускался.
-  [CLI proof и версия Gitleaks](micro-029-chatgpt-feasibility.md#micro-0293-финальная-offline-подготовка-cli).
+  [CLI proof и версия Gitleaks](archive/micro-029-chatgpt-feasibility.md#micro-0293-финальная-offline-подготовка-cli).
 
 - MICRO-032.1: `SIWC_OUTPUT_INVALID` при HTTP200/sseObserved true прежде возникал
   в completed-ветке при пустом или >8192 тексте, до чтения usage. Offline
@@ -335,7 +355,7 @@ body cap и не повторяйте inference автоматически. Де
   сохраняются до проверки текста; пустой completed имеет отдельный
   SIWC_COMPLETED_WITHOUT_TEXT. Причина конкретного ответа владельца NOT_VERIFIED.
   Диагностика содержит только counts/status/codes/length/bytes/usage, без текста.
-  Реальный probe не повторять без нового разрешения. [Разбор](micro-029-chatgpt-feasibility.md#micro-0321-пустой-результат-и-безопасная-диагностика).
+  Реальный probe не повторять без нового разрешения. [Разбор](archive/micro-029-chatgpt-feasibility.md#micro-0321-пустой-результат-и-безопасная-диагностика).
 
 - MICRO-029.2 / MICRO-032: владелец сообщил `SIWC_SSE_REQUIRED`, HTTP200,
   Content-Type UNKNOWN. Прежний header-only guard локально воспроизвёл отказ на
@@ -344,14 +364,14 @@ body cap и не повторяйте inference автоматически. Де
   `responseMediaType`/`sseObserved`. Причина реального HTTP200 не установлена.
   Только `gpt-6.1-sol` из свежего видимого каталога, reasoning medium; при отсутствии
   `SIWC_PROBE_MODEL_UNAVAILABLE`, POST 0, без подмены. Повторный LIVE probe требует
-  нового разрешения. [Контракт и границы](micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
+  нового разрешения. [Контракт и границы](archive/micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
 
 - MICRO-032: HTTP 200 или output delta без `response.completed` не доказывают
   inference. `--probe` возвращает PARTIAL при `SIWC_STREAM_INTERRUPTED`,
   `SIWC_INFERENCE_INCOMPLETE`, `SIWC_USAGE_LIMIT`/`SIWC_USAGE_UNAVAILABLE` и timeout;
   автоматического повторного POST нет. Это проверено offline с синтетическим
   OpenAI HTTP, не реальным аккаунтом. После PARTIAL не перезапускать CLI без
-  нового бюджета. [Ручной probe](micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
+  нового бюджета. [Ручной probe](archive/micro-029-chatgpt-feasibility.md#micro-032-owner-operated-inference-probe-19102026).
 
 - `SIWC_PLAN_PERMISSION_REQUIRED` / `SIWC_ID_TOKEN_INVALID`: identity sign-in
   не даёт автоматически ChatGPT plan usage. Проверяются granted scopes,
@@ -361,7 +381,7 @@ body cap и не повторяйте inference автоматически. Де
   Реальные loopback offline-тесты проходят после нормализации, без роста timeout.
 - CLI `--prepare` не обращается к сети; `--authorize` — только ручной вход.
   Токены живут в памяти и забываются; persistent vault/refresh не реализованы.
-  Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](micro-029-chatgpt-feasibility.md).
+  Crash lock автоматически не удаляется. [Сценарий, лицензии и ограничения](archive/micro-029-chatgpt-feasibility.md).
 
 ## MICRO-036.4: post-merge ESM и controlled worker
 
@@ -819,7 +839,7 @@ Game HTML и sandbox не менялись.
 MVP и mobile specs прошли 3/3 и 5/5 после того, как synthetic fixtures стали
 учитывать обязательный provider preflight.
 Не считать оставшуюся browser matrix закрытой: 158 исторических FAIL системно
-не устранены. См. [RELEASE-006 report](../.local/yaplix-release-006/REPORT.md).
+не устранены. См. RELEASE-006 report (локально: `../.local/yaplix-release-006/REPORT.md`).
 
 Первоначальное наблюдение FINAL-005 (источник в игре неизвестен) superseded
 проверкой RELEASE-006 выше: точный вызов шёл из Playwright init script. Sandbox

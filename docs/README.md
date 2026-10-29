@@ -37,8 +37,8 @@
 - [Текущий project context](PROJECT_CONTEXT.md)
 - [Статус редизайна UI-002](UI_002_STATUS.md)
 - [Session handoff](SESSION_HANDOFF.md)
-- [Предыдущий docs audit MICRO-036.2](micro-036-2-docs-audit.md)
-- [Решения по репозиторию](decisions/)
+- [Предыдущий docs audit MICRO-036.2](archive/micro-036-2-docs-audit.md)
+- [Решения по репозиторию](archive/decisions)
 - [Командная разработка и release workflow](../CONTRIBUTING.md)
 - Текущий технический итог YAPLIX-FINAL-001 хранится в игнорируемом
   `.local/yaplix-final-001/REPORT.md`; он содержит пользовательские traces и не

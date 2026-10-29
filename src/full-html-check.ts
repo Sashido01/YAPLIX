@@ -129,8 +129,22 @@ export async function checkFullHtml(browser:Browser,html:string,signal:AbortSign
           }
           if(!tapped)break;
         }
-        if(keyboard){await activePage.keyboard.press('ArrowRight');await activePage.waitForTimeout(50);await check();}
         await activePage.waitForTimeout(100);await check();
+        // Preserve the standalone keyboard error/final-image regression probe.
+        if(keyboard){await activePage.keyboard.press('ArrowRight');await activePage.waitForTimeout(50);await check();}
+        // A turn-based board can enter PLAYING on the first tap and then wait
+        // for a key. Try the same bounded real keyboard actions inside both
+        // the opaque iframe and standalone document, only if activity is missing.
+        try{requireCanvas(samples.slice(2));}catch(error){
+          if(!(error instanceof Fault)||error.code!=='BROWSER_CANVAS_ACTIVITY_UNVERIFIED')throw error;
+          phase='canvas-keyboard';phases.start('canvas-keyboard');
+          for(const key of ['ArrowRight','ArrowLeft']){
+            await activePage.keyboard.press(key);await activePage.waitForTimeout(50);await check();
+            try{requireCanvas(samples.slice(2));break;}catch(next){
+              if(!(next instanceof Fault)||next.code!=='BROWSER_CANVAS_ACTIVITY_UNVERIFIED'||key==='ArrowLeft')throw next;
+            }
+          }
+        }
         // Generic input only confirms observable Canvas activity, not game
         // semantics; gameplay, terminal states, and Restart remain unverified.
         for(const kind of requireCanvas(samples.slice(2)))renderContexts.add(kind);

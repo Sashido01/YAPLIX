@@ -143,4 +143,4 @@ Failure diagnostics сохраняются 3 дня. Actions pinned по SHA, to
 FAST: начальный ориентир hosted p75 <=3 min на ОС, полный набор checks <=5
 runner-min/PR суммарно. Это цель после локального замера, а не hosted результат.
 Фактический baseline, расчёты и непроверенные границы:
-[отчёт MICRO-018](micro-018-report.md).
+[отчёт MICRO-018](archive/micro-018-report.md).

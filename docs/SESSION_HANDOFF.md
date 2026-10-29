@@ -1,4 +1,4 @@
-> Исторические handoff ниже сохранены для контекста. Актуальный статус: [YAPLIX-RELEASE-007F](release-status.md#yaplix-release-007f--28-октября-2026), полный отчёт — [`.local/yaplix-release-007f/REPORT.md`](../.local/yaplix-release-007f/REPORT.md). Candidate остаётся NOT_READY: strict WebGL gate и реальная победа игры не подтверждены; не публиковать.
+> Исторические handoff ниже сохранены для контекста. Актуальный статус: [YAPLIX-RELEASE-007F](release-status.md#yaplix-release-007f--28-октября-2026), полный отчёт — `.local/yaplix-release-007f/REPORT.md` (локально: `../.local/yaplix-release-007f/REPORT.md`). Candidate остаётся NOT_READY: strict WebGL gate и реальная победа игры не подтверждены; не публиковать.
 
 # Текущий статус — YAPLIX-RELEASE-007F
 
@@ -111,11 +111,11 @@ Git статус этого задания — в `.local/yaplix-observability-g
   fallback. Android/Brave: подключение, «Волк ловит яйца», refresh/re-entry и
   отключение доступа подтверждены владельцем; independently observed не заявлен.
   Version ID/LLM provenance игры неизвестны; restart YAPLIX и другие физические
-  сценарии не добавлены к PASS. [Точные границы](micro-036-stable-phone-port.md).
+  сценарии не добавлены к PASS. [Точные границы](archive/micro-036-stable-phone-port.md).
 - MVP/demo **PARTIAL**. Блокер свежего Full HTML Save/Ready: checker profiles
   `[320,390,844]` несовместимы с parseArtifact `[320,390]`; synthetic probe
   воспроизвёл `INVALID_GENERATION_METADATA`, без LLM/SQLite. Код не меняется.
-- Исторические LLM successes — [MICRO-027](micro-027-report.md), [TASK-010](task-010-report.md).
+- Исторические LLM successes — [MICRO-027](archive/micro-027-report.md), [TASK-010](archive/task-010-report.md).
   Новый LIVE в MICRO-036.2 не запускался, inference/repair POST **0**.
 - [Демонстрация 4:30 и матрица 8+7](defense-readiness.md): saved LLM fallback должен
   быть проверен до выступления; выбранного подтверждённого резерва в этом аудите нет.
@@ -127,14 +127,14 @@ Git статус этого задания — в `.local/yaplix-observability-g
   Firewall не менялся; `.env`, пользовательские SQLite/HTML и ignored research
   не читались и не изменялись.
 
-[Противоречия, исправления и оставшиеся пробелы](micro-036-2-docs-audit.md).
+[Противоречия, исправления и оставшиеся пробелы](archive/micro-036-2-docs-audit.md).
 Ниже — исторические handoff, их HEAD/вердикты относятся к датам соответствующих задач.
 
 ---
 
 # MICRO-027 — reliability, diagnostics and LIVE delivery
 
-2026-10-17. Baseline main `ff1a952`; [current report](micro-027-report.md).
+2026-10-17. Baseline main `ff1a952`; [current report](archive/micro-027-report.md).
 Metadata-only per-job UTC trace, safe report download, exact-version On phone
 entry points, critical-error precedence and SSE framing fixes. OpenRouter is
 experimental/manual only, including retries, repair and restart recovery.
@@ -154,7 +154,7 @@ MICRO-025 completion still unconfirmed. See final delivery receipt for merge SHA
 # MICRO-026 — isolated Game Constructor PoC
 
 2026-10-16, baseline main `37653b984e41f7486f218e055673857222b96ecb`;
-MICRO-025 absent. [Architecture audit and results](micro-026-architecture-audit.md)
+MICRO-025 absent. [Architecture audit and results](archive/micro-026-architecture-audit.md)
 is the main report. Source: src/research/constructor; explicit offline runner:
 `node scripts/constructor-proof.ts` (`--quick` omits 21 timing runs).
 Exports/schema/action receipts/screenshots stay in ignored `.local/micro026/`.
@@ -352,7 +352,7 @@ CSP и session authorization сохранены. Зафиксированы 513 
 
 LLM: **0 новых реальных inference POST; LIVE NOT_TESTED**. Actions disabled,
 hosted/FULL/Ubuntu PASS не заявляются. PR/merge SHA и post-merge smoke — в Git
-receipt. [Полный отчёт и точная LIVE-процедура](micro-023-report.md).
+receipt. [Полный отчёт и точная LIVE-процедура](archive/micro-023-report.md).
 NEXT: получить разрешение ровно на 2 Ollama POST (создание + изменение),
 без retries/repair/router; при ошибке остановиться. Затем physical acceptance.
 До 29 октября MVP технически подготовлен, качество fresh LLM пока не подтверждено.
@@ -385,7 +385,7 @@ RUN: обычный launcher; isolated recovered game `.local/micro022/recovered
 (authored/manual-recovery), private artifacts только `.local/micro022`.
 NEXT: отдельное owner разрешение на fresh LIVE E2E; затем physical Android/iOS/
 Telegram acceptance. Перед release остаётся exact-commit FULL после разрешённого
-восстановления Actions. [Полный отчёт](micro-022-report.md), [checker](game-validation.md).
+восстановления Actions. [Полный отчёт](archive/micro-022-report.md), [checker](game-validation.md).
 
 ---
 

@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='stage-',dir=out.parent) as tmp:
    target=app/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/name,target)
  shutil.copytree(ROOT/'build/public',app/'build/public')
  (app/'scripts').mkdir();(app/'packaging').mkdir()
- for name in ['desktop.mjs','app-runtime.ts','install-engine.mjs','install-adapter.mjs','install-ui.mjs','install-probe.mjs','windows-lan-setup.ps1']:shutil.copy2(ROOT/'scripts'/name,app/'scripts'/name)
+ for name in ['desktop.mjs','app-runtime.ts','operation-trace.mjs','install-engine.mjs','install-adapter.mjs','install-ui.mjs','install-probe.mjs','windows-lan-setup.ps1']:shutil.copy2(ROOT/'scripts'/name,app/'scripts'/name)
  for name in ['dialog.ps1','yaplix.svg','install-shortcuts.ps1','install.html','install-client.js']:shutil.copy2(ROOT/'packaging'/name,app/'packaging'/name)
  if a.platform=='windows':
   # Windows PowerShell 5.1 requires BOM for UTF-8 Cyrillic script literals.

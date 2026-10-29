@@ -45,7 +45,7 @@ Full HTML probe добавляет общие taps в центре Canvas на 4
 Любая смена пикселей остаётся только runtime evidence: если после probes нет
 подтверждённого Canvas изменения, игра не сохраняется. `BROWSER_CANVAS_ACTIVITY_UNVERIFIED`
 остаётся уровнем неопределённости, пока исправная/неисправная механика не доказана;
-см. offline regression и реальные сохранённые traces в [отчёте](../.local/yaplix-generation-recovery-001/REPORT.md).
+см. offline regression и реальные сохранённые traces в отчёте (локально: `../.local/yaplix-generation-recovery-001/REPORT.md`).
 
 ## YAPLIX-GENERATION-RECOVERY-002 — граница реального replay
 
@@ -53,7 +53,7 @@ Full HTML probe добавляет общие taps в центре Canvas на 4
 заменяет replay. `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` не доказывает запуск
 конкретной игры; authored controls подтверждают только общий probe. Повторная
 проверка заданий `de96…` и `336f…` требует разрешённо полученного исходного HTML.
-См. [Recovery-002](../.local/yaplix-generation-recovery-002/REPORT.md).
+См. Recovery-002 (локально: `../.local/yaplix-generation-recovery-002/REPORT.md`).
 
 ## Историческая автоматическая проверка до строгого контракта
 
@@ -155,7 +155,7 @@ Ready блокируется до завершённого gate. Cancellation з
 Отдельные authored Tetris/Snake probes остаются в `tests/orchestrator.spec.ts`;
 gallery arcade tests — в `tests/arcades.spec.ts`. Это synthetic evidence.
 Результаты сохранённого реального checkpoint, timings и границы LIVE:
-[отчёт MICRO-022](micro-022-report.md).
+[отчёт MICRO-022](archive/micro-022-report.md).
 
 ## Базовый Full HTML без platform markup (MICRO-023)
 
@@ -202,7 +202,7 @@ preview. Critical errors, unsafe/incomplete HTML and browser timeouts are refuse
 This creates no accepted game/version, Ready label or gameplay PASS. Continue can
 revalidate a complete checkpoint locally. OpenRouter cannot auto-repair a failed
 checkpoint after restart. Trace failures degrade diagnostics, not durable jobs.
-[Current LIVE and regression boundaries](micro-027-report.md).
+[Current LIVE and regression boundaries](archive/micro-027-report.md).
 
 ## Canvas text overlap gate
 
@@ -242,7 +242,7 @@ the full protected checker must pass again before save.
 проверить реальный checker → parseArtifact → save, сохранив landscape evidence.
 В этом docs-only PR код, budgets, HTML и исторические verdict не изменяются.
 `MOBILE_VERIFIED` — техническая browser-emulation метка, не физический PASS и
-не подтверждение правил/win/loss. [Отчёт и воспроизведение](micro-036-2-docs-audit.md).
+не подтверждение правил/win/loss. [Отчёт и воспроизведение](archive/micro-036-2-docs-audit.md).
 
 ## YAPLIX-GAMEPLAY-RECOVERY-004: текст Canvas обрезан на 320×700
 

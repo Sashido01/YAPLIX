@@ -343,7 +343,7 @@ SQLite. Настройки, Auto/NO_PROXY, VPN/PAC ограничения и TLS
 
 ## Full HTML contract и размер ответа (MICRO-023)
 
-[Контракт/процедура LIVE](micro-023-report.md). Envelope ≤300000 bytes без усечения
+[Контракт/процедура LIVE](archive/micro-023-report.md). Envelope ≤300000 bytes без усечения
 current HTML; известный context cap проверяется консервативно по UTF-8 bytes.
 HTML ≤200000 bytes; JSON/SSE response ≤1210000 bytes. HTTP/API input limits
 не увеличены. LLM_RESPONSE_BODY_TOO_LARGE — локальный response cap,
@@ -367,7 +367,7 @@ prune7days/16MiB при запуске и периодических запис�
 TTL30min, private IP, capability в fragment, owner API недоступен с listener.
 Firewall/VPN/маршруты автоматически не изменяются. Это не physical-device PASS.
 Сохранённый полный checkpoint можно продолжить с локальной revalidation без POST;
-неполный или ошибочный результат не становится Ready. [Факты](micro-027-report.md).
+неполный или ошибочный результат не становится Ready. [Факты](archive/micro-027-report.md).
 # Operation lifecycle diagnostics
 
 The launcher/bootstrap and server share `YAPLIX_OPERATION_ID`; the value is

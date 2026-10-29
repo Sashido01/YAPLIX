@@ -1,5 +1,9 @@
 # YAPLIX — ты придумал, теперь играй
 
+> Кандидат сдачи: [Draft PR #69](https://github.com/Sashido01/YAPLIX/pull/69), **NOT_READY** до release gate.
+> [Статус приёмки](docs/submission-status.md) · [HTML-презентация](docs/presentation.html) · [Слайды](docs/presentation.md) · [Сценарий защиты](docs/defense-runbook-2026.md).
+
+
 > **Состояние локальной копии, 28 октября 2026:** ветка `codex/arena-mvp`, HEAD
 > `78492bf`; рабочее дерево содержит изменения нескольких задач. FINAL-002
 > исправил три причины отказа Canvas checker и подтвердил механику сохранённого
@@ -21,7 +25,7 @@
 > остаётся **PARTIAL / NOT_READY**: полный browser gate имел 158 FAIL, исправлены
 > только подтверждённые локальные причины и выбранные сценарии; публикации нет.
 > См. [статус](docs/release-status.md#yaplix-release-006--28-октября-2026) и
-> [локальный отчёт](.local/yaplix-release-006/REPORT.md).
+> локальный отчёт (локально: `.local/yaplix-release-006/REPORT.md`).
 
 Сквозная generation trace, API диагностики, уровни evidence и текущие пробелы
 описаны в [руководстве диагностики](docs/diagnostics.md). Документы о запуске,
@@ -47,7 +51,7 @@ Ubuntu: per-user установка без изменения ОС; незави
 без независимого наблюдения агента. LLM provenance этой игры не установлено.
 Аудит выявил несовместимость metadata Full HTML checker с parseArtifact,
 блокирующую принятие новых Full HTML результатов; production в docs-аудите не менялся.
-[Текущий статус](docs/SESSION_HANDOFF.md), [аудит и пробелы](docs/micro-036-2-docs-audit.md),
+[Текущий статус](docs/SESSION_HANDOFF.md), [аудит и пробелы](docs/archive/micro-036-2-docs-audit.md),
 [демо 3–5 минут и соответствие 8+7 требованиям](docs/defense-readiness.md).
 
 ## Запуск за 60 секунд
@@ -264,7 +268,7 @@ LIVE_PROVIDER=ollama-cloud
 Ключ не подтверждает доступную квоту; credits и план автоматически не меняются.
 Точная доступность зависит от аккаунта:
 models API не доказывает inference. В TASK-010 `gemma4:31b` вернула настоящий код;
-scope проверки конкретной игры указан в [отчёте](docs/task-010-report.md).
+scope проверки конкретной игры указан в [отчёте](docs/archive/task-010-report.md).
 MICRO-020 также получила полный LIVE HTML через UI; browser gate отверг его
 из-за gameplay JavaScript error, поэтому играбельная версия не создана.
 Исправлено ожидание EOF после SSE `[DONE]`; таймауты не увеличены.
@@ -288,7 +292,7 @@ contract в [generation.ts](src/generation.ts). Legacy `spec` меняет то�
 читаются без миграции и без повышения evidence.
 Новые LIVE create/edit проходят runtime gate до сохранения, старые HTML не мигрируют.
 [Контракт рендеринга и границы доказательств](docs/canvas-rendering-contract.md).
-[Лимиты, причины изменений, локальные тесты и процедура LIVE](docs/micro-023-report.md).
+[Лимиты, причины изменений, локальные тесты и процедура LIVE](docs/archive/micro-023-report.md).
 MICRO-023L: **LIVE PARTIAL**, 1 Ollama POST. Полный HTML/desktop сбор/win/loss/restart
 и offline export проверены; touch-джойстик созданной игры скрыт в Chromium emulation.
 По условию владельца второй POST/редактирование не запускались. Исходный HTML
@@ -335,7 +339,7 @@ QR и перезапуск YAPLIX. При необходимости один р
 используется 52604; новых действий при обычном запуске нет. Занятый порт даёт
 `PORT_IN_USE`, без случайного fallback. Bind — только выбранный LAN IPv4.
 При смене порта/IP/интерфейса/профиля узкое Firewall-правило нужно отдельно
-проверить; YAPLIX его не меняет. [Проверки и физическая приёмка](docs/micro-036-stable-phone-port.md).
+проверить; YAPLIX его не меняет. [Проверки и физическая приёмка](docs/archive/micro-036-stable-phone-port.md).
 
 QR создаётся локально. Ссылка содержит временный токен только к выбранной версии,
 на 30 минут; после открытия токен удаляется из адресной строки. Она не даёт доступ
@@ -365,8 +369,8 @@ MICRO-028N: после согласованных Private profile и узког�
 запуск «Волк ловит яйца», refresh QR с повторным входом и прекращение доступа
 после отключения. Это owner-confirmed scope, не independently observed;
 происхождение игры от LLM не установлено. Широкое разрешение Node не создаётся.
-iOS NOT_TESTED. [Физический scope и оставшиеся проверки](docs/micro-036-stable-phone-port.md).
-См. [диагностику и восстановление](docs/micro-028n-phone-connectivity.md).
+iOS NOT_TESTED. [Физический scope и оставшиеся проверки](docs/archive/micro-036-stable-phone-port.md).
+См. [диагностику и восстановление](docs/archive/micro-028n-phone-connectivity.md).
 
 Собственный бот — [@YaplixBot](https://t.me/YaplixBot). Добавьте локально
 TELEGRAM_BOT_TOKEN и TELEGRAM_ALLOWED_USER_IDS. `npm run telegram:check` проверяет
@@ -429,13 +433,13 @@ npm run performance:smoke
 [API/backup/restore/update](docs/development-setup.md), [Windows/Ubuntu](docs/cross-platform.md),
 [архитектура](docs/architecture.md), [приёмка](docs/defense-readiness.md).
 [Известные ошибки и безопасное восстановление](docs/known-errors.md).
-[TASK-008: результаты runtime/tunnel и границы внешней проверки](docs/task-008-report.md).
-[TASK-010: облачные модели, recovery, игры и Telegram](docs/task-010-report.md).
+[TASK-008: результаты runtime/tunnel и границы внешней проверки](docs/archive/task-008-report.md).
+[TASK-010: облачные модели, recovery, игры и Telegram](docs/archive/task-010-report.md).
 Обычный CI выполняет FAST на чистом checkout Windows/Ubuntu и secret-scan;
 для runtime/config/неизвестных изменений FULL добавляет реальный Chromium
 preflight, 12 frontend profiles и performance. Manual FULL обязателен перед
 релизом. [Режимы и ограничения защиты](docs/ci-economy.md),
-[замеры MICRO-018](docs/micro-018-report.md). Реальные LLM/физические клиенты отдельно.
+[замеры MICRO-018](docs/archive/micro-018-report.md). Реальные LLM/физические клиенты отдельно.
 По прямому разрешению владельца MICRO-019 hosted Actions временно выключены
 до 29 октября 2026; локальные typecheck/build, критические unit, короткий
 Playwright и secret scan выполняются отдельно и не считаются hosted PASS.

@@ -6,12 +6,19 @@ import {mkdirSync,mkdtempSync,rmSync,readFileSync,writeFileSync,existsSync} from
 import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright-core';
+import {spec,artifact as fixtureArtifact} from '../tests/helpers.ts';
 const artifact=resolve(process.argv[2]),profile=resolve(process.argv[3]),out=resolve(process.argv[4]??'.local/install-002/acceptance');mkdirSync(out,{recursive:true});mkdirSync(profile,{recursive:true});
 const ownTemp=!process.env.YAPLIX_INSTALL_TEST_TMP;
 const temp=ownTemp?mkdtempSync(join(tmpdir(),'yi-')):resolve(process.env.YAPLIX_INSTALL_TEST_TMP);
 mkdirSync(temp,{recursive:true});
 const env={...process.env,TMPDIR:temp,TEMP:temp,TMP:temp};
 for(const name of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy'])delete env[name];
+// Seed only the explicitly isolated acceptance profile; production has no DEMO.
+const fixtureHtml=readFileSync(new URL('../tests/fixtures/games/ember-blocks.html',import.meta.url),'utf8');
+process.env.YAPLIX_DATA_HOME=join(profile,'data');
+const {Store}=await import('../src/store.ts');
+const setup=new Store('.local/data/yaplix.sqlite');
+const saved=setup.save({...spec,prompt:'Installer acceptance fixture'},{...fixtureArtifact,html:fixtureHtml});setup.close();
 const child=spawn(artifact,['--no-open','--test-profile',profile],{env,stdio:['ignore','pipe','pipe']});let log='';child.stdout.on('data',b=>log+=b);child.stderr.on('data',b=>log+=b);
 let browser,root;const evidence={artifact,profile,checks:[],externalBrowserRequests:[]};
 const view=join(profile,'program/installer/view.json');
@@ -27,19 +34,18 @@ try{
  assert.notEqual(new URL(page.url()).origin,origin,'Installer did not launch YAPLIX');evidence.checks.push('real CHECK→PLAN→PREPARE→INSTALL→VERIFY→LAUNCH→DONE');
  root=join(profile,'program/versions',JSON.parse(readFileSync(join(profile,'program/current.json'),'utf8')).id);
  const api=new URL(page.url()).origin;
- const gallery=await(await fetch(api+'/api/gallery',{headers:{Connection:'close'}})).json();
- assert.deepEqual(gallery.games.map(game=>game.id),['ember-blocks','prism-maze','arena-target']);
- const versions=[];
- for(const game of gallery.games){
-  const saved=await fetch(api+'/api/gallery/'+game.id,{method:'POST',headers:{'Content-Type':'application/json',Connection:'close'},body:'{}'});
-  assert.equal(saved.status,201);const version=await saved.json();assert.ok(version.html.includes('<html'));versions.push(version);
- }
- await page.reload();await page.screenshot({path:join(out,'app-390.png'),fullPage:true});evidence.checks.push('actual API and UI ready; three authored games saved without keys');
+ assert.equal((await fetch(api+'/api/gallery',{headers:{Connection:'close'}})).status,404);
+ const versions=[saved];
+ const reopened=await(await fetch(api+'/api/versions/'+saved.versionId,{headers:{Connection:'close'}})).json();assert.equal(reopened.html,fixtureHtml);
+ await page.goto(api+'/?game='+saved.gameId+'&version='+saved.versionId);
+ await page.frameLocator('#game iframe').locator('canvas').waitFor({state:'visible'});
+ assert.equal(await page.locator('#game iframe').getAttribute('sandbox'),'allow-scripts');
+ await page.screenshot({path:join(out,'app-390.png'),fullPage:true});evidence.checks.push('isolated saved Canvas opens in opaque iframe; DEMO endpoint absent');
  const command=(...args)=>{const r=spawnSync(join(root,'runtime/node'),[join(root,'scripts/desktop.mjs'),...args,'--no-open'],{env:{...env,YAPLIX_DATA_HOME:join(profile,'data')},encoding:'utf8',timeout:40000});assert.ifError(r.error);assert.equal(r.status,0,r.stderr);return r.stdout;};
  command('--stop');for(let i=0;i<100&&existsSync(join(profile,'data/desktop.lock'));i++)await delay(100);
  command();const state=JSON.parse(readFileSync(join(profile,'data/desktop.json'),'utf8'));
  for(const version of versions){const reopened=await(await fetch('http://127.0.0.1:'+state.port+'/api/versions/'+version.versionId,{headers:{Connection:'close'}})).json();assert.equal(reopened.html,version.html);}
- evidence.checks.push('shortcut target restart preserves all three games');
+ evidence.checks.push('shortcut target restart preserves the isolated saved game');
  assert.deepEqual(errors,[]);assert.deepEqual(evidence.externalBrowserRequests,[]);evidence.status='PASS';
 }finally{
  await browser?.close();

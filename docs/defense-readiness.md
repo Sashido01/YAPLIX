@@ -4,7 +4,7 @@
 > пользовательского сценария: DEMO игры и галерея удаляются; синтетические
 > игровые HTML допустимы только в `tests/fixtures`. Используйте
 > [текущий release status](release-status.md) и
-> [RELEASE-007 report](../.local/yaplix-release-007/REPORT.md).
+> RELEASE-007 report (локально: `../.local/yaplix-release-007/REPORT.md`).
 
 ## Обновление — YAPLIX-RELEASE-006, 28 октября 2026
 
@@ -16,7 +16,7 @@ DEMO create/edit/version/export/restart/backup прошёл выбранный C
 приёмка и не физическое мобильное устройство. Release остаётся `NOT_READY` из-за
 158 непогашенных browser FAIL и отсутствия полного release/secret/hosted CI gate.
 См. [release status](release-status.md) и локальный
-[RELEASE-006 report](../.local/yaplix-release-006/REPORT.md).
+RELEASE-006 report (локально: `../.local/yaplix-release-006/REPORT.md`).
 
 ## Обновление — YAPLIX-FINAL-001, 28 октября 2026
 
@@ -47,7 +47,7 @@ LIVE-002 gameplay gates прошёл, однако ручной осмотр в�
 Product/demo readiness — **PARTIAL**. PR #44 со стабильным портом merged;
 Android/Brave: подключение, запуск «Волк ловит яйца», QR refresh/re-entry и revoke
 подтверждены владельцем, не independently observed. Version ID и LLM provenance
-этой игры — NOT_VERIFIED. [Точный physical scope](micro-036-stable-phone-port.md).
+этой игры — NOT_VERIFIED. [Точный physical scope](archive/micro-036-stable-phone-port.md).
 
 Аудит обнаружил блокер новых Full HTML результатов: checker возвращает три
 профиля, parseArtifact разрешает два → `INVALID_GENERATION_METADATA`.
@@ -55,13 +55,13 @@ Android/Brave: подключение, запуск «Волк ловит яйц
 Ранее записанные LIVE успехи ниже не доказывают работоспособность нового создания
 на этом HEAD. Открытие уже сохранённых игр этим probe не проверялось и не
 объявляется сломанным. [Компактный статус](SESSION_HANDOFF.md),
-[противоречия/пробелы аудита](micro-036-2-docs-audit.md).
+[противоречия/пробелы аудита](archive/micro-036-2-docs-audit.md).
 PR #34/#37 — OPEN Draft, не включены в текущий main и не изменялись.
 Эта задача — docs + audit, inference POST 0, без merge и без изменения production.
 
 
 Исторические проверки TASK-007/009/010 сохранены ниже; их маршруты и timings
-не считаются текущим результатом MICRO-019. [Отчёт TASK-010](task-010-report.md).
+не считаются текущим результатом MICRO-019. [Отчёт TASK-010](archive/task-010-report.md).
 Browser tests, реальные LLM, hosted CI и физические устройства имеют разные границы.
 
 Production routes MICRO-023 (подтверждены source-аудитом): создание и редактирование предлагают Ollama Cloud
@@ -72,7 +72,7 @@ Legacy Auto означает только Ollama, автоматического
 Исторический отчёт MICRO-023L: 1 fresh Ollama POST,
 LIVE PARTIAL: desktop win/loss/restart/export подтверждены, mobile touch FAILED
 в Chromium emulation; editing не запускалось по owner stop condition.
-[Точная приёмка: минимум 2 запроса после разрешения](micro-023-report.md).
+[Точная приёмка: минимум 2 запроса после разрешения](archive/micro-023-report.md).
 Hosted Actions временно выключены владельцем до 29 октября 2026:
 [локальные проверки и восстановление](ci-economy.md).
 
@@ -88,7 +88,7 @@ Hosted Actions временно выключены владельцем до 29 
 фиксирует её название, versionId, hash, `method=llm_code`, provider/model и
 связанный generation job/report. UI provenance — полезная маркировка, но не
 независимое доказательство происхождения. Исторический кандидат — реальный
-Full HTML из [MICRO-027](micro-027-report.md#live--four-post-no-hidden-retries);
+Full HTML из [MICRO-027](archive/micro-027-report.md#live--four-post-no-hidden-retries);
 его наличие в текущей библиотеке этим аудитом не проверено. Не импортировать
 HTML через authored/mock и не выдавать его за новый LIVE.
 «Волк ловит яйца» пока не подходит как доказанный LLM fallback: provenance неизвестен.
@@ -174,7 +174,7 @@ touch probe теперь включает 844×390 и не использует 
 TASK-010 в прежней версии этого документа, а не новая независимая сверка с PDF.
 PDF владельца не читался и не публикуется. Формулировки и полноту официального
 оригинала в MICRO-036.2 повторно не подтверждали; это инженерный self-audit,
-не решение организаторов. [Исходный TASK-010 evidence](task-010-report.md).
+не решение организаторов. [Исходный TASK-010 evidence](archive/task-010-report.md).
 
 VERIFIED — есть evidence ровно указанного свойства; PARTIAL — реализована или
 проверена лишь часть; NOT_VERIFIED — достаточного подтверждения нет. Source/test
@@ -186,13 +186,13 @@ VERIFIED — есть evidence ровно указанного свойства;
 | № | Требование | Статус | Реальное evidence и предел |
 | --- | --- | --- | --- |
 | M1 | Естественный текстовый запрос | VERIFIED | Форма и обработка идеи/изменения существуют: [UI](../src/ui.ts), [generationMessages](../src/generation.ts), [контролируемый UI сценарий](../tests/micro027.spec.ts). Проверено свойство входа, не качество любого результата. |
-| M2 | Настоящая LLM генерация кода | PARTIAL | Исторические результаты перечислены в [MICRO-027](micro-027-report.md) и [TASK-010](task-010-report.md). Более поздние LIVE-001/002 создали новые игры через Ollama; смотрите [release status](release-status.md). LIVE-002 обнаружил mobile HUD overlap; наличие реализации не доказывает качество каждой игры. |
-| M3 | Начало → gameplay → победа/поражение, управление | PARTIAL | [Исторический gameplay MICRO-027](micro-027-report.md#ui--gameplay-proof-and-limits), [TASK-010](task-010-report.md). Owner-confirmed Android запуск не подтверждает оба финала или правила произвольного HTML. |
-| M4 | Self-contained HTML5+JS для WebView | PARTIAL | [Static/offline checker](../src/full-html-check.ts), [runtime/offline tests](../tests/runtime.spec.ts), [реальный export MICRO-027](micro-027-report.md). Физический embedded Android WebView/WKWebView не подтверждён; Brave не заменяет эти клиенты. |
+| M2 | Настоящая LLM генерация кода | PARTIAL | Исторические результаты перечислены в [MICRO-027](archive/micro-027-report.md) и [TASK-010](archive/task-010-report.md). Более поздние LIVE-001/002 создали новые игры через Ollama; смотрите [release status](release-status.md). LIVE-002 обнаружил mobile HUD overlap; наличие реализации не доказывает качество каждой игры. |
+| M3 | Начало → gameplay → победа/поражение, управление | PARTIAL | [Исторический gameplay MICRO-027](archive/micro-027-report.md#ui--gameplay-proof-and-limits), [TASK-010](archive/task-010-report.md). Owner-confirmed Android запуск не подтверждает оба финала или правила произвольного HTML. |
+| M4 | Self-contained HTML5+JS для WebView | PARTIAL | [Static/offline checker](../src/full-html-check.ts), [runtime/offline tests](../tests/runtime.spec.ts), [реальный export MICRO-027](archive/micro-027-report.md). Физический embedded Android WebView/WKWebView не подтверждён; Brave не заменяет эти клиенты. |
 | M5 | Команда 2–4 человека | PARTIAL | [AUTHORS](../AUTHORS.md) заявляет команду из 3 человек, но участники №2/№3 и их вклад пока placeholders. Декларация есть; фактический состав независимо не подтверждён. Агенты не считаются командой. |
 | M6 | Git с историей разработки | VERIFIED | Проверены main `942387eb`, предыдущие commits и [merge PR #44](https://github.com/Sashido01/YAPLIX/pull/44). Это наличие истории, не оценка организаторов. |
 | M7 | Презентация 3–5 минут | PARTIAL | Сценарий 4:30 выше подготовлен. Репетиция/запись, подтверждённый локальный LLM fallback и новая успешная генерация на этом HEAD отсутствуют. |
-| M8 | Использование AI при разработке и/или генерации | VERIFIED | Задокументированы реальные [LLM вызовы MICRO-027](micro-027-report.md#live--four-post-no-hidden-retries) и [TASK-010](task-010-report.md). 0 новых POST в этом аудите не отменяет исторический evidence. |
+| M8 | Использование AI при разработке и/или генерации | VERIFIED | Задокументированы реальные [LLM вызовы MICRO-027](archive/micro-027-report.md#live--four-post-no-hidden-retries) и [TASK-010](archive/task-010-report.md). 0 новых POST в этом аудите не отменяет исторический evidence. |
 
 ## Семь бонусных требований
 
@@ -200,11 +200,11 @@ VERIFIED — есть evidence ровно указанного свойства;
 | --- | --- | --- | --- |
 | B1 | Аудитория | PARTIAL | Audience передаётся в [generationMessages](../src/generation.ts), есть [intent tests](../tests/game-intent.test.ts); отдельная проверка качества адаптации разным аудиториям не выполнена. |
 | B2 | Аналитика влияет на следующие генерации | NOT_VERIFIED | [Store analytics](../src/store.ts) считает события; [generationMessages](../src/generation.ts) не передаёт статистику для выбора успешных механик. Feedback loop не реализован, отображение аналитики не закрывает бонус. |
-| B3 | Итеративная доработка | PARTIAL | Полный previous HTML в [generationMessages](../src/generation.ts), версии в [Store](../src/store.ts), [исторические реальные edits](task-010-report.md), [synthetic UI](../tests/micro027.spec.ts). Full HTML edit больше не относится к историческому metadata blocker; свежая реальная edit-проверка в LIVE-001/002 не выполнялась. |
-| B4 | AI графика/звук | PARTIAL | Исторические generated Canvas игры описаны в [TASK-010](task-010-report.md); отдельный проверенный AI image/audio asset pipeline не подтверждён. Код рисования не доказывает генерацию самостоятельных медиаресурсов. |
-| B5 | Touch и мобильное масштабирование | PARTIAL | [Phone регрессии MICRO-036.1](micro-036-stable-phone-port.md#проверки-качества), [owner-confirmed Android/Brave](micro-036-stable-phone-port.md#micro-0362--физическая-приёмка-подтверждение-владельца), [layout probes](../tests/generation.spec.ts). iOS, физический WebView, все игровые состояния/rotation/keyboard не закрыты этим сообщением. |
+| B3 | Итеративная доработка | PARTIAL | Полный previous HTML в [generationMessages](../src/generation.ts), версии в [Store](../src/store.ts), [исторические реальные edits](archive/task-010-report.md), [synthetic UI](../tests/micro027.spec.ts). Full HTML edit больше не относится к историческому metadata blocker; свежая реальная edit-проверка в LIVE-001/002 не выполнялась. |
+| B4 | AI графика/звук | PARTIAL | Исторические generated Canvas игры описаны в [TASK-010](archive/task-010-report.md); отдельный проверенный AI image/audio asset pipeline не подтверждён. Код рисования не доказывает генерацию самостоятельных медиаресурсов. |
+| B5 | Touch и мобильное масштабирование | PARTIAL | [Phone регрессии MICRO-036.1](archive/micro-036-stable-phone-port.md#проверки-качества), [owner-confirmed Android/Brave](archive/micro-036-stable-phone-port.md#micro-0362--физическая-приёмка-подтверждение-владельца), [layout probes](../tests/generation.spec.ts). iOS, физический WebView, все игровые состояния/rotation/keyboard не закрыты этим сообщением. |
 | B6 | История/галерея/share | PARTIAL | [Store](../src/store.ts), [phone-only listener](../src/phone.ts), owner-confirmed QR/revoke; [архитектура shares](architecture.md#telegram-и-shares). Public HTTPS/Mini App delivery не подтверждены текущим аудитом. |
-| B7 | Разные жанры | PARTIAL | Исторические LIVE blocks/shooter в [TASK-010](task-010-report.md), иной Full HTML в [MICRO-027](micro-027-report.md). Это отдельные результаты, не доказательство устойчивого создания любых жанров. |
+| B7 | Разные жанры | PARTIAL | Исторические LIVE blocks/shooter в [TASK-010](archive/task-010-report.md), иной Full HTML в [MICRO-027](archive/micro-027-report.md). Это отдельные результаты, не доказательство устойчивого создания любых жанров. |
 
 ## Данные
 

@@ -25,7 +25,7 @@ Ubuntu Lite installer собран и прошёл actual isolated install/launc
 Windows native package, hosted CI, Telegram native client и физические устройства
 — `NOT_VERIFIED`.
 
-Точный ход работ, IDs, SHA и границы proof: [RELEASE-007F report](../.local/yaplix-release-007f/REPORT.md).
+Точный ход работ, IDs, SHA и границы proof: RELEASE-007F report (локально: `../.local/yaplix-release-007f/REPORT.md`).
 
 # YAPLIX-FINAL-005 — 28 октября 2026
 
@@ -34,7 +34,7 @@ Windows native package, hosted CI, Telegram native client и физически�
 **NOT_READY; публикация и merge не выполнены.** RELEASE-007 продолжает удаление
 продуктовых DEMO и перенос синтетических HTML в test-only fixtures. Текущие
 результаты и ограничения ведутся в
-[отчёте RELEASE-007](../.local/yaplix-release-007/REPORT.md). Исторические
+отчёте RELEASE-007 (локально: `../.local/yaplix-release-007/REPORT.md`). Исторические
 снимки ниже описывают состояние на дату соответствующего этапа и не являются
 актуальными инструкциями или доказательством текущего release gate.
 
@@ -60,7 +60,7 @@ matrix не повторялся, а прежние **158 FAIL** остаютс�
 Ubuntu CI, физические устройства, PR и merge не выполнялись. Локальные link
 targets восьми синхронизированных документов существуют; fragment anchors и
 полный docs audit не проверялись. Подробности —
-[локальный отчёт](../.local/yaplix-release-006/REPORT.md). Причина блокировки
+локальный отчёт (локально: `../.local/yaplix-release-006/REPORT.md`). Причина блокировки
 публикации: browser gate остаётся 158 FAIL, а актуальные Windows/Ubuntu/secret
 scan checks на точном кандидате отсутствуют.
 
@@ -81,7 +81,7 @@ restart и landscape rotate не подтверждены; экспорт не �
 этапа. `npm test` после снятия proxy только для процесса: 573/573 PASS. Полный
 `test:browser`: 479 PASS / 158 FAIL / 2,207 SKIP, включая mobile UI, export/backup,
 Arena и synthetic production checks. Gitleaks/doc links не запускались; hosted CI
-недоступен по текущей owner rule. Публикации не было. Подробности и локальные защищённые артефакты: [FINAL-005 report](../.local/yaplix-final-005/REPORT.md).
+недоступен по текущей owner rule. Публикации не было. Подробности и локальные защищённые артефакты: FINAL-005 report (локально: `../.local/yaplix-final-005/REPORT.md`).
 
 # Текущий статус локальной копии
 
@@ -129,7 +129,7 @@ Gameplay PASS, пользовательский edit, export/offline acceptance 
 unit suite прерван после timeout launcher harness и нескольких устаревших или
 несвязанных проверок. Gitleaks Linux executable недоступен; secret scan и remote
 publication не выполнялись. Доказательства — локальный
-[FINAL-001 report](../.local/yaplix-final-001/REPORT.md).
+FINAL-001 report (локально: `../.local/yaplix-final-001/REPORT.md`).
 
 ## YAPLIX-GENERATION-RECOVERY-002 — 28 октября 2026
 
@@ -139,7 +139,7 @@ HTML/replay и связь browser tab с backend остаются `NOT_VERIFIED`
 SQLite/checkpoints нет. Текущий checkout исправляет ChatGPT trace gap и проходит
 47 targeted tests плюс typecheck; исторический POST count это не восстанавливает.
 Новые inference/repair, browser spec и full CI не запускались. См. локальный
-[Recovery-002 report](../.local/yaplix-generation-recovery-002/REPORT.md).
+Recovery-002 report (локально: `../.local/yaplix-generation-recovery-002/REPORT.md`).
 
 ## Обновление YAPLIX-GENERATION-RECOVERY-001 — 28 октября 2026
 
