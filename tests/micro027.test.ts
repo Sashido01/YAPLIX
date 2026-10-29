@@ -119,10 +119,10 @@ test('durable job report is chronological, authorized, source-free and identifie
  const version=jobs.get('owner',id).versionId!,exported=await app.request('/api/versions/'+version+'/export');assert.equal(exported.status,200);assert.equal(exported.headers.get('x-content-sha256'),store.getVersion(version).sha256);assert.equal(await exported.text(),html.trim());assert.ok(jobs.report('owner',id).events.some((e:any)=>e.event==='version.export.completed'&&e.status==='PASS'));
  }finally{await jobs.close();store.close();}
 });
-test('inconclusive complete safe HTML offers opaque preview; critical error and timeout do not',async()=>{
- for(const code of ['BROWSER_CHECK_INCONCLUSIVE','JAVASCRIPT_EXCEPTION','BROWSER_TIMEOUT']){
+test('inconclusive or unverified Canvas input offers opaque preview; critical error and timeout do not',async()=>{
+ for(const code of ['BROWSER_CHECK_INCONCLUSIVE','BROWSER_CANVAS_ACTIVITY_UNVERIFIED','JAVASCRIPT_EXCEPTION','BROWSER_TIMEOUT']){
  const store=new Store(':memory:'),engine=new GenerationEngine([{provider:'ollama.com',model:'gemma4:31b',route:'primary',readiness:async()=>'ready',complete:async()=>({code:html,model:'gemma4:31b'})}],{repairs:0,check:async()=>{throw new Fault(code);}}),jobs=new GenerationJobs(store,engine),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
- try{const id=jobs.create('owner','preview-'+code,request).jobId;await settled(jobs,id);const response=await app.request('/api/jobs/'+id+'/preview');assert.equal(response.status,code==='BROWSER_CHECK_INCONCLUSIVE'?200:409);if(response.status===200)assert.match(response.headers.get('content-security-policy')!,/^sandbox allow-scripts;/);assert.equal(store.list().length,0);assert.equal(jobs.get('owner',id).checkpoint,html);}finally{await jobs.close();store.close();}
+ try{const id=jobs.create('owner','preview-'+code,request).jobId;const job=await settled(jobs,id);const previewable=['BROWSER_CHECK_INCONCLUSIVE','BROWSER_CANVAS_ACTIVITY_UNVERIFIED'].includes(code);const response=await app.request('/api/jobs/'+id+'/preview');assert.equal(response.status,previewable?200:409);if(response.status===200){assert.match(response.headers.get('content-security-policy')!,/^sandbox allow-scripts;/);assert.match(await response.text(),/<title>Synthetic test game<\/title>/);}assert.equal(store.list().length,0);assert.equal(job.stage,'needs_attention');assert.equal(job.validation?.level,previewable||code==='BROWSER_TIMEOUT'?'NOT_VERIFIED':'FAILED');assert.equal(job.validation?.code,code);assert.equal(jobs.get('owner',id).checkpoint,html);}finally{await jobs.close();store.close();}
  }
 });
 
