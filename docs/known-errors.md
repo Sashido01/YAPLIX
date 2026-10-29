@@ -1,3 +1,14 @@
+## FINAL-CI: performance smoke после удаления DEMO
+
+Run 40905855601 прошёл Ubuntu browser matrix (700 PASS), затем performance
+отказал на apiRequestContext.get(relative export href): standalone BrowserContext
+не имеет baseURL. URL экспорта теперь явно разрешается относительно base.
+Два старых селектора «Старт» синхронизированы с тестовой fixture «Start».
+После семи измерений runner также ждал необрабатываемое IPC shutdown; закрытие
+собственного synthetic server теперь использует его штатный SIGTERM handler.
+Performance budgets, 7 холодных mobile contexts/Slow 4G/CPU×4 и 40 memory cycles
+сохранены. Новые цифры не являются гарантией скорости произвольной LLM-игры.
+
 ## FINAL-CI: QR на мобильном экране и Windows acceptance без DEMO
 
 Run 40824915530: Ubuntu и Windows unit/backend PASS; browser gate отказал на
