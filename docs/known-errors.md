@@ -9,6 +9,16 @@ sent. A local attempt to join a valid room was blocked by this host's proxy
 routing for its private LAN address. The existing selected-game Arena scenario
 remains unchanged; hosted results on the #72 patch are pending.
 
+## Browser checker: context creation exceeded the validation deadline
+
+Windows CI run 40952606643 failed at `tests/generation.spec.ts` because
+`browser.newContext()` remained pending after the checker’s existing 18-second
+deadline; Playwright then hit its 20-second test limit. The wait now races that
+same cancellation/deadline signal, returns the existing cancel/timeout category,
+and closes a context that resolves late. Targeted cancellation and late-disposal
+regressions were observed RED before the fix and passed 2/2 afterward. The
+production deadline and browser sandbox are unchanged.
+
 ## Release scan: Gitleaks Action не поддерживает событие release
 
 Run 40937349760 завершил `secret-scan` ошибкой `The [release] event is not yet
