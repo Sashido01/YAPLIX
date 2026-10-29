@@ -1,6 +1,6 @@
 # Статус сдачи YAPLIX — 29 октября 2026
 
-**Product status: PARTIAL / release gate выполняется.**
+**Product status: PARTIAL / опубликованный кандидат; полный release gate не закрыт.**
 [Draft PR #69](https://github.com/Sashido01/YAPLIX/pull/69), Issue #68.
 Main остаётся `b6a64abb`; merge не выполнен.
 
@@ -57,7 +57,7 @@ compact 0/2. Переключения production нет. Repair-сравнени
 
 Typecheck/build, 25 целевых units, 6 desktop lifecycle tests, keyboard/no-op
 regression, повторный create/edit/export и mobile navigation regressions: PASS.
-На runtime-кандидате `c7c6dfa` полный unit: **608 PASS, 0 FAIL, 1 platform SKIP**; полный browser прогон выполняется. Ubuntu Lite из этого кандидата: защищённая установка в отдельный профиль, открытие сохранённого Canvas и restart — PASS. Исторические 578 unit /
+На runtime-кандидате `c7c6dfa` полный unit: **608 PASS, 0 FAIL, 1 platform SKIP**; полный browser прогон остановлен после обнаружения потерянного LAN UI (131 PASS, 3 FAIL, 1 interrupted). После восстановления UI и его runtime route: **90 целевых browser PASS / 0 FAIL / 3 SKIP** на desktop, Chromium 320 и WebKit 390. Дополнительно: 36 critical unit PASS / 1 platform SKIP; 20 Python checks PASS. Полная матрица целиком повторно не запускалась. Ubuntu Lite из этого кандидата: защищённая установка в отдельный профиль, открытие сохранённого Canvas и restart — PASS. Исторические 578 unit /
 638 browser PASS относятся к предыдущей копии, не к текущему commit.
 Gitleaks дерева/diff/new history был PASS перед первым push и повторяется перед
 публикацией обновлений. Hosted Actions отключены владельцем и не считаются PASS.

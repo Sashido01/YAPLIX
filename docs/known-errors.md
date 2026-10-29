@@ -1,3 +1,16 @@
+## SUBMISSION-009: LAN и чистая проверка упаковки
+
+При выборочном merge отсутствовали boot-mount и runtime route существующей
+LAN-панели. Восстановлены только для local/127.0.0.1, в служебной области; API
+по-прежнему требует loopback, Origin и явный consent. Тест проходит через
+«Игры»; реальный firewall не менялся. Desktop/320/WebKit390: 9/9 simulated PASS.
+
+Python packaging test зависел от исторической `.local/yaplix-release-007f`.
+Теперь он создаёт собственный temporary directory в repo и проверяет свежий
+verified payload. Устаревшие/удалённые assets в кэше останавливают сборку с
+`STALE_PAYLOAD_ASSETS`; нужно пересобрать payload, а не выпускать старую DEMO UI.
+20 Python checks PASS.
+
 ## SUBMISSION-009: idle-анимация не доказывает управление
 
 Локальный отрицательный пример с `act(){return;}` и анимацией START проходит
