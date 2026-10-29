@@ -90,6 +90,32 @@ test('touch, rotation, section navigation, export and UI diagnostics preserve st
   mark('complete');expect(reads).toBe(0);expect(errors).toEqual([]);
 });
 
+test('phone action stays disabled until a newly opened version and its library finish loading',async({page})=>{
+  expect((await page.request.post('/__test/reset')).ok()).toBe(true);
+  const first=await(await page.request.post('/__test/seed-version',{data:{prompt:'Phone race initial version'}})).json();
+  await page.goto('/?game='+first.gameId+'&version='+first.versionId);
+  await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+  await expect(page.locator('#phone-game')).toBeEnabled();
+  const submitted=await page.request.post('/api/jobs',{data:{spec:{...spec,prompt:'Phone race next version'},providerMode:'ollama-cloud',idempotencyKey:crypto.randomUUID()}});
+  const {jobId}=await submitted.json();
+  await expect.poll(async()=>(await(await page.request.get('/api/jobs/'+jobId)).json()).stage,{timeout:15000}).toBe('completed');
+  const next=await(await page.request.get('/api/jobs/'+jobId)).json();
+  await expect(page.locator('#job-toast-text')).toContainText('Phone race next version');
+  let releaseVersion!:()=>void,versionRequested!:()=>void,releaseLibrary!:()=>void,libraryRequested!:()=>void;
+  const versionGate=new Promise<void>(r=>releaseVersion=r),versionSeen=new Promise<void>(r=>versionRequested=r);
+  const libraryGate=new Promise<void>(r=>releaseLibrary=r),librarySeen=new Promise<void>(r=>libraryRequested=r);
+  await page.route('**/api/versions/'+next.versionId,async route=>{versionRequested();await versionGate;await route.continue();});
+  try{
+    await page.locator('#job-toast-open').click();await versionSeen;
+    await expect(page.locator('#phone-game'),'a click during version loading must not be silently ignored').toBeDisabled();
+    await page.route('**/api/games',async route=>{libraryRequested();await libraryGate;await route.continue();});
+    releaseVersion();await librarySeen;
+    await expect.poll(()=>page.evaluate(()=>(window as unknown as {_yaplixReadyVersion?:string})._yaplixReadyVersion)).toBe(next.versionId);
+    await expect(page.locator('#phone-game'),'rendering a frame must not unlock the still-busy action').toBeDisabled();
+    releaseLibrary();await expect(page.locator('#phone-game')).toBeEnabled();
+  }finally{releaseVersion();releaseLibrary();}
+});
+
 test('late active job poll cannot detach the timer or hide an opened game on mobile',async({page,isMobile})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.setViewportSize({width:390,height:700});

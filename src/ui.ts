@@ -108,7 +108,7 @@ async function api(path: string, body?: unknown, token?: string, signal?: AbortS
   } finally {clearTimeout(timer);}
 }
 function lock(value: boolean) {
-  busy=value; el<HTMLButtonElement>('generate').disabled=value; el<HTMLButtonElement>('improve').disabled=value||!current; el<HTMLSelectElement>('provider-mode').disabled=value;el<HTMLSelectElement>('edit-provider-mode').disabled=value;
+  busy=value; el<HTMLButtonElement>('phone-game').disabled=value||!current; el<HTMLButtonElement>('generate').disabled=value; el<HTMLButtonElement>('improve').disabled=value||!current; el<HTMLSelectElement>('provider-mode').disabled=value;el<HTMLSelectElement>('edit-provider-mode').disabled=value;
   el<HTMLSelectElement>('versions').disabled=value||!current;el<HTMLButtonElement>('replay').disabled=value||!current;
   el('cancel').hidden=!value||genState==='working'; document.body.classList.toggle('waiting',value&&genState!=='working');
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>{button.disabled=value&&genState!=='working';});
@@ -252,7 +252,7 @@ async function show(version:GameVersion,signal?:AbortSignal) {
   if(version.generation)el('provenance').textContent+=' · техническая проверка пройдена · '+(version.generation.browser.checks?.some(c=>c.aspect==='gameplay-observed'&&c.level==='VERIFIED')?'gameplay проверен частично':'механика не проверена')+'; победа и поражение не подтверждены';
   const restart=version.generation?.browser.checks?.find(c=>c.aspect==='restart-works');
   if(restart?.level==='VERIFIED')el('provenance').textContent+=' · повторный запуск проверен';
-  el<HTMLButtonElement>('phone-game').disabled=false;el<HTMLButtonElement>('edit-game').disabled=false;el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;
+  el<HTMLButtonElement>('phone-game').disabled=busy;el<HTMLButtonElement>('edit-game').disabled=false;el<HTMLButtonElement>('replay').disabled=busy;el<HTMLButtonElement>('focus-game').disabled=false;
   const download=el<HTMLAnchorElement>('export');download.href=`/api/versions/${version.versionId}/export`;download.removeAttribute('aria-disabled');
   const select=el<HTMLSelectElement>('versions');select.replaceChildren();select.disabled=busy;
   history.versions.forEach((v:Omit<GameVersion,'html'>,i:number)=>{const option=document.createElement('option');option.value=v.versionId;option.textContent=`Версия ${i+1} · ${new Date(v.createdAt).toLocaleString()}`;option.selected=v.versionId===version.versionId;select.append(option);});
