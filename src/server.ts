@@ -70,12 +70,12 @@ async function stop() {
   chatgpt.disconnect();adapter?.close?.();
   await jobs.close();
   await bot?.close();await botStartup;
-  const deadline = setTimeout(() => { if ('closeAllConnections' in server) server.closeAllConnections(); }, 5000);
+  const deadline = setTimeout(() => { if ('closeAllConnections' in server) server.closeAllConnections(); }, 500);
   deadline.unref();
-  server.close(() => { clearTimeout(deadline); store.close(); console.log('YAPLIX stopped; SQLite closed'); process.disconnect?.(); });
+  server.close(() => { clearTimeout(deadline); store.close(); console.log('YAPLIX stopped; SQLite closed'); process.disconnect?.(); process.exit(0); });
   if ('closeIdleConnections' in server) server.closeIdleConnections();
-  // Hard timeout fallback: ensure process exits even if something holds the event loop.
-  setTimeout(() => { process.exit(0); }, 12000).unref();
+  // Hard timeout fallback: ensure process exits quickly even if a connection or timer holds the event loop.
+  setTimeout(() => { try { store.close(); } catch {} process.exit(0); }, 2000).unref();
 }
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);

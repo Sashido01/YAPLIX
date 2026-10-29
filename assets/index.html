@@ -12,7 +12,11 @@
 <!-- HEADER WITH TOP NAVIGATION TABS -->
 <header>
   <div class="header-container">
+<<<<<<< HEAD
     <a class="brand" href="#top">YAPLIX<span>Ты придумал. Теперь играй.</span></a>
+=======
+    <a class="brand" href="/">YAPLIX<span>Ты придумал. Теперь играй.</span></a>
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
     
     <!-- STUDIO TOP NAVIGATION TABS -->
     <nav class="header-nav" aria-label="Разделы платформы">
@@ -20,7 +24,11 @@
         <span>✦</span>
         <span>Создать игру</span>
       </button>
+<<<<<<< HEAD
       <button data-view="play" type="button">
+=======
+      <button data-view="library" type="button">
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
         <span>🕹</span>
         <span>Игры</span>
       </button>
@@ -47,12 +55,27 @@
     <button id="cancel" class="quiet" hidden type="button">Отменить ожидание</button>
   </div>
 
+<<<<<<< HEAD
   <div id="job-toast" role="status" aria-live="polite" hidden>
+=======
+  <div id="job-toast" role="status" aria-live="polite">
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
     <span id="job-toast-text"></span>
     <button id="job-toast-open" hidden type="button">Открыть</button>
     <button id="job-toast-dismiss" hidden aria-label="Скрыть уведомление" type="button">×</button>
   </div>
 
+<<<<<<< HEAD
+=======
+  <!-- JOBS PANEL (AVAILABLE ACROSS ALL TABS) -->
+  <section id="jobs-panel" class="panel" hidden>
+    <h2>Задания генерации</h2>
+    <p class="muted">Можно играть и закрывать страницу. Исходный запрос и черновик хранятся на сервере. Продолжение создаёт полный документ по сохранённому контексту.</p>
+    <label id="telegram-notify-label" hidden><input id="telegram-notify" type="checkbox">Сообщить в моём Telegram, когда я выйду из приложения</label>
+    <div id="jobs-list" class="list"></div>
+  </section>
+
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
   <!-- INTRO HEADER (SHOWN ONLY IN CREATE TAB) -->
   <section class="intro">
     <p class="eyebrow">ВАША ИДЕЯ → ВАША ИГРА</p>
@@ -104,6 +127,7 @@
         <p class="muted">Личный ChatGPT доступен только на этом компьютере. Доступность и лимиты зависят от аккаунта. Один запрос к модели на задание, без автоматического повтора.</p>
       </section>
 
+<<<<<<< HEAD
       <!-- PHONE CONNECTION ACCORDION -->
       <details id="phone" class="panel" style="margin-top:16px;">
         <summary>📱 Подключить телефон</summary>
@@ -159,6 +183,8 @@
         <p class="muted">Настройка LIVE, восстановление и обновление — в README.</p>
       </details>
 
+=======
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
     </section>
 
     <!-- ======================================================================
@@ -171,11 +197,16 @@
       </div>
       
       <div id="game">
+<<<<<<< HEAD
         <div class="empty">Опишите идею и создайте свою игру.</div>
+=======
+        <div class="empty">Опишите идею и создайте свою игру, либо выберите готовую игру из каталога ниже.</div>
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
       </div>
       
       <!-- GAMEPLAY CONSOLE ACTION BUTTONS -->
       <div class="actions">
+<<<<<<< HEAD
         <button id="replay" disabled type="button">↺ Запустить заново</button>
         <button id="focus-game" disabled type="button">⛶ Игровой экран</button>
         <button id="edit-game" disabled type="button">✎ Изменить</button>
@@ -183,6 +214,15 @@
         <button id="arena-game" disabled type="button">🏆 Общий рейтинг</button>
         <button id="share" hidden type="button">🔗 Поделиться (7 дней)</button>
         <a id="export" aria-disabled="true" download>⤓ Скачать HTML</a>
+=======
+        <button id="replay" disabled type="button">Запустить заново</button>
+        <button id="focus-game" disabled type="button">Игровой экран</button>
+        <button id="edit-game" disabled type="button">Изменить</button>
+        <button id="phone-game" disabled type="button">На телефон</button>
+        <button id="arena-game" disabled type="button">Общий рейтинг</button>
+        <button id="share" hidden type="button">Создать ссылку на 7 дней</button>
+        <a id="export" aria-disabled="true" download>Скачать HTML</a>
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
       </div>
       <input id="share-url" aria-label="Ссылка на игру" readonly hidden>
       
@@ -228,13 +268,67 @@
       <p class="muted">Игры и версии сохраняются на сервере.</p>
       <div id="games" class="list"></div>
     </div>
+<<<<<<< HEAD
+=======
+
+    <!-- PHONE CONNECTION ACCORDION -->
+    <details id="phone" class="panel">
+      <summary>📱 Подключить телефон</summary>
+      <p>Подключите телефон к той же сети Wi-Fi и отсканируйте код. Компьютер может быть подключён кабелем.</p>
+      <p class="muted">Включает временный доступ только к выбранной версии на 30 минут. Используйте доверенную домашнюю сеть; любой получивший ссылку сможет играть.</p>
+      <label for="phone-version">Игра для телефона</label>
+      <select id="phone-version"></select>
+      <label id="phone-network-label" hidden>Ваша сеть<select id="phone-network"></select></label>
+      <p id="phone-status" role="status">Подготовка подключения…</p>
+      <div id="phone-ready" hidden>
+        <img id="phone-qr" alt="QR выбранной игры для телефона" width="280" height="280">
+        <label for="phone-url">Локальная ссылка</label>
+        <input id="phone-url" readonly>
+        <button id="phone-copy" type="button">Скопировать ссылку</button>
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button id="phone-refresh" type="button">Обновить подключение</button>
+        <button id="phone-off" type="button" disabled>Отключить доступ</button>
+      </div>
+      <details style="margin-top:10px;">
+        <summary>Если телефон не подключается</summary>
+        <p>Проверьте, что телефон в той же сети, а Wi-Fi не гостевой и не изолирует устройства. В VPN разрешите доступ к локальной сети, если VPN его блокирует; отключать VPN обязательно не нужно.</p>
+        <p>Откройте блок «Частная сеть · QR и Arena»: диагностика ничего не меняет. Настройка узких правил требует просмотра плана, отдельного согласия и UAC. Используйте доверенную Private сеть. Профиль, VPN и маршруты автоматически не меняются.</p>
+        <button id="phone-networks" type="button">Обновить список сетей и статус</button>
+      </details>
+    </details>
+
+    <!-- SYSTEM DIAGNOSTICS & BACKUP ACCORDION -->
+    <details id="system" class="panel">
+      <summary>🛠 Диагностика для разработчика · резервная копия</summary>
+      <p id="system-info"></p>
+      <p id="lan-instructions" class="muted"></p>
+      <div id="connection-details" hidden>
+        <label for="lan-url">Адрес YAPLIX в вашей сети</label>
+        <input id="lan-url" readonly>
+        <div class="actions">
+          <button id="copy-lan" type="button">Скопировать ссылку</button>
+          <button id="show-qr" type="button">Показать QR</button>
+        </div>
+        <img id="qr-image" alt="QR адреса YAPLIX для телефона" width="240" height="240" hidden>
+        <p id="qr-message" role="status"></p>
+      </div>
+      <button id="backup" type="button">Создать резервную копию</button>
+      <p id="backup-result" role="status"></p>
+      <p class="muted">Настройка LIVE, восстановление и обновление — в README.</p>
+    </details>
+
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
   </div>
 
   <footer>YAPLIX · локальный MVP · статистика передаётся клиентом и не подтверждает честность рекордов.</footer>
 </main>
 
 <script>
+<<<<<<< HEAD
 // Prompt chips and theme script
+=======
+>>>>>>> ae13df974513fcb59604878f9b12ac50367618cd
 (function(){
   document.querySelectorAll('.prompt-chip').forEach(chip => {
     chip.addEventListener('click', () => {
