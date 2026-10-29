@@ -11,7 +11,8 @@
 
 [Быстрый запуск](#быстрый-запуск) · [Создание игры](#создать-изменить-и-экспортировать) ·
 [Презентация](docs/presentation.html) · [Слайды Markdown](docs/presentation.md) ·
-[Обзор продукта](docs/defense-runbook-2026.md) · [Точный статус](docs/submission-status.md)
+[Обзор продукта](docs/defense-runbook-2026.md) · [Дорожная карта](docs/ROADMAP.md) ·
+[Технический статус](docs/submission-status.md)
 
 ## Возможности
 
