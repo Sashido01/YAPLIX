@@ -2,20 +2,20 @@
 param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InstallArgs)
 $ErrorActionPreference='Stop'
 # Auto-cleanup of stale installer/desktop locks from interrupted runs (preserves SQLite database and backups)
-Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object { /working_dir/c_dac403f42c48ff2f/project_extracted/YAPLIX-main.CommandLine -match 'YAPLIX|desktop\.mjs|install-ui\.mjs|server\.ts' } | ForEach-Object { Stop-Process -Id /working_dir/c_dac403f42c48ff2f/project_extracted/YAPLIX-main.ProcessId -Force -ErrorAction SilentlyContinue }
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'YAPLIX|desktop\.mjs|install-ui\.mjs|server\.ts' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 400
-foreach ( in @(
-  (Join-Path :LOCALAPPDATA 'YAPLIX\desktop.lock'),
-  (Join-Path :LOCALAPPDATA 'YAPLIX\desktop.json'),
-  (Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installer	ransaction.json'),
-  (Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installer\install.lock'),
-  (Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installeriew.json')
+foreach ($lockPath in @(
+  (Join-Path $env:LOCALAPPDATA 'YAPLIX\desktop.lock'),
+  (Join-Path $env:LOCALAPPDATA 'YAPLIX\desktop.json'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\YAPLIX\installer\transaction.json'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\YAPLIX\installer\install.lock'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\YAPLIX\installer\view.json')
 )) {
-  if (Test-Path -LiteralPath ) { Remove-Item -LiteralPath  -Force -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $lockPath) { Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue }
 }
- = Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installer'
-if (Test-Path -LiteralPath ) {
-  Get-ChildItem -LiteralPath  -Filter 'probe-*' -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+$instDir = Join-Path $env:LOCALAPPDATA 'Programs\YAPLIX\installer'
+if (Test-Path -LiteralPath $instDir) {
+  Get-ChildItem -LiteralPath $instDir -Filter 'probe-*' -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $name='node-v24.18.0-win-x64'
