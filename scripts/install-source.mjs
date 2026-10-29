@@ -91,7 +91,7 @@ try{
  status('готовим только production-зависимости…');
  try{await run([npm,...ci,'--omit=dev'],work);}catch(error){throw Error('npm ci production не прошёл: '+error.message+'. Проверьте сеть или локальный npm кэш.');}
  for(const name of ['src','assets','build/src','build/public','package.json','package-lock.json','INSTALL.md'])copy(name,payload,work);
- const runtimeScripts=['desktop.mjs','app-runtime.ts','install-engine.mjs','install-adapter.mjs','install-ui.mjs','install-probe.mjs','windows-lan-setup.ps1'];
+ const runtimeScripts=['desktop.mjs','app-runtime.ts','operation-trace.mjs','install-engine.mjs','install-adapter.mjs','install-ui.mjs','install-probe.mjs','windows-lan-setup.ps1'];
  const runtimePackaging=['dialog.ps1','yaplix.svg','install-shortcuts.ps1','install.html','install-client.js'];
  for(const name of runtimeScripts){mkdirSync(join(payload,'scripts'),{recursive:true});copy('scripts/'+name,payload,work);}
  for(const name of runtimePackaging){mkdirSync(join(payload,'packaging'),{recursive:true});copy('packaging/'+name,payload,work);}

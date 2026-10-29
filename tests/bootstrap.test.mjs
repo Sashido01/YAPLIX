@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,existsSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 
@@ -46,4 +46,17 @@ test('source plan preserves a damaged browser cache and names the damage',()=>{
   assert.match(run.stderr,/кэш браузера повреждён/);
   assert.equal(existsSync(join(cache,'chromium-1248','chrome')),true);
  }finally{rmSync(home,{recursive:true,force:true});}
+});
+
+test('source payload includes every local runtime script dependency',()=>{
+ const source=readFileSync('scripts/install-source.mjs','utf8');
+ const list=source.match(/const runtimeScripts=\[([^\]]+)\]/);
+ assert.ok(list,'source installer must declare its reviewed runtime scripts');
+ const names=[...list[1].matchAll(/'([^']+)'/g)].map(match=>match[1]);
+ for(const name of names){
+  if(!/\.(mjs|ts)$/.test(name))continue;
+  const code=readFileSync('scripts/'+name,'utf8');
+  for(const dependency of code.matchAll(/from\s*['"]\.\/([^'"]+)['"]/g))
+   assert.ok(names.includes(dependency[1]),`${name} imports missing payload script ${dependency[1]}`);
+ }
 });
