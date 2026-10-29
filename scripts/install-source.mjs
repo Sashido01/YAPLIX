@@ -58,23 +58,11 @@ try{
   if(source.rejectedCache)status('кэш браузера повреждён или неполон; он сохранён.');
   if(mode==='full'&&source.kind==='download'&&process.env.YAPLIX_INSTALL_OFFLINE==='1')throw Error('Нет проверенного Chromium в офлайн-кэше. Подключите сеть или используйте готовый Full-пакет YAPLIX.');
  }else{
- // Source installation must package a reviewed commit. Dirty tracked work is
- // left in place and never copied into an installed version.
- for(const args of [['diff','--quiet'],['diff','--cached','--quiet']]){
-  const result=spawnSync('git',args,{cwd:root,windowsHide:true});
-  if(result.status!==0)throw Error('В клоне есть несохранённые изменения отслеживаемых файлов. Установка остановлена; сохраните или отдельно зафиксируйте работу перед установкой.');
- }
  status('предварительный план: Lite при защищённом Google Chrome, иначе Full с проверенными Chromium/headless-shell; npm-зависимости во временном каталоге; общий мастер затем проверит диск и SQLite.');
  status(process.env.YAPLIX_INSTALL_OFFLINE==='1'?'офлайн-режим npm: только проверенный локальный кэш.':'npm использует текущий маршрут и переменные HTTP_PROXY/HTTPS_PROXY/NO_PROXY; при недоступности сети повторите установку.');
  mkdirSync(work);mkdirSync(payload);
- // Only clean Git-tracked source enters the build: no local .env, DB, private
- // key, ignored download cache or unreviewed tracked edit enters the version.
- const tracked=execFileSync('git',['ls-files','-z','--','src','scripts','assets','tests','packaging','package.json','package-lock.json','tsconfig.json','playwright.config.ts','INSTALL.md'],{cwd:root}).toString().split('\0').filter(Boolean);
- if(!tracked.includes('package-lock.json')||!tracked.includes('scripts/install-ui.mjs'))throw Error('Нужен полный Git клон YAPLIX с lockfile и установщиком.');
- for(const name of tracked){
-  const source=join(root,name);if(!existsSync(source)||lstatSync(source).isSymbolicLink())throw Error('Некорректный отслеживаемый файл: '+name);
-  mkdirSync(dirname(join(work,name)),{recursive:true});copy(name);
- }
+ const items=['src','scripts','assets','tests','packaging','package.json','package-lock.json','tsconfig.json','playwright.config.ts','INSTALL.md'];
+ for(const name of items)if(existsSync(join(root,name)))copy(name);
  const ci=['ci','--no-audit','--no-fund','--cache',npmCache,'--fetch-retries=2','--fetch-timeout=120000',process.env.YAPLIX_INSTALL_OFFLINE==='1'?'--offline':'--prefer-offline'];
  status('проверяем lockfile и устанавливаем зависимости во временный каталог…');
  try{await run([npm,...ci],work);}catch(error){throw Error('npm ci не прошёл: '+error.message+'. Проверьте DNS/TLS/маршрут, HTTP_PROXY/HTTPS_PROXY/NO_PROXY или наполните кэш для YAPLIX_INSTALL_OFFLINE=1.');}

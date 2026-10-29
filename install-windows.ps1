@@ -1,6 +1,23 @@
 ﻿# Windows 10/11 x64 source checkout bootstrap. No administrator or global PATH.
 param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InstallArgs)
 $ErrorActionPreference='Stop'
+# Auto-cleanup of stale installer/desktop locks from interrupted runs (preserves SQLite database and backups)
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object { /working_dir/c_dac403f42c48ff2f/project_extracted/YAPLIX-main.CommandLine -match 'YAPLIX|desktop\.mjs|install-ui\.mjs|server\.ts' } | ForEach-Object { Stop-Process -Id /working_dir/c_dac403f42c48ff2f/project_extracted/YAPLIX-main.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Milliseconds 400
+foreach ( in @(
+  (Join-Path :LOCALAPPDATA 'YAPLIX\desktop.lock'),
+  (Join-Path :LOCALAPPDATA 'YAPLIX\desktop.json'),
+  (Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installer	ransaction.json'),
+  (Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installer\install.lock'),
+  (Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installeriew.json')
+)) {
+  if (Test-Path -LiteralPath ) { Remove-Item -LiteralPath  -Force -ErrorAction SilentlyContinue }
+}
+ = Join-Path :LOCALAPPDATA 'Programs\YAPLIX\installer'
+if (Test-Path -LiteralPath ) {
+  Get-ChildItem -LiteralPath  -Filter 'probe-*' -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $name='node-v24.18.0-win-x64'
 $expected='0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821'
 $expectedBinary='9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de'

@@ -73,7 +73,7 @@ body{
     linear-gradient(180deg,#091226 0%,var(--page) 460px);
   background-size:100% 100%,100% 100%,100% 100%,36px 36px,36px 36px,100% 100%;
 }
-header,main,footer{max-width:1240px;margin:auto;padding:16px;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+header,main,footer{max-width:1040px;margin:auto;padding:16px;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-top:max(14px,env(safe-area-inset-top))}
 .brand{display:inline-flex;align-items:center;gap:10px;font-size:22px;font-weight:800;color:var(--accent);text-decoration:none;letter-spacing:.05em}
 .brand::before{content:'';width:26px;height:26px;flex:none;border-radius:8px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect width='26' height='26' rx='7' fill='%23ffd84d'/%3E%3Cpath d='M10.4 6.8v12.4l9.4-6.2z' fill='%2312050a'/%3E%3Cpath d='M7 9v8l1.6-1V10z' fill='%2312050a' opacity='.55'/%3E%3C/svg%3E") center/contain no-repeat;box-shadow:0 0 0 1px rgba(255,216,77,.32),0 4px 16px rgba(255,216,77,.22)}
@@ -81,7 +81,7 @@ header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
 header button{font-size:13px;padding:10px 12px}
 h1{font-size:clamp(28px,5vw,44px);line-height:1.12;margin:16px 0 10px;font-weight:800;letter-spacing:-.02em}
 h2{font-size:17px;margin:0 0 8px;font-weight:700;letter-spacing:-.01em}
-.intro{margin:10px 0 22px}
+.intro{margin:10px 0 22px;text-align:center}
 .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.14em;background:var(--accent-soft);border:1px solid rgba(255,216,77,.32);border-radius:999px;padding:7px 13px;text-transform:uppercase}
 .eyebrow::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px rgba(255,216,77,.9)}
 .intro p:last-child,.muted,footer{color:var(--muted)}
@@ -127,33 +127,39 @@ summary::after{content:'';width:9px;height:9px;flex:none;margin-left:auto;border
 details[open]>summary::after{transform:rotate(225deg);border-color:var(--accent)}
 #system-info,#backup-result,pre{overflow-wrap:anywhere;padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--muted)}
 #backup-result{margin-top:8px}
-footer{font-size:12.5px;padding-bottom:calc(90px + var(--safe-bottom))}
+footer{font-size:12.5px;padding-bottom:calc(90px + var(--safe-bottom));text-align:center}
 .quiet{background:transparent;box-shadow:none}
 .connection{border:1px solid var(--err);border-left:3px solid var(--err);border-radius:var(--radius);padding:12px 14px;font-size:14px;color:#ffd9dd;background:rgba(255,92,119,.1)}
 .access{max-width:520px}
 .navigation{display:flex;gap:8px;padding:8px 16px;padding-bottom:calc(8px + var(--safe-bottom))}
 .navigation button{flex:1;min-height:44px}
 .navigation [aria-current=page]{background:linear-gradient(180deg,#ffe678,#ffc41f);color:var(--accent-ink);border-color:#ffd84d;font-weight:700;box-shadow:0 4px 14px rgba(255,199,43,.28)}
+/* Minimalist tab switching across all viewports */
+body[data-screen=play] .composer,body:not([data-screen=play]) .player,body[data-screen=play] .intro,body[data-screen=library] .intro,body[data-screen=library] #create,body[data-screen=library] #chatgpt-connection,body[data-screen=create] #library{display:none}
+body[data-screen=library] .divider{display:none}
 @media(max-width:760px){
   body[data-screen]{height:100svh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}
   body[data-screen]>header{width:100%;margin:0 auto}
   body[data-screen]>main{width:100%;min-height:0;overflow-y:auto;margin:0 auto}
   body[data-screen] .navigation{position:static;border-top:1px solid var(--line);background:rgba(6,10,22,.94);padding-top:6px}
   body[data-screen] footer{padding-bottom:16px}
-  body[data-screen=play] .composer,body:not([data-screen=play]) .player,body[data-screen=play] .intro,body[data-screen=library] #create,body[data-screen=create] #library{display:none}
-  body[data-screen=library] .divider{display:none}
   body[data-screen=play] #game-title{font-size:16px}
   .intro p:last-child{font-size:14px}
 }
 @media(min-width:761px){
-  header,main,footer{padding:24px}
+  body[data-screen]{display:flex;flex-direction:column;min-height:100vh}
+  body[data-screen]>header{order:1;width:100%}
+  body[data-screen]>.navigation{order:2}
+  body[data-screen]>main{order:3;width:100%;flex:1}
+  header,main,footer{padding:20px 24px}
   header{position:sticky;top:0;z-index:4;background:linear-gradient(180deg,rgba(5,9,20,.94),rgba(5,9,20,.84) 65%,rgba(5,9,20,0));backdrop-filter:blur(12px)}
   header::after{content:'';position:absolute;left:24px;right:24px;bottom:0;height:1px;background:linear-gradient(90deg,transparent 5%,rgba(255,216,77,.38),rgba(56,232,255,.25),transparent 95%)}
-  .workspace{grid-template-columns:minmax(250px,380px) minmax(0,1fr);gap:20px}
-  .panel{padding:22px;border-radius:var(--radius-lg)}
+  .workspace{grid-template-columns:minmax(0,1fr);max-width:860px;margin:0 auto;gap:20px}
+  #phone,#system,#jobs-panel{max-width:860px;margin-left:auto;margin-right:auto}
+  .panel{padding:24px;border-radius:var(--radius-lg)}
   .player-top{flex-wrap:nowrap}
-  .navigation{position:static;max-width:480px;margin:6px auto 14px;padding:6px;gap:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;box-shadow:0 8px 24px rgba(2,6,18,.35)}
-  .navigation button{flex:0 1 150px;min-height:40px;border-radius:999px;background:transparent;border-color:transparent;font-weight:600;box-shadow:none}
+  .navigation{position:static;max-width:480px;margin:14px auto 0;padding:6px;gap:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;box-shadow:0 8px 24px rgba(2,6,18,.35)}
+  .navigation button{flex:1 1 140px;min-height:42px;border-radius:999px;background:transparent;border-color:transparent;font-weight:700;box-shadow:none}
   .navigation button:hover:not(:disabled){background:var(--panel-3)}
   footer{padding-bottom:24px}
   .brand{font-size:26px}
@@ -193,7 +199,8 @@ body[data-entry=telegram] .panel{background:var(--panel,#111d32)}
 body[data-entry=telegram]>header{padding-top:max(16px,var(--tg-safe-top,0px))}
 body[data-entry=telegram]>main{padding-left:max(16px,var(--tg-safe-left,0px));padding-right:max(16px,var(--tg-safe-right,0px))}
 body[data-entry=telegram][data-screen]{height:var(--app-height,100svh)}
-#job-toast{display:flex;align-items:center;gap:8px;min-height:52px;margin-bottom:8px;font-size:14px;overflow-wrap:anywhere;background:var(--panel);border:1px solid var(--line-strong);border-left:3px solid var(--ok);border-radius:var(--radius);padding:8px 12px;box-shadow:0 14px 34px rgba(2,6,14,.35)}
+#job-toast{display:flex;align-items:center;gap:8px;min-height:52px;margin:0 auto 8px;max-width:860px;font-size:14px;overflow-wrap:anywhere;background:var(--panel);border:1px solid var(--line-strong);border-left:3px solid var(--ok);border-radius:var(--radius);padding:8px 12px;box-shadow:0 14px 34px rgba(2,6,14,.35)}
+#job-toast:has(#job-toast-open[hidden]){display:none}
 #job-toast-text{flex:1;min-width:0}
 #job-toast button{flex-shrink:0;padding:8px}
 #jobs-panel{margin-bottom:16px}
@@ -210,7 +217,7 @@ body[data-entry=telegram][data-screen]{height:var(--app-height,100svh)}
 #jobs-list article[data-stage=generating],#jobs-list article[data-stage=queued],#jobs-list article[data-stage=validating],#jobs-list article[data-stage=repairing]{border-left-color:var(--info)}
 #jobs-list article[data-recovery=retry_scheduled],#jobs-list article[data-recovery=waiting_for_provider]{border-left-color:var(--warn)}
 #telegram-notify{display:inline-block;width:24px;min-height:24px;vertical-align:middle;margin-right:8px;accent-color:var(--accent)}
-.game-focus #job-toast{position:fixed;top:max(4px,env(safe-area-inset-top));left:8px;right:8px;z-index:6;margin:0;padding:4px 10px;background:var(--panel)}
+.game-focus #job-toast{position:fixed;top:max(4px,env(safe-area-inset-top));left:8px;right:8px;z-index:6;margin:0;padding:4px 10px;background:var(--panel);max-width:none}
 .game-focus .player{padding-top:calc(64px + max(8px,env(safe-area-inset-top)))}
 @media(max-width:430px){header{gap:6px}.brand{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 6px;font-size:20px}.brand::before{width:22px;height:22px;grid-row:1/3}.brand span{grid-column:2;font-size:10px;overflow-wrap:anywhere}}
 
