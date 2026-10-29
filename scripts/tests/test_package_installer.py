@@ -78,6 +78,7 @@ class PackageInstallerTests(unittest.TestCase):
                     "payload/build/src/model-catalog.js",
                     "payload/build/src/server.js",
                     "payload/build/public/ui.js",
+                    "payload/scripts/operation-trace.mjs",
                 ]:
                     self.assertIn(current_source, names)
                 for name in retired:

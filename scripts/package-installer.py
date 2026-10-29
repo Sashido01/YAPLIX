@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='pack-',dir=out.parent) as tmp:
   f.chmod(f.stat().st_mode&0o777) # never install setuid files in a user profile
  # Reviewed source overlays keep the existing app, dependencies and build pipeline.
  sources=[n for n in manifest if n.startswith(('src/','build/src/','build/public/'))]+['src/browser-target.ts','build/src/browser-target.js','scripts/desktop.mjs','package.json','INSTALL.md']
- sources+=['scripts/app-runtime.ts','scripts/install-engine.mjs','scripts/install-adapter.mjs','scripts/install-ui.mjs','scripts/install-probe.mjs','packaging/install.html','packaging/install-client.js','packaging/install-shortcuts.ps1']
+ sources+=['scripts/operation-trace.mjs','scripts/app-runtime.ts','scripts/install-engine.mjs','scripts/install-adapter.mjs','scripts/install-ui.mjs','scripts/install-probe.mjs','packaging/install.html','packaging/install-client.js','packaging/install-shortcuts.ps1']
  for name in set(sources):
   f=app/name;f.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/name,f)
  (app/'packaging/delivery.json').write_text(json.dumps({'browser':'system-chrome' if a.mode=='lite' else 'isolated-chromium','os':'windows-10-11' if a.platform=='windows' else 'ubuntu-24.04','arch':'x64'}))
