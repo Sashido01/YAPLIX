@@ -6,20 +6,52 @@ import type {CodeTransport,Message} from '../src/transport.ts';
 import {generationMessages,extractDocument,GAME_GENERATION_CONTRACT,validateDocument} from '../src/generation.ts';
 import {Store} from '../src/store.ts';
 import {GenerationJobs} from '../src/jobs.ts';
+import {browserCheck} from '../src/browser-check.ts';
 import {html,spec} from './helpers.ts';
-import {UNIVERSAL_ARENA_CONTRACT} from '../src/arena-contract.ts';
 const evidence=async()=>({rendering:{contract:'canvas-webgl-strict-v2' as const,contexts:['2d' as const],profiles:[320,390,844]},profiles:[320,390,844],offline:true as const,errors:0 as const,scope:'full-html' as const});
 const source=(provider:string,complete:CodeTransport['complete']):CodeTransport=>({provider,model:provider==='ollama.com'?'gemma4:31b':'openrouter/free',route:'primary',readiness:async()=>'ready',complete});
 async function settled(jobs:GenerationJobs,id:string){for(let i=0;i<200;i++){const job=jobs.get('owner',id);if(['completed','needs_attention'].includes(job.stage))return job;await new Promise(r=>setTimeout(r,10));}throw Error('JOB_WAIT');}
 
-test('full HTML preserves genre independence while requesting Arena in the same generation',()=>{
+test('full HTML core defines the playable Canvas lifecycle without mandatory telemetry',()=>{
+  assert.ok(GAME_GENERATION_CONTRACT.includes('Draw the world and all visible game UI, including instructions, controls, score and state screens, in Canvas.'));
+  assert.ok(GAME_GENERATION_CONTRACT.includes('Continue with unlimited rounds and no final victory screen.'));
+  assert.ok(GAME_GENERATION_CONTRACT.includes('At 844×390, explicitly reflow or scale the HUD, controls, title and playfield'));
   for(const prompt of ['Collect rubbish in a house with enemies','Match-3','Snake']){
-    const messages=generationMessages({...spec,prompt});assert.equal(messages.length,2);assert.equal(messages[0].content,GAME_GENERATION_CONTRACT+'\n'+UNIVERSAL_ARENA_CONTRACT);assert.ok(messages[1].content.includes(prompt));
+    const messages=generationMessages({...spec,prompt});assert.equal(messages.length,2);assert.equal(messages[0].content,GAME_GENERATION_CONTRACT);assert.ok(messages[1].content.includes(prompt));
   }
   assert.doesNotMatch(GAME_GENERATION_CONTRACT,/400 lines|Canvas 2D is preferred|requiredMechanics|data-yaplix-|eventBridge/);
   assert.deepEqual(validateDocument(html.replaceAll('data-yaplix-','data-custom-')),[]);
   assert.equal(extractDocument('```html\n'+html+'\n```'),html.trim());
   for(const raw of [html+html,html+' trailing lost source',html.replace('</html>',''),'<html>partial'])assert.throws(()=>extractDocument(raw),/LLM_INVALID_HTML/);
+});
+
+test('opaque game sandbox rejects actual browser storage use but not names in source text',async()=>{
+  assert.match(GAME_GENERATION_CONTRACT,/sandboxed iframe with an opaque origin/);
+  assert.match(GAME_GENERATION_CONTRACT,/persistent storage/);
+  const mentions=html.replace('</script>','// localStorage and sessionStorage are forbidden APIs.\nconst label="IndexedDB and document.cookie";\n');
+  assert.deepEqual(validateDocument(mentions),[]);
+  const actual='<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><canvas></canvas><script>const saved=localStorage.getItem("snake");window.addEventListener("keydown",()=>{});</script></body></html>';
+  await assert.rejects(browserCheck(actual,AbortSignal.timeout(18000)),error=>{
+    if(typeof error!=='object'||error===null)return false;
+    const failure=error as {code?:string;feedback?:string};
+    return failure.code==='BROWSER_STORAGE_ACCESS_FORBIDDEN'&&/localStorage/.test(failure.feedback??'');
+  });
+});
+
+test('compact version sends state-specific UI instructions and preserves the complete edit source',async()=>{
+ const seen:Message[][]=[];
+ const route=source('ollama.com',async messages=>{seen.push(structuredClone(messages));return {code:html,model:'gemma4:31b'};});
+ const store=new Store(':memory:');
+ try{
+  const previous=store.save(spec,{html,method:'mock',provider:'authored-test',model:null,generationStatus:'succeeded',validationStatus:'unverified'});
+  const engine=new GenerationEngine([route],{check:evidence,repairs:0,promptVersion:'compact-v2'});
+  await engine.generate({...spec,prompt:'Make the player blue; preserve the rules'},previous);
+  assert.ok(seen[0][0].content.length<GAME_GENERATION_CONTRACT.length*.7);
+  assert.match(seen[0][0].content,/one state at a time/);
+  assert.match(seen[0][0].content,/START.*PLAYING.*ROUND COMPLETE.*NEXT LEVEL.*GAME OVER.*RESTART/s);
+  assert.ok(seen[0][1].content.endsWith(previous.html));
+  assert.equal(store.getVersion(previous.versionId).html,previous.html);
+ }finally{store.close();}
 });
 
 test('default and legacy Auto never dispatch OpenRouter on Ollama failure or missing key',async()=>{
@@ -40,7 +72,7 @@ test('edit sends only current complete HTML and new requirement; durable version
     const original=store.save(spec,{html,method:'mock',provider:'authored-test',model:null,generationStatus:'succeeded',validationStatus:'unverified'});
     const request={spec:{...spec,prompt:'Add enemies; preserve the map'},mode:'live' as const,providerMode:'ollama-cloud' as const,previousVersionId:original.versionId,telegramConsent:false};
     const id=jobs.create('owner','edit-full-source',request).jobId,result=await settled(jobs,id);
-    assert.equal(result.stage,'completed');assert.equal(seen.length,1);assert.equal(seen[0].length,2);assert.ok(seen[0][1].content.endsWith(original.html));assert.match(seen[0][1].content,/Add enemies/);assert.match(seen[0][0].content,/retaining existing working mechanics/);
+    assert.equal(result.stage,'completed');assert.equal(seen.length,1);assert.equal(seen[0].length,2);assert.ok(seen[0][1].content.endsWith(original.html));assert.match(seen[0][1].content,/Add enemies/);assert.match(seen[0][0].content,/preserve all existing working mechanics/);
     assert.equal(store.history(original.gameId).length,2);assert.equal(store.getVersion(original.versionId).html,original.html);assert.equal(store.getVersion(result.versionId!).previousVersionId,original.versionId);
     await jobs.close();jobs=new GenerationJobs(store,engine);assert.equal(jobs.create('owner','edit-full-source',request).jobId,id);assert.equal(store.history(original.gameId).length,2);assert.equal(seen.length,1);
     assert.ok(jobs.get('owner',id).originalCheckpoint);

@@ -1,18 +1,29 @@
 # Рабочее место, API и обслуживание
 
+Текущий dirty-checkout status и Git ограничения: [release status](release-status.md).
+Job timeline и безопасная передача локальной диагностики: [diagnostics](diagnostics.md).
+
+Portable-поставка YAPLIX-INSTALL-002: [установка и запуск](../INSTALL.md), [сборка пакетов](installer-building.md).
+Ubuntu: per-user установка без изменения ОС; независимое устройство и Windows — NOT_VERIFIED.
+
 Git, Node 24.18+ (24.x), npm; для разработки Python 3.11+. Установка — [README](../README.md).
 Команды из корня клона, секреты/данные/браузеры/инструменты только локально.
-Пользовательская установка из исходников: Windows `YAPLIX.cmd` двойным щелчком,
-Ubuntu `sh install.sh`. Эти команды готовят изолированный Node и передают пакет
-общему мастеру установки. Ubuntu выбирает Lite при защищённом Google Chrome,
-иначе Full с проверенными Chromium и headless-shell из локального кэша или сети.
-Windows source bootstrap готовит Lite и требует Chrome.
-Готовые `.exe`/`.run` не требуют npm. Для разработки `npm run app` запускает
-прежний launcher: он собирает клиент и открывает «Создать»; первый `npm ci`
+Пользовательский запуск: Windows `YAPLIX.cmd` двойным щелчком, Windows/Ubuntu
+`npm run app`. Launcher собирает клиент и открывает «Создать»; первый `npm ci`
 выполняется автоматически только при отсутствии node_modules. Неполный existing
 node_modules сохраняется, дальнейшее исправление явное. Ручной server: build/start.
 
 ## Разработка и CI
+
+Для частого цикла используйте `npm run check:quick` (typecheck/build,
+API/Arena contracts и короткий Chromium smoke). Перед интеграцией запускайте
+`npm run check:integration`: durable create/edit/export, repair contracts,
+Arena contracts, мобильный сценарий с rotation при 320 и 390 px. Наборы браузера
+исполняются отдельными процессами на каждом viewport, чтобы изолировать их
+синтетические SQLite и ограничители заданий. Итоговый `npm run check:full`
+запускает полный unit/browser набор, repo checks и secret scan на точном
+release candidate. Любой недоступный инструмент или preflight — FAIL, зависимые
+наборы отмечаются как пропущенные, а не PASS.
 
 ```sh
 git config --local core.autocrlf false
@@ -25,9 +36,13 @@ python -m unittest discover -s scripts/tests -v
 git diff --check
 ```
 
-Ubuntu: python3; при недостающих OS libraries:
-`node scripts/browser-tests.mjs install --with-deps chromium webkit firefox`.
-Production LIVE достаточно checker:install; авторские офлайн-примеры не требуют Chromium.
+Ubuntu: python3; устанавливайте браузеры только в project-local cache через
+`npm run browsers:install`. Не используйте `--with-deps`: он устанавливает
+системные пакеты. Если для browser checks не хватает системных библиотек,
+остановите этот check и используйте поддерживаемое изолированное окружение;
+не меняйте ОС или системные библиотеки ради локальной проверки.
+Production LIVE требует работающий Chromium checker; синтетические игры существуют
+только в `tests/fixtures/` и не поставляются как продуктовые примеры.
 Ubuntu 23.10+ ограничивает user namespaces. Checker сохраняет Chromium sandbox:
 при наличии использует root-owned setuid helper `/opt/google/chrome/chrome-sandbox`
 из установленного Google Chrome. CI проверяет helper по реестру установленного
@@ -55,8 +70,6 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 
 ## Конфигурация
 
-Личный ChatGPT — дополнительный ручной local/loopback маршрут; [настройка и one-POST guard](chatgpt-setup.md). Общие LIVE deadlines определяет [generation-timeouts.ts](../src/generation-timeouts.ts).
-
 .env.example безопасен; process variables имеют приоритет над .env.
 
 | Параметр | Значение / ограничение |
@@ -64,16 +77,17 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | PORT / YAPLIX_DB | 3000 / .local/data/yaplix.sqlite, только .local |
 | LIVE_PROVIDER | ollama-cloud default; auto aliases Ollama only; openrouter manual; none disables LIVE |
 | CLOUD_BASE_URL / CLOUD_API_KEY | только https://openrouter.ai/api/v1 / secret; model фиксирован openrouter/free |
-| LLM_TIMEOUT_MS | Legacy alias для job deadline; при отсутствии LLM_MAX_DURATION_MS, 1000..2100000, default 2100000 |
-| LLM_REQUEST_TIMEOUT_MS | 1000..1800000 и не больше job deadline; default min(1800000, job deadline), один response |
+| LLM_TIMEOUT_MS | 1000..300000, default 180000, один запуск engine |
+| LLM_REQUEST_TIMEOUT_MS | 1000..LLM_TIMEOUT_MS, default min(60000, LLM_TIMEOUT_MS), один transport request |
 | LLM_MAX_ATTEMPTS | 1..12, default 4, provider-call budget автоматического цикла; lifetime ≤12/job |
-| LLM_MAX_DURATION_MS | 1000..2100000, default 2100000 (35 минут), durable deadline включая очередь; DEMO default 300000 |
+| LLM_MAX_DURATION_MS | 1000..1800000, default 300000, durable deadline цикла включая ожидание |
 | LLM_RETRY_MS | 10..60000, default 2000, exponential backoff с cap 60000 |
+| YAPLIX_DISABLE_AUTOMATIC_RETRIES | Set to `1` to stop after any dispatched provider request; useful when a run has a strict external-call budget. A confirmed in-run Ollama repair still uses its separately reserved call. |
 | LLM_MAX_TOKENS | 256..32000, default 12000; доступный completion cap из models API может снизить бюджет |
 | LLM_TOKEN_FIELD | max_tokens default или max_completion_tokens |
 | LLM_TEMPERATURE | optional 0..2, иначе не отправляется |
-| LLM_REPAIRS | 0..2 accepted, cap 1 per job; 0 disables repair |
-| LLM_AUTO_REPAIR | default 0 for production CloudTransport; 1 only after owner authorization for extra inference; see [validation](game-validation.md) |
+| LLM_REPAIRS | 0..3 repair iterations, default 3; 0 disables repair. Each durable job stores its effective repair and total POST budget; total is capped at 4. |
+| LLM_AUTO_REPAIR | Enabled unless explicitly set to 0. Ollama Cloud and pinned ChatGPT support same-route repair; OpenRouter stays repair-disabled because the free router does not pin its actual upstream model. Each repair is a separate POST; see [validation](game-validation.md). |
 | LLM_PROMPT_STYLE | direct code default; spec is a legacy structured envelope |
 | OLLAMA_CLOUD_API_KEY | server secret; только gemma4:31b на https://ollama.com/v1 |
 | Legacy model/fallback/local knobs | CLOUD_MODEL, OLLAMA_CLOUD_MODEL, LLM_FALLBACK, SECONDARY_*, OLLAMA_BASE_URL/MODEL, LLM_LOCAL_FALLBACK игнорируются при production routing |
@@ -83,7 +97,7 @@ post-merge smoke локальный. [FAST/FULL](ci-economy.md),
 | TELEGRAM_AUTH_MAX_AGE | 30..900 s, default 300; session TTL 1 h |
 | TELEGRAM_UPDATES | token + single owner включают одного poller; off явно отключает |
 
-Основные облачные маршруты production LIVE:
+MICRO-019 ограничивает production LIVE двумя фиксированными маршрутами:
 `gemma4:31b` на `https://ollama.com/v1` и `openrouter/free` на
 `https://openrouter.ai/api/v1`. Никаких concrete `:free` IDs, generic providers,
 локальной модели или платного OpenRouter fallback. [Ollama Cloud](https://docs.ollama.com/cloud).
@@ -122,17 +136,13 @@ X-Yaplix-Telegram-Session. Events дополнительно session bearer. Ori
 | POST /api/access | `{key}` → HttpOnly cookie |
 | POST /api/telegram/auth | `{initData}` → Secure cookie + memory sessionToken |
 | GET /api/jobs | последние 50 заданий своего principal, без raw checkpoint |
-| GET /api/gallery | две авторские игры, без автоматической записи в library |
-| POST /api/gallery/:id | `{}` → сохранённая authored/unverified version по явному действию |
-| POST /api/jobs | `{spec,mode?,providerMode?,previousVersionId?,idempotencyKey,telegramConsent?}` → job summary 202; providerMode: auto/ollama-cloud/openrouter |
+| POST /api/jobs | `{spec,providerMode?,previousVersionId?,idempotencyKey,telegramConsent?}` → job summary 202; providerMode: auto/ollama-cloud/openrouter; `mode: demo` is rejected |
 | GET /api/jobs/:jobId | своё задание, исходный запрос/checkpoint/metadata |
 | POST /api/jobs/:jobId/cancel | `{}` → cancelled; запрос/черновик остаются |
 | POST /api/jobs/:jobId/continue | `{}` → queued для needs_attention/failed/cancelled; Retry-After и attempt cap |
 | POST /api/jobs/:jobId/notification | `{}` → `{claimed}`; at-most-once claim toast |
 | GET /api/games | latest metadata 50 игр, title из первого prompt |
-| POST /api/games | `{spec,mode:demo/live,requiredMethod?}` → GameVersion 201 |
 | GET /api/games/:gameId | история metadata без HTML |
-| POST /api/games/:gameId/versions | `{spec,previousVersionId,mode,requiredMethod?}` → linked version |
 | GET /api/versions/:versionId | GameVersion с HTML |
 | GET /api/versions/:versionId/export | exact HTML attachment, X-Content-SHA256 |
 | POST /api/versions/:versionId/share | `{}` → HTTPS URL 7 дней |
@@ -147,7 +157,7 @@ X-Yaplix-Telegram-Session. Events дополнительно session bearer. Ori
 | POST /phone/access; GET /phone/version | Ограниченный token → HttpOnly cookie; чтение только выбранной версии |
 | GET /api/connection/qr.svg | LAN/HTTPS authorization, только адрес без ключей |
 
-Strict types — [contracts.ts](../src/contracts.ts). prompt 2..500 chars; audience
+Strict types — [contracts.ts](../src/contracts.ts). creation prompt 2..500 chars; edit instruction 2..1200 chars; audience
 (default/kids/elderly/hardcore); arbitrary genre/mechanics, controls keyboard/touch/
 pointer, responsive/webview boolean. Imported artifact только mock/unverified,
 клиент не может выставить llm_code/passed. requiredMethod только llm_code, без import.
@@ -163,8 +173,8 @@ Job idempotencyKey — 8..100 букв/цифр/`_`/`-`, уникален вну
 Telegram consent принимается только с signed Telegram session. Один worker,
 pending ≤20 глобально/≤3 на владельца, total ≤1000 jobs, checkpoints/originals
 ≤100 MB суммарно и ≤200000 bytes на каждый draft/original. Default автоматический цикл — до 4 provider calls,
-до 4 запусков worker и 35 минут LIVE суммарно с ожиданием; lifetime limit 12 calls/job.
-`Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts и не продлевает LIVE deadline. ChatGPT допускает только локальную перепроверку полного checkpoint, без второго POST.
+до 4 запусков worker и 300 s суммарно с ожиданием; lifetime limit 12 calls/job.
+`Continue` открывает новый ограниченный цикл, не обнуляет lifetime attempts.
 При настроенном generator LIVE creation rate 6/min owner, 12/min global.
 Отдельный лимит фактических вызовов генерации к провайдерам — 6/min owner и 12/min
 global, включая repair и Continue. Recoverable ошибки Ollama получают bounded retry
@@ -182,11 +192,15 @@ OpenRouter требует явного Continue для нового inference; �
 и восстановление неполного draft после restart не разрешены.
 Полный checkpoint с подтверждённым origin сначала проходит validation без нового
 LLM POST. Неполный draft требует разрешённого LLM repair на исходном route;
-production cloud repair по умолчанию выключен и ограничен одним rewrite на job.
+Ollama Cloud repair включён по умолчанию и ограничен `LLM_REPAIRS` (0..3,
+default 3); первоначальный POST плюс repair ограничены четырьмя вызовами на job.
+`LLM_AUTO_REPAIR=0` явно отключает путь. Pinned ChatGPT transport тоже допускает
+последовательные repair запросы к `gpt-6.1-sol`; OpenRouter остаётся без auto
+repair, так как свободный router не pin-ит upstream-модель.
 Draft без известного/настроенного origin сохраняется с
 `CHECKPOINT_ORIGIN_UNAVAILABLE` без нового dispatch. Буквальное resume с токена
 не обещается. Дополнительные recoveryState:
-retry_scheduled / waiting_for_provider / failed_permanent в SQLite; текущая schema v3.
+retry_scheduled / waiting_for_provider / failed_permanent при прежней schema v2.
 Static/browser gate обязателен;
 playable version и completed job записываются одной SQLite transaction. Черновик
 не может получить passed сам по себе. Готовность не меняет активный iframe;
@@ -196,8 +210,9 @@ Quota/auth/model/context/output-budget отказ охлаждает route на 
 credits и не переключает provider, включая legacy Auto. При обычном `429` cooldown соответствует
 Retry-After (если отсутствует — 60 s). Исчерпание automatic calls/runs/duration,
 отсутствие всех routes или обязательного Chromium оставляют needs_attention.
-Авторская gallery никогда не участвует в LIVE recovery; authored/unverified
-отличается от mock DEMO и от llm_code/passed. GET catalogue не заселяет user DB.
+Production содержит только durable user create/edit jobs. `mode: demo` отклоняется,
+галерея и прямые write routes отсутствуют; synthetic HTML и transport остаются
+только в тестах. Старые пользовательские версии не удаляются.
 
 Внутренний URL `/?game=UUID&version=UUID` (Telegram `/telegram?...`) требует обычную
 авторизацию; version должна принадлежать game. Это адресация общей owner-library,
@@ -205,13 +220,28 @@ Retry-After (если отсутствует — 60 s). Исчерпание aut
 
 ## Backup, восстановление, обновление
 
-`npm run backup` создаёт согласованную SQLite online copy даже при WAL, проверяет integrity/FK/точную schema и SHA-256. Хранится до 20 обычных backup-файлов без перезаписи. Текущая schema — **v3**: games/versions/sessions/events, generation jobs и Arena rooms/players/attempts. `.env`, модель, `.local/telegram` и локальные control/access keys в backup не входят; сохраняйте их отдельно.
+npm run backup: согласованная SQLite online copy даже при WAL, integrity/FK/schema
+v2/SHA-256, до 20 обычных backup-файлов, без перезаписи. .env/модель не входят в backup.
+Это backup game DB, включая jobs; отдельный per-bot consumer/offset state из
+`.local/telegram` и локальные control/access keys в него не входят. Не удаляйте
+эти существующие файлы при update и не подменяйте unknown state пустым.
+`verify:backup` читает проверенные схемы v1 и v2, сообщает фактическую версию.
 
-`verify:backup` читает точные схемы v1, v2 и v3, сообщает фактическую версию. Пустая база сразу создаётся с v3. Существующая исправная v1 сначала проходит v1 → v2, затем v2 → v3; v2 переходит в v3. Перед каждым переходом файловой базы `VACUUM INTO` создаёт уникальный проверенный read-only snapshot: `.local/backups/before-v2-UUID.sqlite` или `before-v3-UUID.sqlite`. Изменение схемы выполняется транзакцией. Неизвестная/неисправная схема блокирует миграцию. В memory DB snapshots не создаются.
+Новая пустая база создаётся сразу с schema v2, без before-v2 snapshot.
+Первый запуск нового backend на исправной существующей v1 добавляет generation_jobs,
+generation_worker и индексы в transaction, затем выставляет user_version=2. До миграции файловой базы
+создаётся уникальный `.local/backups/before-v2-UUID.sqlite` через VACUUM INTO;
+копия read-only проверяется по integrity/FK/точной v1 schema. Неизвестная/неисправная
+схема блокирует переход. В memory DB snapshot не создаётся. Старые games/versions/
+sessions/events и HTML не переписываются. Protective snapshots не удаляются
+автоматически и не входят в предел обычных backup-UUID файлов.
 
-Прежние игры, HTML, версии и задания не переписываются. Protective snapshots автоматически не удаляются и не входят в лимит обычных backups. SHA-256 sidecar для них не создаётся: зафиксируйте hash и проверьте `verify:backup` перед ручным восстановлением. Не удаляйте неизвестные recovery-файлы.
-
-Старый runtime со schema v2 не читает v3. Для отката нужна отдельно сохранённая совместимая база (например, before-v3); она не содержит новые игры/задания/результаты после snapshot. Сначала сохраните текущую базу целиком. Сохранность пользовательской БД не подтверждается тестами на временных данных.
+У before-v2 snapshot нет автоматически сохранённого SHA-256 sidecar: для ручного
+использования зафиксируйте его hash и выполните verify:backup; не угадывайте hash
+и не удаляйте неизвестные `.local` recovery-файлы. Ранее созданные v1 backup допустимы
+для восстановления на новой версии, которая снова выполнит защищённую миграцию.
+Откат к старому v1 runtime не читает v2; восстановление before-v2 теряет более новые
+jobs/изменения после snapshot. Сначала сохраните текущую базу целиком отдельно.
 
 После успешного bind сервер получает exclusive DB worker lease; второй backend
 с той же базой блокируется (`JOB_WORKER_BUSY`), даже при другом порте. Graceful stop
@@ -244,13 +274,12 @@ npm run app
 
 Git/npm не заменяют .local/.env. Dirty/ff-only failure: сохраните свою ветку,
 без reset/clean/force. Проверьте прежние game/history/export hashes и задания.
-Кандидат доводит schema до v3 с protective snapshots; сохранность конкретной
+TASK-009 переводит schema v1 → v2 с protective snapshot; сохранность конкретной
 пользовательской базы проверяйте отдельно.
 
 MICRO-024: обычный `YAPLIX.cmd` слушает loopback. «Подключить телефон» в UI
 включает отдельный Hono listener в том же процессе/Store на выбранном физическом
-private IPv4 и фиксированном TCP 52604 (`YAPLIX_PHONE_PORT`). Arena использует
-отдельный TCP 52605 (`YAPLIX_ARENA_PORT`); занятый порт не заменяется случайным. Windows использует
+private IPv4 и автоматически назначенном свободном порту. Windows использует
 активные `Get-NetAdapter -Physical`; при ошибке проверки fail-closed. Несколько
 подходящих адресов требуют выбора. После bind self-probe получает фактическую
 страницу; неуспех не выдаёт QR. Токен 256 bit находится во fragment QR и передаётся
@@ -261,12 +290,10 @@ refresh/disable/shutdown отзывают listener и cookie. QR encoder/server 
 На LAN listener нет proxy к owner API: разрешены только оболочка, bounded login
 и выбранная версия. Host/Origin/forwarded checks и opaque sandbox/CSP сохранены.
 Телефон не пишет sessions/events, не меняет версии и не запускает LLM. Owner
-продолжает работать через localhost с теми же jobs/SQLite. Порты и роутер
-автоматически не меняются. Первый запуск выполняет read-only диагностику.
-Настройка Windows Firewall доступна через точный план, явное согласие и UAC
-ограниченного helper; программа/адаптер/порты/подсеть фиксированы, чужие правила
-сохраняются. VPN LAN access/client isolation проверяются отдельно.
-[Установка, развёртывание в LAN, DHCP, просмотр и откат правил](lan-network-setup.md).
+продолжает работать через localhost с теми же jobs/SQLite. Port/firewall/router
+автоматически не настраиваются. Разрешение Node.js в Windows Firewall только для
+доверенных частных сетей выполняет владелец; VPN LAN access/client isolation
+проверяются отдельно.
 
 Служебная диагностика LIVE — GET models, время/код/источник отдельно от последней
 сохранённой генерации выбранного provider. Она не проверяет inference-квоту или
@@ -341,3 +368,11 @@ TTL30min, private IP, capability в fragment, owner API недоступен с 
 Firewall/VPN/маршруты автоматически не изменяются. Это не physical-device PASS.
 Сохранённый полный checkpoint можно продолжить с локальной revalidation без POST;
 неполный или ошибочный результат не становится Ready. [Факты](archive/micro-027-report.md).
+# Operation lifecycle diagnostics
+
+The launcher/bootstrap and server share `YAPLIX_OPERATION_ID`; the value is
+generated for a run when absent. Install, update, rollback, backup and backup
+verification each receive their own operation ID in the active data home. See
+[diagnostics](diagnostics.md#операционный-trace) to locate the JSONL timeline.
+Operation tracing is best-effort and never replaces installer errors or SQLite
+backup/verification.

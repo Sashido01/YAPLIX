@@ -19,7 +19,7 @@ const artifact={...currentFixture,html:currentFixture.html.replace('<meta name="
 test('owner prepares known historical HTML locally as a separate version and repeat preparation is idempotent',async()=>{
   const store=new Store(':memory:'),arena=new ArenaConnection(store);
   try{
-    const html=readFileSync('assets/games/ember-blocks.html','utf8'),old=store.save(spec,{...artifact,html});
+    const html=readFileSync('tests/fixtures/games/ember-blocks.html','utf8'),old=store.save(spec,{...artifact,html});
     const app=createApp(store,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,arena);
     const prepare=()=>app.request('http://localhost/api/arena/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({versionId:old.versionId,mode:'local'})});
     const response=await prepare();assert.equal(response.status,201);
@@ -99,7 +99,7 @@ test('missing Arena contract stops at one synthetic dispatch, preserves checkpoi
   const engine=new GenerationEngine([route,{...route,route:'secondary'}],{allowLlmRepair:true,repairs:1,check});
   const store=new Store(':memory:'),jobs=new GenerationJobs(store,engine,undefined,true,{maxCalls:4,retryMs:10});
   try{
-    const job=jobs.create('owner','arena-gate-test',{spec,mode:'live',providerMode:'ollama-cloud',telegramConsent:false});
+    const job=jobs.create('owner','arena-gate-test',{spec:{...spec,prompt:'Arena: '+spec.prompt},mode:'live',providerMode:'ollama-cloud',telegramConsent:false});
     for(let i=0;i<150&&jobs.get('owner',job.jobId).stage!=='needs_attention';i++)await new Promise(r=>setTimeout(r,10));
     const result=jobs.get('owner',job.jobId);assert.equal(result.stage,'needs_attention');assert.equal(result.errorCode,'ARENA_CONTRACT_REQUIRED');assert.equal(calls,1);assert.equal(result.checkpoint,code);assert.equal(store.list().length,0);
     jobs.continue('owner',job.jobId);for(let i=0;i<150&&jobs.get('owner',job.jobId).stage!=='needs_attention';i++)await new Promise(r=>setTimeout(r,10));assert.equal(jobs.get('owner',job.jobId).stage,'needs_attention');assert.equal(calls,1);
@@ -132,12 +132,13 @@ test('analytics names time and distance as results rather than presenting them a
   }finally{store.close();}
 });
 
-test('every new game receives the Arena result contract without an Arena keyword or extra request',()=>{
+test('Arena generation contract is explicit and regular games keep optional telemetry',()=>{
   for(const style of ['direct','spec','intent'] as const){
-    const messages=generationMessages({...spec,prompt:'Головоломка: пройди лабиринт без очков и жизней'},undefined,style);
+    const messages=generationMessages({...spec,prompt:'Arena: головоломка, пройди лабиринт без очков и жизней'},undefined,style);
     assert.equal(messages.length,2);
-    assert.match(messages[0].content,/result-v1:completion-time/);
-    assert.match(messages[0].content,/Do not invent/);
+    assert.match(messages[0].content,/Arena score-v1 is explicitly requested/);
+    assert.doesNotMatch(generationMessages({...spec,prompt:'Головоломка без очков и жизней'},undefined,style)[0].content,/Arena score-v1 is explicitly requested/);
+    assert.match(messages[0].content,/do not.*invent game mechanics/i);
     assert.match(messages[1].content,/без очков и жизней/);
   }
 });

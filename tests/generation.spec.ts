@@ -77,8 +77,9 @@ test('MICRO-023 arbitrary full HTML runs without telemetry or fixed selectors; c
  expect(report.scope).toBe('full-html');expect(report.checks?.find(c=>c.aspect==='html-runs')?.level).toBe('VERIFIED');
  for(const aspect of ['gameplay-observed','win-reachable','loss-reachable','restart-works'])expect(report.checks?.find(c=>c.aspect===aspect)?.level).toBe('NOT_VERIFIED');
  for(const fault of ['throw Error("startup");','Promise.reject(Error("promise"));'])await expect(browserCheck(plain.replace('</script>',fault+'</script>'),AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
- const restart=plain.replace('step=0;paused=false;draw();',"throw Error('restart');");
- await expect(browserCheck(restart,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'JAVASCRIPT_EXCEPTION'});
+ // A generic Canvas tap cannot establish which game control means Restart.
+ // The validator reports restart-works as NOT_VERIFIED instead of claiming it
+ // invoked that semantic action; explicit restart behavior has dedicated tests.
 });
 test.beforeEach(({},info)=>test.skip(info.project.name!=='chromium-desktop','Server-side Chromium checker is independent of the frontend browser profile.'));
 
@@ -177,9 +178,11 @@ test('real checker rejects zero-height controls, fatal JS, autostart, duplicate 
 test('production API real browser rejection repairs only once and persists no broken version',async()=>{
  test.setTimeout(30000);let calls=0;const broken=html.replace('paused=!paused;','emit("game_started");paused=!paused;');
  const engine=new GenerationEngine([{route:'primary',provider:'synthetic',model:'test',readiness:async()=>'ready',complete:async()=>({code:++calls===1?broken:strictCanvas(),model:'test-actual'})}],{timeoutMs:20000});
- const store=new Store(':memory:');try{
-  const response=await createApp(store,engine).request('/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec,mode:'live'})});expect(response.status).toBe(201);const result=await response.json();expect(result.generation.attempts.map((a:any)=>a.outcome)).toEqual(['rejected','accepted']);expect(store.list()).toHaveLength(1);expect(store.history(result.gameId)).toHaveLength(1);expect(result.html).toBe(strictCanvas());
- }finally{engine.close();store.close();}
+ const store=new Store(':memory:'),jobs=new GenerationJobs(store,engine);try{
+  const created=jobs.create('owner','browser-repair-test',{spec,mode:'live',providerMode:'auto',telegramConsent:false});let result=jobs.get('owner',created.jobId);
+  for(let i=0;i<500&&!['completed','needs_attention','failed'].includes(result.stage);i++){await new Promise(resolve=>setTimeout(resolve,20));result=jobs.get('owner',created.jobId);}
+  expect(result.stage).toBe('completed');const version=store.getVersion(result.versionId!);expect(version.generation!.attempts.map((a:any)=>a.outcome)).toEqual(['rejected','accepted']);expect(store.list()).toHaveLength(1);expect(store.history(version.gameId)).toHaveLength(1);expect(version.html).toBe(strictCanvas());
+ }finally{await jobs.close();engine.close();store.close();}
 });
 
 test('MICRO-022 runtime failures at startup, on input, promise rejection and destroyed field block readiness',async()=>{

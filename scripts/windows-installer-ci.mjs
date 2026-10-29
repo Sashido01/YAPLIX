@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {closeSync,existsSync,mkdirSync,openSync,readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {DatabaseSync} from 'node:sqlite';
 
@@ -84,14 +84,22 @@ async function verifyProfile(profilePath,expectedBrowser){
  assert.equal(health.status,200);
  const ui=await loopbackGet(`${expectedBrowser} UI`,base+'/');
  assert.equal(ui.status,200);assert.match(await ui.text(),/YAPLIX/);
- const gallery=await (await loopbackGet(`${expectedBrowser} gallery`,base+'/api/gallery')).json();
- assert.deepEqual(gallery.games.map(game=>game.id),['ember-blocks','prism-maze','arena-target']);
+ // Production ships no gallery. Seed only this explicitly isolated CI profile
+ // through the installed Store, then verify the real API and restart persistence.
+ assert.equal((await loopbackGet(`${expectedBrowser} removed gallery`,base+'/api/gallery')).status,404);
+ const empty=await (await loopbackGet(`${expectedBrowser} empty library`,base+'/api/games')).json();
+ assert.deepEqual(empty.games,[]);
+ const fixture=readFileSync(new URL('../tests/fixtures/game.html',import.meta.url),'utf8');
+ const storeModule=pathToFileURL(join(app,'build/src/store.js')).href;
+ const seed=`import {Store} from ${JSON.stringify(storeModule)};
+ const store=new Store();try{const versions=[];for(let i=0;i<3;i++)versions.push(store.save({prompt:'Windows installer acceptance '+i,audience:'default',genre:'clicker',mechanics:['score'],controls:['keyboard','touch','pointer'],responsive:true,webview:true},{html:${JSON.stringify(fixture)},method:'mock',provider:'authored-test-fixture',model:null,generationStatus:'succeeded',validationStatus:'unverified'}));console.log(JSON.stringify(versions));}finally{store.close();}`;
+ const seeded=readJSONFromRun(node,['--input-type=module','--eval',seed],env);
  const versions=[];
- for(const game of gallery.games){
-  const response=await oneRequest(`${expectedBrowser} create ${game.id}`,base+'/api/gallery/'+game.id,{method:'POST',headers:{'Content-Type':'application/json',Connection:'close'},body:'{}',signal:AbortSignal.timeout(10000)});
-  assert.equal(response.status,201);
-  const version=await response.json();assert.match(version.html,/<html/i);
-  versions.push({id:version.versionId,sha256:createHash('sha256').update(version.html).digest('hex')});
+ for(const version of seeded){
+  const response=await loopbackGet(`${expectedBrowser} seeded version`,base+'/api/versions/'+version.versionId);
+  assert.equal(response.status,200);
+  const saved=await response.json();assert.equal(saved.html,fixture);
+  versions.push({id:saved.versionId,sha256:createHash('sha256').update(saved.html).digest('hex')});
  }
  runToFile(node,[desktop,'--stop','--no-open'],env,'desktop-stop.log',40000);
  await waitFor(join(dataHome,'desktop.lock'),false);
@@ -139,7 +147,7 @@ try{
   const target=profile(mode);mkdirSync(target,{recursive:true});
   runToFile(artifact,['/S'],{...offlineEnv,YAPLIX_INSTALL_TEST_PROFILE:target},`${mode}-install.log`,600000);
   evidence.packages[mode]={sha256:sha(artifact),...(await verifyProfile(target,mode==='lite'?'system-chrome':'isolated-chromium'))};
-  evidence.checks.push(`${mode} NSIS installer, API/UI, protected browser, three games and SQLite restart`);
+  evidence.checks.push(`${mode} NSIS installer, API/UI, protected browser, three isolated fixtures and SQLite restart`);
  }
  evidence.status='PASS';
 }finally{

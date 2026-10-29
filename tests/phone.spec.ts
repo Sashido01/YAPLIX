@@ -24,9 +24,9 @@ test('one click QR decodes to actual selected game; isolated phone touch, rotati
   const mobile=await guest.newPage(),errors:string[]=[];mobile.on('pageerror',e=>errors.push(e.message));
   try{
     await page.clock.install({time:new Date()});await mobile.clock.install({time:new Date()});
-    await page.goto(url+'/?game='+version.gameId);
+  await page.goto(url);await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#games button[data-version="'+version.versionId+'"]').click();
     await expect(page.locator('#game iframe')).toHaveCount(1);
-    await page.locator('#phone summary').first().click();
+    await page.locator('#phone-game').click();
     await expect(page.locator('#phone-qr')).toBeVisible();
     const png=PNG.sync.read(await page.locator('#phone-qr').screenshot());
     const decoded=(jsQR as unknown as (data:Uint8ClampedArray,w:number,h:number)=>{data:string}|null)(new Uint8ClampedArray(png.data),png.width,png.height);
@@ -51,7 +51,7 @@ test('one click QR decodes to actual selected game; isolated phone touch, rotati
     expect((await mobile.request.post(new URL(target).origin+'/api/jobs',{data:{}})).status()).toBe(401);
     await mobile.screenshot({path:info.outputPath('phone-game.png')});
     await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#games button[data-version="'+other.versionId+'"]').click();
-    await page.locator('#phone details summary').click();await page.getByRole('button',{name:'Обновить список сетей и статус',exact:true}).click();
+    await page.locator('#phone-game').click();await page.locator('#phone > details > summary').click();await page.getByRole('button',{name:'Обновить список сетей и статус',exact:true}).click();
     await expect.poll(async()=>await page.locator('#phone-url').inputValue()).not.toBe(target);
     const fresh=await page.locator('#phone-url').inputValue();expect(new URL(fresh).port).toBe(new URL(target).port);expect(new URL(fresh).hash).not.toBe(new URL(target).hash);await mobile.goto(fresh);await expect(frame.locator('#start')).toBeVisible();
     expect((await(await page.request.get(url+'/api/phone')).json()).versionId).toBe(other.versionId);await expect(page.locator('#phone-version')).toHaveValue(other.versionId);
@@ -69,7 +69,7 @@ test('phone errors and multiple networks show a choice without a ready QR; LIVE 
   let release!:()=>void;const pending=new Promise<void>(done=>release=done);
   await page.route('**/api/games',route=>route.fulfill({json:{games:[{versionId:'00000000-0000-4000-8000-000000000000',spec}]}}));
   await page.route('**/api/phone',async route=>{if(route.request().method()==='POST'){chosen=route.request().postDataJSON();await pending;return route.fulfill({status:503,json:{error:'PHONE_SERVER_UNREACHABLE'}});}return route.fulfill({json:{enabled:false,networks:[{name:'WiFi',address:'192.168.1.2'},{name:'Ethernet',address:'10.0.0.2'}]}});});
-  await page.goto('/');await page.locator('#phone summary').first().click();
+  await page.goto('/');await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#phone summary').first().click();
   await expect(page.locator('#phone-status')).toContainText('Выберите сеть');await expect(page.locator('#phone-ready')).toBeHidden();await expect(page.locator('#phone-network-label')).toBeVisible();
   await page.locator('#phone-network').selectOption('10.0.0.2');await expect(page.locator('#phone-network')).toBeDisabled();await expect(page.locator('#phone-version')).toBeDisabled();release();await expect(page.locator('#phone-status')).toContainText('Не удалось открыть страницу');expect(chosen).toEqual({versionId:'00000000-0000-4000-8000-000000000000',address:'10.0.0.2'});await expect(page.locator('#phone-ready')).toBeHidden();
   await page.route('**/api/diagnostics',route=>route.fulfill({json:{ok:true,liveConfigured:true,llmState:'unreachable',mode:'local',model:'gemma4:31b',readinessSource:'models-api-get',readinessCheckedAt:'2026-10-16T10:00:00Z',network:{category:'LLM_RESPONSE_TIMEOUT'},lastSavedGeneration:{createdAt:'2026-10-16T09:00:00Z',model:'gemma4:31b'}}}));
@@ -84,7 +84,7 @@ test('occupied phone port explains the fixed-port conflict without extra launch 
   await page.route('**/api/phone',route=>route.request().method()==='POST'
     ?route.fulfill({status:503,json:{error:'PORT_IN_USE'}})
     :route.fulfill({json:{enabled:false,networks:[{name:'WiFi',address:'192.168.1.2'}]}}));
-  await page.goto('/');await page.locator('#phone summary').first().click();
+  await page.goto('/');await page.getByRole('button',{name:'Игры',exact:true}).click();await page.locator('#phone summary').first().click();
   await expect(page.locator('#phone-status')).toContainText('Порт подключения телефона занят');
   await expect(page.locator('#phone-ready')).toBeHidden();
 });

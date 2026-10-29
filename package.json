@@ -11,7 +11,7 @@
     "benchmark:generation": "node --env-file-if-exists=.env scripts/generation-benchmark.ts",
     "start": "node --env-file-if-exists=.env src/server.ts",
     "lan": "node --env-file-if-exists=.env scripts/lan.ts",
-    "demo:live": "node --env-file-if-exists=.env scripts/live-generation.ts",
+    "generation:live": "node --env-file-if-exists=.env scripts/live-generation.ts",
     "checker:install": "node scripts/browser-tests.mjs install chromium",
     "telegram:check": "node --env-file-if-exists=.env scripts/telegram-setup.ts check",
     "telegram:id": "node --env-file-if-exists=.env scripts/telegram-setup.ts id",
@@ -30,6 +30,9 @@
     "browsers:install": "node scripts/browser-tests.mjs install chromium webkit firefox",
     "performance:smoke": "npm run build && node scripts/browser-tests.mjs performance",
     "check": "npm run typecheck && npm test && npm run test:browser",
+    "check:quick": "node scripts/check.mjs quick",
+    "check:integration": "node scripts/check.mjs integration",
+    "check:full": "node scripts/check.mjs full",
     "doctor:providers": "node --env-file-if-exists=.env scripts/provider-configuration.ts"
   },
   "dependencies": {

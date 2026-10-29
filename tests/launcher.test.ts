@@ -7,7 +7,7 @@ import {runApp,appIdentity} from '../scripts/app-runtime.ts';
 import {runTunnel} from '../scripts/tunnel-runtime.ts';
 import {runtimeKey,proof,RUNTIME_PROTOCOL} from '../src/runtime-control.ts';
 import {PROJECT_ROOT,Store} from '../src/store.ts';
-import {spec} from './helpers.ts';
+import {spec,artifact} from './helpers.ts';
 async function freePort(){const server=createServer();await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const port=(server.address() as {port:number}).port;await new Promise<void>(done=>server.close(()=>done()));return port;}
 test('one-click restart stops own backend, preserves DB, and relaunches',{timeout:45000},async()=>{
   const directory=mkdtempSync('.local/launcher-test-'),port=await freePort(),c1=new AbortController(),c2=new AbortController();
@@ -20,7 +20,7 @@ test('one-click restart stops own backend, preserves DB, and relaunches',{timeou
     try{
       await started2;
       assert.equal(opened.length,2);
-      const version=await(await fetch(opened[1]+'api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();
+      const setup=new Store(directory+'/data.sqlite');const version=setup.save(spec,artifact);setup.close();
       c2.abort();await restarted;
       c1.abort();await running;
       const store=new Store(directory+'/data.sqlite');try{assert.equal(store.getVersion(version.versionId).sha256,version.sha256);assert.ok(store.integrity());}finally{store.close();}
@@ -29,7 +29,7 @@ test('one-click restart stops own backend, preserves DB, and relaunches',{timeou
 });
 test('one-click rejects foreign service without exposing control key or stopping it',async()=>{
   let authorization=false;const server=createServer((request,response)=>{authorization||=Boolean(request.headers.authorization||request.headers['x-yaplix-control']);response.end('{}');});await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const port=(server.address() as {port:number}).port;
-  try{await assert.rejects(runApp({port,signal:new AbortController().signal,open:false}),/PORT_IN_USE/);assert.equal(authorization,false);assert.equal((await fetch('http://127.0.0.1:'+port)).status,200);}finally{await new Promise<void>(done=>server.close(()=>done()));}
+  try{await assert.rejects(runApp({port,signal:new AbortController().signal,explicitPort:true,open:false}),/PORT_IN_USE/);assert.equal(authorization,false);assert.equal((await fetch('http://127.0.0.1:'+port)).status,200);}finally{await new Promise<void>(done=>server.close(()=>done()));}
 });
 test('hung owned shutdown reaches forced cleanup after cancellation; never waits indefinitely (synthetic child)',{timeout:15000},async()=>{
   const controller=new AbortController(),port=await freePort();let ready!:()=>void;const started=new Promise<void>(done=>ready=done);let child:ReturnType<typeof fork>|undefined;

@@ -95,10 +95,10 @@ test('a recovered checkpoint finishing browser validation after its durable dead
  }finally{release();await jobs.close();store.close();}
 });
 
-test('the twelfth durable call ends the job even when more repair passes are configured',async()=>{
+test('the fourth durable create POST ends the job even when more repair passes are configured',async()=>{
  const store=new Store(':memory:');let jobs=new GenerationJobs(store);const id=jobs.create('owner','last-call-repair-budget',request).jobId;let calls=0;
- try{await waitFor(jobs,id,terminal);await jobs.close();metadata(store,id,{deadlineAt:Date.now()+60000,automaticLimit:12},'queued');store.db.prepare('UPDATE generation_jobs SET attempts=11 WHERE job_id=?').run(id);
+ try{await waitFor(jobs,id,terminal);await jobs.close();metadata(store,id,{deadlineAt:Date.now()+60000,automaticLimit:4},'queued');store.db.prepare('UPDATE generation_jobs SET attempts=3 WHERE job_id=?').run(id);
   jobs=new GenerationJobs(store,new GenerationEngine([route(async()=>{calls++;return{code:'<!doctype html><html><body>incomplete',model:'actual'};})],{repairs:2,check:evidence}));
-  const result=await waitFor(jobs,id,terminal);assert.equal(result.errorCode,'LLM_INVALID_HTML');assert.equal(result.attempts,12);assert.equal(calls,1);assert.throws(()=>jobs.continue('owner',id),/JOB_ATTEMPT_LIMIT/);assert.equal(store.list().length,0);
+  const result=await waitFor(jobs,id,terminal);assert.equal(result.errorCode,'LLM_INVALID_HTML');assert.equal(result.attempts,4);assert.equal(calls,1);assert.throws(()=>jobs.continue('owner',id),/JOB_ATTEMPT_LIMIT/);assert.equal(store.list().length,0);
  }finally{await jobs.close();store.close();}
 });

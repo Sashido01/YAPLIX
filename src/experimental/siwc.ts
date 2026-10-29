@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {createLocalJWKSet,jwtVerify} from 'jose';
 import {Fault} from '../contracts.ts';
 import {chatGptRequest} from '../chatgpt-http.ts';
+import {networkRequest} from '../llm-network.ts';
 
 export const SIWC=Object.freeze({issuer:'https://auth.openai.com',discovery:'https://auth.openai.com/.well-known/openid-configuration',authorize:'https://auth.openai.com/api/accounts/authorize',token:'https://auth.openai.com/api/accounts/oauth/token',jwks:'https://auth.openai.com/.well-known/jwks.json'});
 const SCOPE='openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
@@ -58,15 +59,15 @@ function readRecord(path:string){
 }
 
 export class LocalSiwc {
- #directory:string;#request:typeof fetch;#open:(url:string)=>Promise<void>;#timeout:number;
+ #directory:string;#request:typeof fetch;#open:(url:string)=>Promise<void>;#timeout:number;#networkEnv:NodeJS.ProcessEnv;
  #host:string|null=null;#registration:Registration|null=null;#tokens:{access:string;refresh:string;id:string;expiresAt:number}|null=null;
  #active:AbortController|null=null;
  #authorizationLock:'disk'|'process';
  #probeUsed=false;#requests=new Set<AbortController>();
- constructor(options:{directory?:string;request?:typeof fetch;openBrowser:(url:string)=>Promise<void>;timeoutMs?:number;authorizationLock?:'disk'|'process'}){
+ constructor(options:{directory?:string;request?:typeof fetch;openBrowser:(url:string)=>Promise<void>;timeoutMs?:number;authorizationLock?:'disk'|'process';networkEnv?:NodeJS.ProcessEnv}){
   this.#authorizationLock=options.authorizationLock??'disk';
   this.#directory=resolve(options.directory??resolve(root,'.local/siwc-feasibility'));
-  this.#request=options.request??fetch;this.#open=options.openBrowser;this.#timeout=options.timeoutMs??180000;
+  this.#request=options.request??fetch;this.#open=options.openBrowser;this.#timeout=options.timeoutMs??180000;this.#networkEnv=options.networkEnv??process.env;
   if(!Number.isSafeInteger(this.#timeout)||this.#timeout<50||this.#timeout>300000)fail('SIWC_TIMEOUT_INVALID');
  }
  prepare(){
@@ -80,7 +81,7 @@ export class LocalSiwc {
  }
  status():Status{const connected=Boolean(this.#tokens&&this.#tokens.expiresAt>Date.now());return{connected,planPermissionGranted:connected,registered:Boolean(this.#registration)};}
  dispose(){this.#active?.abort();for(const request of this.#requests)request.abort();this.#tokens=null;}
- async respond(messages:{role:'system'|'user'|'assistant';content:string}[],signal:AbortSignal,beforePost:()=>void,maxTextBytes:number,longWait=false){
+ async respond(messages:{role:'system'|'user'|'assistant';content:string}[],signal:AbortSignal,beforePost:()=>void,maxTextBytes:number,longWait=false,onResponse?:(status:number)=>void,onStreamComplete?:(details:{wireBytes:number;outputBytes:number;model:string})=>void){
   if(process.env.NODE_TLS_REJECT_UNAUTHORIZED==='0')fail('SIWC_INSECURE_TLS');
   if(!this.status().connected)fail('SIWC_PLAN_PERMISSION_REQUIRED');
   const tokens=this.#tokens!,controller=new AbortController();this.#requests.add(controller);
@@ -93,9 +94,11 @@ export class LocalSiwc {
    catch(error){if(error instanceof Fault)throw new Fault(error.code,error.status);if(error instanceof SiwcError)throw error;fail('SIWC_DISPATCH_FAILED');}
    try{
    const consume=async(response:Response,readSignal:AbortSignal)=>{
+    onResponse?.(response.status);
     if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)this.dispose();fail(response.status===401||response.status===403?'SIWC_AUTH_REQUIRED':response.status===429?'SIWC_RATE_LIMIT':'SIWC_INFERENCE_HTTP');}
     const report=newStreamReport(),code=await readSiwcStream(response,readSignal,report,maxTextBytes);
     if([tokens.access,tokens.refresh,tokens.id].some(secret=>code.includes(secret)))fail('SIWC_OUTPUT_REJECTED');
+    onStreamComplete?.({wireBytes:report.diagnostics.receivedBytes??0,outputBytes:Buffer.byteLength(code),model:PROBE_MODEL});
     return{code,model:PROBE_MODEL,...(report.usage?.output_tokens===undefined?{}:{outputTokens:report.usage.output_tokens})};
    };
    const url='https://api.openai.com/v1/responses',init:RequestInit={method:'POST',redirect:'error',signal:combined,headers:{Authorization:'Bearer '+tokens.access,Accept:'text/event-stream','Content-Type':'application/json'},body};
@@ -173,12 +176,19 @@ export class LocalSiwc {
  async #json(url:string,signal:AbortSignal,body?:URLSearchParams):Promise<any>{
   if(url!==SIWC.discovery&&url!==SIWC.jwks&&url!==SIWC.token)fail('SIWC_ENDPOINT_REJECTED');
   try{
-   const response=await this.#request(url,{method:body?'POST':'GET',redirect:'error',signal:AbortSignal.any([signal,AbortSignal.timeout(10000)]),headers:{Accept:'application/json',...(body?{'Content-Type':'application/x-www-form-urlencoded'}:{})},...(body?{body:body.toString()}:{})});
-   if(!response.ok){await response.body?.cancel();fail(body?'SIWC_TOKEN_REJECTED':'SIWC_NETWORK');}
-   const reader=response.body?.getReader();if(!reader)fail('SIWC_RESPONSE_INVALID');let size=0;const chunks:Uint8Array[]=[];
-   try{for(;;){const next=await reader!.read();if(next.done)break;size+=next.value.byteLength;if(size>100000)fail('SIWC_RESPONSE_TOO_LARGE');chunks.push(next.value);}}finally{await reader!.cancel().catch(()=>{});}
-   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  }catch(error){if(error instanceof SiwcError)throw error;fail(signal.aborted?'SIWC_CANCELLED':'SIWC_NETWORK');}
+   return await networkRequest(new URL(url),{method:body?'POST':'GET',redirect:'error',signal:AbortSignal.any([signal,AbortSignal.timeout(10000)]),headers:{Accept:'application/json',...(body?{'Content-Type':'application/x-www-form-urlencoded'}:{})},...(body?{body:body.toString()}:{})},'chatgpt-auth',async response=>{
+    if(!response.ok){await response.body?.cancel();const endpoint=body?'TOKEN':url===SIWC.discovery?'DISCOVERY':'JWKS';throw new Fault(`SIWC_${endpoint}_HTTP_${response.status}`, 502);}
+    const reader=response.body?.getReader();if(!reader)fail('SIWC_RESPONSE_INVALID');let size=0;const chunks:Uint8Array[]=[];
+    try{for(;;){const next=await reader!.read();if(next.done)break;size+=next.value.byteLength;if(size>100000)fail('SIWC_RESPONSE_TOO_LARGE');chunks.push(next.value);}}finally{await reader!.cancel().catch(()=>{});}
+    try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{fail('SIWC_RESPONSE_INVALID');}
+   },this.#networkEnv,this.#request);
+  }catch(error){
+   if(error instanceof SiwcError)throw error;
+   if(error instanceof Fault && /^SIWC_(?:DISCOVERY|TOKEN|JWKS)_HTTP_[1-5][0-9]{2}$/.test(error.code)) fail(error.code);
+   if(signal.aborted)fail('SIWC_CANCELLED');
+   if(error instanceof Fault){const mapped:Record<string,string>={LLM_NETWORK_CONFIGURATION:'SIWC_NETWORK_CONFIGURATION',LLM_PROXY_UNSUPPORTED:'SIWC_PROXY_UNSUPPORTED',LLM_PROXY_AUTH:'SIWC_PROXY_AUTH',LLM_PROXY_CONNECTION:'SIWC_PROXY_CONNECTION',LLM_TLS:'SIWC_TLS',LLM_DNS:'SIWC_DNS',LLM_TCP_CONNECTION:'SIWC_TCP_CONNECTION',LLM_RESPONSE_TIMEOUT:'SIWC_NETWORK_TIMEOUT',LLM_NETWORK_UNAVAILABLE:'SIWC_NETWORK_UNAVAILABLE',INSECURE_TLS_CONFIGURATION:'SIWC_INSECURE_TLS',REQUEST_CANCELLED:'SIWC_CANCELLED'};if(mapped[error.code])fail(mapped[error.code]);}
+   fail('SIWC_NETWORK');
+  }
  }
  async signIn(signal?:AbortSignal):Promise<Status>{
   if(process.env.NODE_TLS_REJECT_UNAUTHORIZED==='0')fail('SIWC_INSECURE_TLS');

@@ -3,11 +3,13 @@
     "id": "DEV-01",
     "text": "замути змейку для бабушки",
     "expected_genre": "arcade",
-    "expected_audience": "UNKNOWN",
+    "expected_audience": "elderly",
     "core_mechanics": [
       "snake_movement",
       "food_collection",
-      "growth"
+      "growth",
+      "snake_collision",
+      "score"
     ],
     "explicit_requirements": [
       "Змейка",
@@ -15,7 +17,7 @@
     ],
     "verifiable_result": [
       "Направление змейки меняется от ввода; после еды длина растёт.",
-      "Возраст и ограничения бабушки не считать известными; скорость и цель не заданы."
+      "Учитывать запрос для бабушки: крупные контрастные элементы и спокойное управление; конкретный возраст и скорость не заданы."
     ]
   },
   {

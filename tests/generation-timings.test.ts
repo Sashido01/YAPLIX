@@ -23,7 +23,7 @@ for(const field of ['generation','elapsedMs','requestMs','validationMs','browser
   assert.throws(()=>parseArtifact(input),/INVALID_GENERATION_METADATA/);
  });
  test(`metadata ${field} rejects invalid or over-budget timings`,()=>{
-  for(const value of [-1,35*60_000+1,Number.MAX_SAFE_INTEGER+1,Infinity,-Infinity,NaN,1.5,'1000',null,{}])
+  for(const value of [-1,130*60_000+1,Number.MAX_SAFE_INTEGER+1,Infinity,-Infinity,NaN,1.5,'1000',null,{}])
    for(const source of ['generation','saved-metadata'] as const)
     assert.throws(()=>parseArtifact(candidate(value,field),source),/INVALID_GENERATION_METADATA/);
  });
@@ -33,6 +33,6 @@ test('persisted timing range covers the maximum configurable job budget and pres
  const maximum=generationTimeouts({LLM_MAX_DURATION_MS:String(LIVE_JOB_TIMEOUT_MS)}).jobMs;
  for(const field of ['generation','elapsedMs','requestMs','validationMs','browser'])
   for(const source of ['generation','saved-metadata'] as const)assert.doesNotThrow(()=>parseArtifact(candidate(maximum,field),source));
- assert.equal(maximum,35*60_000);
+ assert.equal(maximum,130*60_000);
  assert.deepEqual(generationTimeouts({LLM_MAX_DURATION_MS:'120000',LLM_REQUEST_TIMEOUT_MS:'60000'}),{jobMs:120000,responseMs:60000});
 });

@@ -8,6 +8,7 @@
 *.pfx
 secrets/
 .local/
+/.local/yaplix-runtime/
 *.local
 *.local.*
 

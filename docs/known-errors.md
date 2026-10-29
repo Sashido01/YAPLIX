@@ -1,4 +1,178 @@
+## RELEASE-011: «На телефон» при открытии новой версии
+
+PR run 40921598800 на Windows: один phone-version assertion оставался на старой
+версии, хотя manual FULL того же дерева прошёл. Trace показал нажатие «На телефон»
+до ответа /sessions новой версии: UI attempt уже busy, но кнопка ещё enabled,
+поэтому обработчик молча возвращался. show() также преждевременно включал кнопку
+до завершения оставшегося refresh списка в openJob.
+
+Детерминированный browser regression удерживает ответ новой версии, затем ответ
+библиотеки. Оба состояния воспроизведены RED отдельно. lock() теперь отключает
+кнопку на время UI-действия; show() сохраняет busy, а finally lock(false) включает
+её после завершения. Provider jobs и фоновые модели не изменены. Исходный QR/
+версии assertion сохранён; ошибку не объявляем одним лишь NOT_VERIFIED.
+
+## FINAL-CI: performance smoke после удаления DEMO
+
+Run 40905855601 прошёл Ubuntu browser matrix (700 PASS), затем performance
+отказал на apiRequestContext.get(relative export href): standalone BrowserContext
+не имеет baseURL. URL экспорта теперь явно разрешается относительно base.
+Два старых селектора «Старт» синхронизированы с тестовой fixture «Start».
+После семи измерений runner также ждал необрабатываемое IPC shutdown; закрытие
+собственного synthetic server теперь использует его штатный SIGTERM handler.
+Performance budgets, 7 холодных mobile contexts/Slow 4G/CPU×4 и 40 memory cycles
+сохранены. Новые цифры не являются гарантией скорости произвольной LLM-игры.
+
+## FINAL-CI: QR на мобильном экране и Windows acceptance без DEMO
+
+Run 40824915530: Ubuntu и Windows unit/backend PASS; browser gate отказал на
+QR visibility 320/360/390, Windows WebKit дополнительно на незавершённом запросе
+начальной библиотеки при навигации. Windows Lite/Full build PASS, acceptance
+ошибочно вызывал удалённый /api/gallery и разбирал 404 как JSON.
+
+- QR: прокрутка к началу длинного details оставляла код ниже экрана. После
+  готовности подключения прокручиваем сам QR к центру; при ошибке — details.
+  Исходный chromium-320 воспроизвёл RED; после исправления 320/360/390 прошли
+  полный synthetic create/edit/export/phone scenario (3/3). Локально нужен
+  документированный browser proxy bypass: один env -u не исключает системный
+  proxy для private-IP Chromium (502); это отдельное ограничение хоста.
+- Windows acceptance теперь сначала требует 404 от gallery и пустую библиотеку,
+  затем сохраняет три fixtures только в явно изолированный CI data home через
+  installed Store. API content SHA, restart и SQLite assertions сохранены.
+  Точный seed-код проверен установленным Linux runtime; native Windows — CI.
+- Mobile race test ждёт data-ready перед новой навигацией: Windows WebKit trace
+  показал ошибку initial /api/games именно при замене ещё загружаемой страницы.
+  Проверка отсутствия page errors не удалена. Новый hosted run — отдельное
+  доказательство; старые 697/692 browser PASS не означают общий gate PASS.
+
+## FINAL-30: порядок CI и переносимые проверки
+
+Run 40821319327 запускал Python packaging test до npm ci/build. Suite перенесён
+после сборки; ранний check_repo сохранён. В отдельной копии без build выполнены
+npm ci → build → 20 Python tests: PASS.
+
+Windows source bootstrap не включал operation-trace.mjs, импортируемый
+install-engine.mjs. Добавлен модуль в source allowlist и в overlay проверенного
+payload; regression dependency closure прошёл RED→GREEN. Ubuntu source bootstrap
+дошёл до установки и apiReady/uiReady/sandboxReady. Windows native — только по CI.
+
+Следующий run 40823367517 обнаружил два независимых дефекта тестов: Linux ELF
+packaging test запускался на Windows только по наличию gcc (нет sys/wait.h), а
+trace fixture содержал путь конкретного Ubuntu-пользователя. ELF smoke теперь
+ограничен Linux; Windows installer job сохранён. Fixture использует homedir();
+trace редактирует homedir() и HOME для переносимой защиты пути. 21 целевой unit
+и 20 Python tests PASS. Успех нового hosted SHA проверяется отдельно.
+
+## SUBMISSION-009: LAN и чистая проверка упаковки
+
+При выборочном merge отсутствовали boot-mount и runtime route существующей
+LAN-панели. Восстановлены только для local/127.0.0.1, в служебной области; API
+по-прежнему требует loopback, Origin и явный consent. Тест проходит через
+«Игры»; реальный firewall не менялся. Desktop/320/WebKit390: 9/9 simulated PASS.
+
+Python packaging test зависел от исторической `.local/yaplix-release-007f`.
+Теперь он создаёт собственный temporary directory в repo и проверяет свежий
+verified payload. Устаревшие/удалённые assets в кэше останавливают сборку с
+`STALE_PAYLOAD_ASSETS`; нужно пересобрать payload, а не выпускать старую DEMO UI.
+20 Python checks PASS.
+
+## SUBMISSION-009: idle-анимация не доказывает управление
+
+Локальный отрицательный пример с `act(){return;}` и анимацией START проходит
+`requireCanvas` по изменению hash. Это воспроизведённое ограничение технической
+приёмки, не доказанный запуск игры. `input-works` остаётся NOT_VERIFIED; не
+объявлять FULL_GAMEPLAY_PASS и не отправлять repair из-за отсутствия evidence.
+Исправление связи input→gameplay не завершено; release gate закрыт. Подробности
+в [техническом статусе](submission-status.md).
+
 # Известные ошибки и восстановление YAPLIX
+
+## SUBMISSION-009 — адресный ввод и достоверность evidence
+
+После первого Canvas Start статичная turn-based сцена ожидала клавишу, но checker
+пробовал ArrowRight только в standalone и раньше останавливался в opaque iframe.
+RED воспроизведён на authored Start + keyboard-only board; условная дополнительная
+проверка ArrowRight/ArrowLeft в обоих режимах даёт GREEN, no-op board по-прежнему
+отклоняется. Начальная смена картинки Start сама по себе не достаточна.
+
+В SUBMISSION-008 v3 сохранены только принятые HTML, rejected raw responses потеряны;
+точный replay этих отказов невозможен. Журнал показывает 8 POST / 3 repair, не 4.
+В v2 два параллельных запуска писали в одну папку: summary нельзя связывать с HTML.
+Для новых экспериментов используйте отдельную UUID-папку, durable job, immutable
+response files с SHA и журнал wire dispatch/response. Transport wrapper должен
+сохранять observesDispatch, иначе бюджет одного POST ошибочно считается дважды.
+
+UI regression: второе создание при уже открытой игре оставляло Create disabled;
+terminal job теперь снимает working-state без замены предыдущего player. Mobile
+навигация также применяет скрытие невыбранных разделов вне desktop media query.
+Оба дефекта воспроизведены до исправления и покрыты браузерными regressions.
+
+### YAPLIX-SUBMISSION-FINAL-008 follow-up — 29 октября 2026
+
+После добавления в production prompt явной компоновки 844×390 чистый повтор
+пяти жанров через Ollama Cloud `gemma4:31b` всё ещё дал 0/5 принятых игр:
+8 POST, 4 ограниченных repair, 0 неизвестных исходов. Две игры завершились
+`BROWSER_CANVAS_UI_OVERLAP`, одна — `BROWSER_CANVAS_TEXT_CLIPPED`, две —
+`BROWSER_CANVAS_ACTIVITY_UNVERIFIED`. Сверка пяти строк `events.jsonl` с
+`summary.json` прошла. Дополнительное повторение того же prompt-гипотезы не
+проводилось. Эти результаты не оправдывают ослабление layout/activity gate;
+нужны сохранённые HTML вместе с точным checker feedback и адресное исправление
+причины до нового LIVE набора. Headless игровые клики и model generation
+считаются разными свидетельствами.
+
+### YAPLIX-SUBMISSION-FINAL-008 — LIVE жанровая выборка, 28 октября 2026
+
+Пять новых durable jobs через Ollama Cloud `gemma4:31b` дали 0/5 технических
+PASS после первого POST; четыре из пяти получили по одной bounded repair, и ни
+один результат не был сохранён как игра. Первые четыре были отклонены из-за
+подтверждённого Canvas text clipping; после repair три из четырёх достигли
+`BROWSER_CANVAS_ACTIVITY_UNVERIFIED`, который означал, что проба не попала в
+кнопку Start, а не доказывал отсутствие игрового цикла. У пятого сразу был этот
+неподтверждённый activity результат. На пяти сохранённых checkpoint HTML
+визуально обнаружены Canvas START-кнопки около 50–58% высоты; relative tap
+`x=0.5,y=0.58` действительно запускал все пять без JS-ошибок. Production checker
+пробовал `y=0.50,0.88,0.50`, поэтому средняя проба пропускала их. Перенос средней
+пробы на `y=0.58` проходит отдельный RED/GREEN regression тест. После того как
+подтверждённый выход текста до 2 CSS px стал minor warning, replay без новых
+LLM вызовов дал технический PASS 3/5; Snake не помещает Canvas в viewport
+844×390, Racing имеет подтверждённое пересечение текста. Не считать эти два
+результата принятыми и не считать gameplay PASS по одному запуску Start.
+См. `.local/yaplix-submission-final-008/REPORT.md` и сохранённые HTML в
+`.local/yaplix-submission-final-008/live/`.
+
+### YAPLIX-SUBMISSION-FINAL-008 — bounded Canvas input scan, 29 октября 2026
+
+Повторный Chromium matrix сначала показал, что замена lower probe на y=0.58
+ломает near-bottom Start; добавление обеих точек восстановило оба теста. Затем
+четвёртый generic tap случайно доходил до Game Over в strict fixture. Проверенный
+remedy: оставить порядок center → y=0.58 → y=0.88 и ограничить probe тремя
+нажатиями. Целевые тесты near-bottom/centered Start, generic validator, ниже
+середины, hidden victory и post-Game-Over markers прошли 7/7 в Chromium.
+Полная матрица на точной изолированной копии: 638 PASS, 2,218 configured skips,
+0 FAIL; unit tests 578/578. Первый exploratory run также показал Firefox 502 на
+loopback/LAN при унаследованном proxy; isolated full runner убирает proxy только
+для offline/browser test processes, после чего Firefox Arena/phone прошли.
+Отдельный WebKit tablet timeout прошёл на focused replay и full rerun. Эти
+результаты не заменяют hosted CI или физические устройства. См. локальный
+`.local/yaplix-submission-final-008/REPORT.md`.
+
+## YAPLIX-FINAL-001 — подтверждённая причина автоматического repair отказа
+
+Production `canvasDiagnosticFeedback` помещает measured confirmation в объект
+`canvasTextLayout`; repair eligibility ранее читала поля только сверху и потому
+отбрасывала реальный `BROWSER_CANVAS_TEXT_CLIPPED` как неподтверждённый. При этом
+trace хранил `confirmed:true`, устойчивые измерения и viewport. Проверка теперь
+разбирает вложенный evidence, повторно проверяет полный HTML и передаёт диагностику
+той же модели. Regression использует production-shaped fixture. В LIVE после
+backend restart confirmed checkpoint автоматически перепроверен, выполнил repair
+и затем корректно остановился на другом `BROWSER_CANVAS_RENDER_UNVERIFIED`; это
+подтверждает путь repair, но не готовность игры. Evidence без подтверждения и
+browser timeout остаются `NOT_VERIFIED` и не расходуют repair budget. См. локальный
+`.local/yaplix-final-001/REPORT.md`.
+
+Для новых job сначала используйте [диагностический API и trace guide](diagnostics.md).
+Таблица ниже объединяет подтверждённые исторические инциденты; каждый пункт
+сохраняет собственную дату, среду и границы доказательства.
 
 Справочник действий по текущему коду. Реальные результаты и ограничения сети
 TASK-008 зафиксированы в [отчёте](archive/task-008-report.md), TASK-010 — в [едином отчёте](archive/task-010-report.md); они не доказывают причину
@@ -6,18 +180,61 @@ TASK-008 зафиксированы в [отчёте](archive/task-008-report.md
 код ошибки, состояние задания и диагностику. Не прикладывайте `.env`, ключи,
 initData или необработанные журналы. [Запуск и обслуживание](../README.md).
 
+### YAPLIX-RELEASE-007F — холодный запуск opaque game iframe
+
+Наблюдался intermittent blank screen в сохранённой LIVE игре: iframe имел
+ненулевой размер, но Canvas иногда оставался 0×0 без page error или CSP violation.
+При назначении `srcdoc` до вставки iframe host layout ещё не был подтверждён.
+Парный Chromium probe той же HTML дал 19/20 с прежним порядком против 20/20 при
+назначении `srcdoc` на следующем animation frame после append. Runtime монтирует
+sandboxed `allow-scripts` iframe и сохраняет CSP; `allow-same-origin` не добавлен.
+В текущем кандидате runtime cold-open loop прошёл 20/20, в том числе на
+пользовательски отредактированной LIVE версии. Если повторится, сначала сохраните
+точную version ID, screenshot и размеры host/iframe/Canvas; не ослабляйте sandbox
+и не меняйте checker. Отдельно: технический Canvas PASS не доказывает победу или
+полное прохождение игры. Full test также поймал ложный WebKit offline-export
+network failure: pending `game_ready` POST предыдущего `/host` запроса начинался
+до перехода на `file://`; тест теперь относит запрос к исходной странице по
+`request.frame().url()`. Исходные 3 WebKit профиля и дополнительный Chromium
+контроль прошли после исправления (5/5). См. `.local/yaplix-release-007f/REPORT.md`.
+
+### YAPLIX-GENERATION-RECOVERY-001 — 28 октября 2026
+
+`BROWSER_CANVAS_ACTIVITY_UNVERIFIED` означает, что наблюдатель не увидел смену
+Canvas после конечного набора общих касаний; стартовый экран или промах по
+Canvas-кнопке остаются возможны. Сверяйте screenshot и координаты input, не
+считайте это доказательством сломанной игры и не снимайте gate. Checker добавил
+центральные taps в точках 50%×45% и 50%×54%; оба authored Canvas-контроля проходят,
+inert контроль продолжает блокироваться. Сохранённый Ollama `BROWSER_CANVAS_TEXT_CLIPPED`
+наоборот подтверждён снимком с реально обрезанной строкой: это дефект результата.
+OpenRouter `LLM_RESPONSE_BODY_TOO_LARGE` с HTTP 200 остановился до полного потока,
+HTML и browser-check; не увеличивайте лимит и не повторяйте запрос автоматически.
+Сводка evidence: `.local/yaplix-generation-recovery-001/REPORT.md`.
+
+### YAPLIX-GENERATION-RECOVERY-002 — 28 октября 2026
+
+Четыре metadata-only traces показывают разные причины: подтверждённое clipping
+у Ollama, две неопределённости Canvas activity, и OpenRouter body cap после HTTP
+200. Реакция игр на правильный Start не подтверждена без исходных HTML.
+ChatGPT wire-dispatch/HTTP trace gap исправлен в текущем source без изменения
+one-POST policy; исторический POST count остался `NOT_VERIFIED`. Не повышайте
+body cap и не повторяйте inference автоматически. Детали и blockers:
+`.local/yaplix-generation-recovery-002/REPORT.md`.
+
 | Ошибка / симптом | Причина и безопасное действие |
 | --- | --- |
-| Клон на Ubuntu с Node 22 не запускается или архив Node отклонён | `sh install.sh` использует отдельный Node 24.18.0 в профиле и сверяет закреплённый SHA256 до распаковки. При неверном SHA ничего из архива не исполняется: проверьте файл или скачайте официальный архив повторно. Подтверждено на Ubuntu с системным Node 22; Windows bootstrap ещё не проходил реальную проверку. |
-| GUI acceptance Chrome: `Socket path too long` | На длинном пути изолированного worktree тестовый `TMPDIR` превысил лимит UNIX socket. `installer-smoke.mjs` теперь использует короткий собственный временный каталог; с ним тот же Lite пакет прошёл GUI smoke. Это не основание отключать sandbox или менять браузер. |
-| Full portable: production checker выдаёт `BROWSER_SANDBOX_UNAVAILABLE`, хотя Chromium установлен | В CORE-001/002 Playwright 1.64.0 при `headless:true` выбирал отдельный `chromium_headless_shell-1248`, которого не было в Full payload. SUBMISSION-001 добавляет точный pinned headless-shell в Full и явно выбирает его с `chromiumSandbox:true`; установленный probe использует тот же бинарник. Обычный Chromium остаётся в Full для UI-проверок. Если запуск по-прежнему не удаётся, проверьте реальное сообщение Chromium и короткий путь временного профиля; отключать sandbox нельзя. [Проверки кандидата](submission-verification.md). |
-| Положительная WebGL-игра не завершается в 18 секунд на текущей Ubuntu | Наблюдался `REQUEST_CANCELLED` в двух `strict animated webgl` случаях `draw` и `redraw`; `draw` также не уложился на неизменённом CORE-001 baseline с headless-shell. Причина затрат времени не установлена, поэтому WebGL PASS на этом хосте не заявляется. Сохраните checkpoint и диагностику; не увеличивайте лимит и не отключайте проверку ради принятия игры. [Граница результата](submission-verification.md). |
-| Изолированный worktree: browser suite падает до первого действия с Executable doesn't exist | `scripts/browser-tests.mjs` принудительно задаёт cache `.local/playwright` своего worktree, даже при внешнем PLAYWRIGHT_BROWSERS_PATH. Установите браузеры через `npm run browsers:install` именно в этой копии. Для использования уже проверенного cache без повторного скачивания задайте абсолютный PLAYWRIGHT_BROWSERS_PATH и запустите `node node_modules/@playwright/test/cli.js test ...` напрямую; на Windows при необходимости также задайте TEMP/TMP в локальную папку. Отсутствующий executable не является дефектом приложения. |
+| Короткий игровой запрос получает `UNKNOWN` или название в отрицании ошибочно становится механикой | Локальный словарь теперь содержит отдельные жанры, 25 архетипов, перечисленные RU/EN алиасы, механику, аудиторию, оформление и явные запреты. Он использует ограниченную NFC-нормализацию без стемминга, игнорирует цитируемый текст и сохраняет несколько названных идей. Проверяйте только на development-корпусе; неизвестное оставляйте `UNKNOWN`, не дополняйте пользовательский текст. Подробности, baseline и границы: [Game Vocabulary](game-vocabulary.md). |
+| `BROWSER_CANVAS_RENDER_UNVERIFIED` / `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` | Canvas-контракт может отклонить визуально работающую игру, если поле нарисовано только CSS, игровое изображение не даёт крупных различимых цветовых областей в 32×24 preview или после пробного действия не наблюдается смена кадра. Рисуйте игровое поле и мир в Canvas; для `ACTIVITY` смотрите сохранённые draw counts, image hashes и точку tap. Не снижайте порог checker-а и не принимайте игру только по любому движению пикселей. Подтверждённый разбор: `.local/canvas-001/REPORT.md`. |
+| Generated game `JAVASCRIPT_EXCEPTION`: `localStorage` fails inside the game frame | Confirmed in saved “змейка для бабушки” HTML: opaque `sandbox="allow-scripts"` intentionally omits `allow-same-origin`, so reading `localStorage` throws `Failed to read the 'localStorage' property from 'Window'`. The browser checker is correct; preserve the draft and exact browser feedback, make the game tolerate unavailable storage (or avoid browser storage), then run the full checker before saving. Never add `allow-same-origin` to the game frame to hide the error. Evidence: `.local/game-fix-001/REPORT.md`, `repaired-snake.html`. |
+| Portable INSTALL-002: PERMISSION при подготовке профиля | Подтверждено реальным read-only тестовым каталогом на Ubuntu: запись недоступна. Восстановите право записи в свой каталог YAPLIX и нажмите «Повторить». Установщик не требует root и не меняет системные права/библиотеки. Неверная SQLite также блокирует установку до запуска, её байты сохраняются. Evidence: `.local/install-002/lifecycle-evidence.json`, `corrupt-data-evidence.json`. |
+| Ubuntu: production checker даёт `BROWSER_SANDBOX_UNAVAILABLE` в длинном пути клона | В launch log 24.10.2026 подтверждён `FATAL ... Socket path too long ... SingletonSocket`. Это Linux UNIX socket limit, не доказанная неисправность sandbox. Созданный Ubuntu-аудитом клон перемещён целиком в короткий `.local/ubuntu-prep/c`, без изменения исходников; не отключайте sandbox и не перемещайте чужие worktree без инвентаризации. |
+| Arena E2E в быстром Firefox получает `ARENA_ATTEMPT_RATE` | Сервер намеренно запрещает новую попытку раньше 1000 ms. Browser test завершал броски и сразу открывал keyboard run в том же окне. Test helper теперь ждёт остаток окна от предыдущего подтверждения попытки; счёт, gameplay assertions и production limit сохранены. Исходный RED и адресный GREEN записаны в Ubuntu REPORT. |
+| Ubuntu перенос: `tsc` вызывает отсутствующий `node.exe` | Проверено 24.10.2026: это Windows `node_modules`, а не ошибка TypeScript source. Сохраните каталог отдельно и выполните `npm ci` под Node 24.18+ (24.x). Lock не обновлять. Linux typecheck/build после установки прошли в перенесённой копии и чистом main. [Ubuntu](UBUNTU_SETUP.md). |
+| `browsers:install` exit 0, но Linux executable отсутствует | Перенесённый Windows cache содержит совпадающие Playwright revision/INSTALLATION_COMPLETE. Сохраните `.local/playwright` отдельно и установите Linux browsers в новый каталог. Не удаляйте старые reports/DB/игры. Проверяйте фактический launch, а не только install exit code. |
+| Offline transport tests: `LLM_PROXY_CONNECTION` вместо ожидаемых mock/DNS ошибок | На Ubuntu host proxy унаследован, NO_PROXY содержит неподдерживаемый YAPLIX CIDR `127.0.0.0/8`; mocked provider errors также получают proxy route. Probe подтвердил direct при точном loopback. Удаление proxy env только у процесса offline tests даёт 27/27 transport и полные 499/491 suites. Рабочий proxy и глобальную конфигурацию не менять. [Проверенные команды](UBUNTU_SETUP.md#проверки-и-proxy). |
+| WebKit installed, но не запускается на Ubuntu | Exit 0 установки сопровождался missing libraries. На этом хосте нужны libevent-2.1-7t64, libavif16 и его libgav1-1/libyuv0. Они извлечены из Ubuntu deb внутри проекта; LD_LIBRARY_PATH процессный. Глобальные apt/AppArmor/sandbox не менялись. Фактические browser outcomes смотреть в локальном Ubuntu REPORT. |
 | Arena: `LAN_QR_UNAVAILABLE` при новом URL комнаты | QR телефона допускает только `/phone`. Arena использует отдельный узкий QR-формат `/arena/<UUID>#<secret>` с частным IPv4; не расширяйте общий QR до произвольных URL. Browser E2E декодирует QR и проходит реальные касания десяти clients, без подстановки score. В тесте нужен частный IPv4, loopback QR запрещён. [Демо и ограничения](arena.md). |
-| Arena: версия не выдаёт score/завершение | Декларация score-v1/result-v1 — заявление контракта, не gameplay PASS. Без неё UI предлагает «Подготовить для Arena»: известный authored HTML локально, неизвестный — по отдельному LLM-согласию. Без корректного результата и session_ended рекорд не создаётся. Не подставляйте очки по Start, DOM/Canvas или таймеру; inference требует бюджета. |
-| UI-001: долгоживущий локальный сервер отдаёт устаревший CSS/HTML после правки ассетов | `staticAssets()` кэширует файлы навсегда по назначению продакшн-сервера; после правки `assets/*.css` перезапустите сервер (`Ctrl+C` и повторный запуск), иначе браузер видит предыдущую версию с прежним ETag, а свежий playwright webServer всегда её обновляет. Наблюдение UI-001 в worktree, правки кода не требуются. |
-| UI-001: Playwright `ENOENT …/traces/*-recording46.trace` или zip при сборке артефактов (webkit-tablet `phone.spec`) | Не assertion-отказ: сборка trace-артефакта оборвалась в файловой системе. Чистый повтор того же теста прошёл. При единичном таком отказе перезапустите конкретную спеку/profile, не внося правок в код. |
-| UI-001: unit-тесты transport падают с `LLM_PROXY_CONNECTION` на машине с системным `HTTPS_PROXY` | Оболочка экспортирует `HTTPS_PROXY=http://127.0.0.1:10809`; mock-failure тесты ожидают прямые DNS/TLS коды, а undici уходит в прокси. Локально очищайте `HTTP_PROXY`/`HTTPS_PROXY` для `npm test`. На CI переменных нет. Это окружение хоста, не регрессия кода. |
+| Arena: версия не выдаёт score/завершение | Маркер score-v1 — заявление контракта, не gameplay PASS. Без него UI показывает недоступность, без числового score и session_ended рекорд не создаётся. Создайте отдельную совместимую версию вручную; не подставляйте очки по Start, DOM/Canvas или таймеру и не запускайте inference без бюджета. |
 | A1.8.5: browser ESM graph assertion перечисляет только прежние три модуля | При корректных HTTP 200 четырёх модулей точный список `runtime.spec.ts` ещё ожидал три; полный прогон дал один и тот же RED во всех 12 профилях. Список обновлён совместно с unit graph, без ослабления status/session/gameplay assertions. Исходный failed full log сохранён; финальный HEAD требует нового полного прогона. |
 | A1.8.5: `/runtime/generation-limits.js` возвращает 404 | Вынос pure cap в отдельный модуль добавил browser ESM import из contracts. Полный unit graph test воспроизвёл 404; новый dependency-free модуль добавлен в точный API allowlist и ожидаемый ESM graph. Server timeout module и произвольные пути по-прежнему не доступны. Это локальная source/build проверка, без пользовательского сервера. |
 | A1.8.5: риск рассинхронизации metadata cap и job budget | Dependency-free `src/generation-limits.ts` задаёт прежние 35 min для parser и server timeout policy; `generation-timeouts.ts` сохраняет прежний экспорт. Regression сохраняет maximum configurable job budget во всех пяти timing fields и проверяет меньшие явные response/job limits. Восстановление старого metadata cap 5 min даёт 16 RED, текущий parser — 31/31 GREEN. Реальные inference deadlines, historical profiles и one-POST guard не увеличены. |
@@ -467,121 +684,250 @@ initData или необработанные журналы. [Запуск и о
   Continue revalidates locally without another dispatch. These are offline
   synthetic checks, not real-provider or physical-device evidence.
 - Evidence is synthetic/offline only; real LLM/OAuth/model requests remain zero.
-## LAN Setup (#55): локальные проверки
 
-- Windows Firewall отдаёт `DisabledInterfaceAliases = null`, когда исключённых
-  интерфейсов нет. Это не запрет политики. Синтетический collector RED воспроизвёл
-  ложный UNVERIFIED; null теперь пропускается, реальный read-only Inspect прочитал
-  адаптер, профиль, 230 правил и listener'ы. Это не изменение Firewall и не phone PASS.
-- На Windows sandbox Firefox мог падать при создании страницы (`Target crashed`),
-  а Playwright оставлял собственный webServer в teardown (`taskkill: Access denied`).
-  Host-прогон той же LAN UI матрицы прошёл 24/24 за 22 s. Для offline browser checks
-  используйте scoped per-command исключение из MICRO-029 A1.7 выше; не отключайте
-  защиту или CSP. При очистке проверяйте точные PID/parent chain своего worktree.
-- Arena responsive test после очень быстрой второй игры нажимал третью попытку
-  раньше действующего секундного rate limit и получал «Подождите секунду».
-  Тест теперь выдерживает тот же 1100 ms перед keyboard-попыткой, как перед
-  предыдущей. Production rate limit, счёт и игровое поведение не менялись.
+## YAPLIX-BROWSER-RUNTIME-001: distinguish a missing Playwright executable from sandbox failure
+
+- The checker used to map every rejected `chromium.launch()` to
+  `BROWSER_SANDBOX_UNAVAILABLE`, hiding Playwright's launch error. It now records
+  a bounded, secret-screened launch detail, channel, Node version, executable
+  basename/presence, sandbox-helper ownership/mode, temporary-profile readiness,
+  and separate launch status while keeping `chromiumSandbox: true`.
+- An environment comparison on this host reproduced
+  `Executable doesn't exist at ~/.cache/ms-playwright/chromium-1248/...` when
+  `PLAYWRIGHT_BROWSERS_PATH` was unset. Loading the project `.env` selected the
+  existing `.local/playwright/chromium-1248/...`; the same launch with the
+  verified setuid helper passed. This confirms that omitting project browser
+  configuration can cause a missing-executable error; it does not retroactively
+  prove the cause of an older durable-job failure whose trace omitted launch
+  details.
+- Use the normal launcher or `node --env-file-if-exists=.env ...` from the
+  project root. Keep sandbox enabled. Inspect the job diagnostic timeline for
+  `browser.launch.failed` to distinguish installation, permission, timeout and
+  sandbox failures; do not treat a direct checker result as server-worker proof.
+- A nested `YAPLIX_DATA_HOME` previously made Chromium's temporary
+  `SingletonSocket` exceed Linux's Unix-socket path limit. The production
+  browser checker, gameplay worker and browser-test launcher now share a
+  process-unique mode-0700 profile root under `/tmp`, independent of
+  project/data path depth, and remove it when Node exits. The OS sandbox remains
+  enabled. A checker/worker smoke does not prove LIVE generation.
+
+## YAPLIX-MOBILE-UI-001: detached generation status and hidden phone game panel
+
+- Opening a saved game called `mount()`, which replaced `#game` children, then
+  `show()` wrote to `#gen-title` and `#gen-time` inside the removed subtree.
+  A stale active-job poll could also restart the timer and hide the just-opened
+  iframe. Keep generation status beside the replaceable game container, ignore
+  untracked stale active state once a version is open, and stop the timer if its
+  DOM target is disconnected.
+- At widths up to 760 px the create screen explicitly hid `.player`. Keep it in
+  the mobile document flow and expose the existing game-focus mode through the
+  `К игре` navigation action. Keep mobile notices in flow so they cannot cover
+  bottom navigation or game controls.
+- Regression evidence: `.local/yaplix-mobile-ui-001/REPORT.md`. The saved
+  “Лови звёзды” HTML was not edited; its own title/help text still clips at the
+  narrowest tested widths. Standalone `file:` launch remains unverified when
+  the browser policy blocks local-file navigation.
+
+## YAPLIX-CANVAS-QUALITY-001: measured Canvas 2D text overflow
+
+- The strict Canvas checker now observes native `fillText`/`strokeText` calls
+  after the game call, uses native `measureText()` metrics and the active 2D
+  transform, and records backing/CSS dimensions, alignment, baseline and
+  transformed glyph bounds. It tracks save/restore/clip state without changing
+  game source, drawing, or the game loop.
+- `BROWSER_CANVAS_TEXT_CLIPPED` blocks only when the same measurable text bounds
+  repeat in at least two observations and extend more than one CSS pixel beyond
+  the Canvas bitmap, with no active custom clip and no `maxWidth` shaping.
+  Unmeasurable paint, custom clips, `maxWidth`, WebGL-rendered text, Canvas
+  hitbox semantics, and touch-target size stay `NOT_VERIFIED`; missing evidence
+  is not treated as a defect.
+- Only confirmed text clipping is repairable, and only by the existing Ollama
+  route within `LLM_REPAIRS`. The repair receives the original request, full
+  HTML and bounded measured geometry; it must preserve mechanics and pass the
+  full protected checker again. Other Canvas uncertainty and infrastructure
+  errors do not trigger this repair.
+- Offline production-checker probe (no provider POST): a clean authored Canvas
+  fixture passed 320x700, 390x700 and 844x390; a deliberately clipped label was
+  rejected at 320x700 with measured left overflow 17 CSS px and a saved PNG.
+  This tests the detector and repair eligibility, not real model quality.
+  Evidence: `.local/yaplix-canvas-quality-001/probe-results.json` and
+  `clipped-320x700.png`. The checker's standalone phase uses a separate
+  isolated page with external requests blocked; the actual downloaded file
+  protocol remains subject to browser policy and is not claimed as verified.
+
+## YAPLIX-CANVAS-OVERLAP-001: distinct Canvas labels obscure one another
+
+- Root cause in LIVE-002: the layout observer stored Canvas `TextMetrics` bounds
+  and checked only bitmap clipping. It never compared glyphs from separate
+  `fillText`/`strokeText` calls, so the game HUD's lives label and pause label
+  were both inside the bitmap and escaped the gate.
+- The new observer rasterizes isolated glyph masks in a reusable OffscreenCanvas
+  with the same browser font and 2D transform. It requires at least four shared
+  backing pixels, at least 5% of the smaller glyph mask, and the same conflict
+  across two rendered frames. Draw order, bounds, viewport, phase, DPR and a
+  screenshot ID/SHA are recorded without raw text. Bounding-box intersections
+  alone do not fail. MaxWidth, active clip, unsupported paint, WebGL and
+  semantic hitbox/graphic obstruction cases stay `NOT_VERIFIED`.
+- Only screenshot-backed confirmed `BROWSER_CANVAS_UI_OVERLAP` on Ollama can use
+  the existing `LLM_REPAIRS` budget; the complete protected checker runs again
+  before save. In particular, do not infer buttons from rectangles or repair
+  uncertain overlap. No manual edit or provider POST was used in this audit.
+- Regression probe of the unmodified LIVE-002 export reproduced the overlap at
+  320x700 with 25 shared glyph pixels (18.52% of the smaller mask); two frames
+  confirmed it and the checker rejected the old artifact. This validates the
+  checker regression only, not new-game generation or LIVE model repair.
+  Evidence: `.local/yaplix-canvas-overlap-001/regression.json` and its PNG.
+
+## UI-002F: сырой код ARENA_UNSUPPORTED поверх интерфейса (27 октября 2026)
+
+Клиентский `arenaFetch` в `src/ui.ts` выбрасывал сырой код из ответа API
+(`new Error(String(d.error))`) в статусную строку Arena, поэтому несовместимая
+с рейтингом версия постоянно показывала технический код поверх приложения.
+Источник и условие: серверный Fault `ARENA_UNSUPPORTED` (409) из
+`src/arena-store.ts`/`src/arena.ts` — версия без явного opt-in score-v1
+(`arenaDeclared(html)` false), то есть обычное ожидаемое ограничение, а не сбой
+backend. Backend не менялся, контракты и рейтинг не тронуты.
+
+Исправление UI-002F: таблица русских объяснений с кодом в скобках
+(источник истины — `src/arena-view.ts`), сырые коды больше не показываются
+без объяснения; панель комнаты закрывается кнопкой «Скрыть панель» без
+воздействия на серверное состояние. Код ошибки фиксируется в диагностике.
+Настоящие ошибки backend по-прежнему отображаются, а не скрываются.
+
+## YAPLIX-UI-SMOKE-002: устаревшие мобильные селекторы и UI trace
+
+- Пять старых mobile assertions ссылались на `#jobs-toggle` и кнопку
+  `Обычный экран`. UI-002 намеренно удалил старый список заданий из основного
+  сценария и использует секции деталей текущего задания в рабочем пространстве;
+  переключение фокуса игры теперь проверяется отдельной актуальной кнопкой.
+  Обновляйте сценарии по доступным разделам Create/Games/Arena и текущим
+  доступным именам, не возвращая удалённые элементы ради тестов.
+- Старое ожидание занятости `#versions`/`#replay` задерживало analytics-запрос,
+  которого нет в текущем пути открытия. Для проверки busy-state блокируйте
+  фактический запрос загрузки сессии, затем освобождайте его и проверяйте
+  доступность контролов после появления игры.
+- UI traces хранятся в существующем generation trace для версии durable job.
+  `ui.api_error` и `ui.state_error` содержат только фиксированный код и получают
+  статус `FAIL`; текст ошибки, адрес, payload и секреты туда не копируются.
+  При проверке frontend сначала запускайте `npm run build`: browser server
+  раздаёт собранные статические файлы и иначе может использовать старый client
+  bundle. Локальный Playwright smoke не подтверждает физическое устройство.
+
+## Operation JSONL не появился
+
+Operation trace записывается best-effort под
+`<YAPLIX_DATA_HOME>/diagnostics/operations/` (или project `.local` без отдельного
+data home). Отсутствие файла само по себе не означает отказ запуска: проверьте
+права каталога/data home, отсутствие symlink в родителях и фактический
+`operationId` в `desktop.log`. При недоступном trace приложение продолжает
+работу; используйте код штатной ошибки или существующий installer/desktop log,
+не повторяйте операцию только ради логирования.
+
+## YAPLIX-OBSERVABILITY-GIT-001 / DESKTOP-LOCK-GIT-001: launcher lifecycle
+
+Предыдущий отчёт не смог доказать полный restart, и его финальная проверка lock
+не воспроизводится текущим целевым набором. Диагностический trace показал
+отдельный подтверждённый дефект: readiness launcher разрывал IPC с detached
+worker; серверный процесс воспринимал потерю своего supervisor как `disconnect`
+и останавливался сразу после `running`. Launcher теперь ждёт profile state и
+loopback identity/health, а затем выходит без IPC-зависимости между CLI и
+worker. Целевой тест проверяет полный lifecycle и проходит 6/6.
+
+Одновременный старт двух профилей также воспроизводил `PORT_IN_USE`: desktop
+вызывал внутренний авто-подбор порта `app-runtime`, но продолжал сохранять
+первоначальный порт. Передавайте выбранный Desktop-порт как explicit и повторяйте
+выбор только во внешнем цикле launcher. После исправления тест двух профилей
+проходит и подтверждает разные порты.
+
+Lock удаляйте только после повторной проверки, что его PID совпадает с ожидаемым
+владельцем; state удаляйте только при совпадении instance. Тест подменяет lock
+на PID живого test runner и подтверждает, что shutdown оставляет этот lock.
+Stale cleanup разрешается только при мёртвом PID, совпадающем instance и
+свободном loopback port. Полный smoke, operation IDs и результаты сохранения
+приведены в `.local/yaplix-desktop-lock-git-001/REPORT.md`; отдельный принятый
+профиль остаётся приватным под тем же каталогом.
+
+## YAPLIX-GAMEPLAY-RECOVERY-004: доступность editor и длинная edit-инструкция
+
+После открытия сохранённой игры редактор мог оставаться disabled, пока завершались
+необязательные analytics/list запросы. Не блокируйте готовность формы на этих
+фоновых вызовах; состояние редактора должно зависеть от выбранной версии,
+активного job и настроенности provider. Не отправляйте per-keystroke trace.
+
+Создание новой игры ограничено 500 символами. Длинное задание изменения полного
+HTML проверяйте отдельным edit-лимитом: иначе UI может выглядеть готовым, а API
+отклонит текст как `INVALID_STRING`. Синтетический regression проверяет точный
+полный текст, immutable parent и отсутствие повторной отправки после reload.
+
+В YAPLIX-GAMEPLAY-RECOVERY-004 единственный LIVE edit получил HTML, но protected
+проверка остановила сохранение с `BROWSER_CANVAS_TEXT_CLIPPED` на 320×700. Это
+реальный отказ проверки layout, а не подтверждение gameplay. См. локальный отчёт
+`.local/yaplix-gameplay-recovery-004/REPORT.md`; повторный LLM запрос не выполнялся.
+
+## YAPLIX-FINAL-002: Canvas sampling, Start probes, bridge fallback и test readiness
+
+- `BROWSER_CANVAS_RENDER_UNVERIFIED` на landscape может быть следствием потери
+  мелких игровых деталей при чрезмерно широком downsample. Сохраняйте aspect
+  ratio и до 256 px длинной стороны; не понижайте порог цветов.
+- `BROWSER_CANVAS_ACTIVITY_UNVERIFIED` может означать, что общие probes не
+  достигли Start в нижней части Canvas. Включайте нижние точки, но не объявляйте
+  управление доказанным без наблюдаемого изменения.
+- `BROWSER_TIMEOUT_RENDER` при marker без event bridge — ошибка выбора validator,
+  если документ так и не отправил `game_ready`. После короткого ожидания явно
+  фиксируйте `YAPLIX_BRIDGE_NOT_OBSERVED`, затем запускайте строгий Full HTML
+  checker; runtime errors по-прежнему являются отказом.
+- Playwright `webServer.url` и `baseURL` должны использовать `localhost` в
+  этой среде: `127.0.0.1` попадал в HTTP proxy, поскольку loopback IP отсутствовал
+  в `NO_PROXY`. Proxy не отключать глобально.
+- Тест владения занятым портом должен задавать `explicitPort: true`; иначе
+  launcher закономерно выбирает следующий свободный порт и ожидание отказа
+  превращается в зависание.
+
+FINAL-002 измерил указанные причины на трёх реальных сохранённых checkpoint;
+полный suite всё ещё имеет отдельные падения и не является release PASS. См.
+`.local/yaplix-final-002/REPORT.md`.
+
+### YAPLIX-RELEASE-FINAL-004 — durable repair policy (28 октября 2026)
+
+Ollama Cloud create и edit получают общий durable лимит до четырёх POST на job:
+первичный запрос и не более трёх автоматических repair. `LLM_REPAIRS` задаёт
+фактическое число разрешённых repair (0–3), а `LLM_MAX_ATTEMPTS` может только
+уменьшить общий предел, не увеличить его выше четырёх. Каждая попытка использует
+тот же provider/model и полный checker. OpenRouter не получает автоматических
+repair; ChatGPT ограничен одним POST и своей локальной авторизацией. Неизвестный
+результат отправленного POST не повторяется после restart или Continue.
+
+Длительный deadline Ollama по умолчанию 130 минут: до четырёх последовательных
+окон ответа по 30 минут плюс 10 минут на очередь, проверки и сохранение. Для
+OpenRouter и ChatGPT действует максимум 35 минут на job. Явный `LLM_MAX_DURATION_MS`
+может уменьшить общий лимит; provider deadline не превышает 35 минут для этих
+маршрутов.
+
+Сводка отчёта job различает `llmPostDispatches` (фактические dispatches внутри
+этого job), `configuration.automaticLimit` (максимум POST этого job) и число
+заданий проекта, которое нельзя выводить из одного job report. Project LIVE
+эксперименты считаются по безопасным report counters каждого задания; synthetic
+тесты не являются LIVE расходом.
 
 
-## RELEASE-INTEGRATION-001: ошибки объединённого кандидата
+### YAPLIX-FINAL-005 — LIVE сохранённая игра выбросила sandbox localStorage SecurityError
 
-- Два `network.test.ts` shutdown/restart test завершались timeout (15/20 s), в том числе изолированно. Фоновый `LanSetup.diagnose` оставлял referenced PowerShell Inspect до 30 s; закрытие SQLite не завершало Node. `closeDiagnostics()` теперь прерывает только Inspect через AbortSignal при shutdown. Elevated Apply не отменяется этим механизмом. Профильный повтор прошёл без увеличения таймаутов.
-- Незакрытый desktop `@media` в UI-001 поглощал следующий CSS, включая мобильный game-focus/keyboard/safe-area. Esbuild parser test воспроизвёл `Expected "}" to go with "{"`; закрывающая скобка и browser assertion fixed position устраняют проблему. Успешный TypeScript build сам по себе CSS не проверяет.
-- Выбор сохранённой Arena-комнаты или ошибка refresh оставляли Stop disabled; историческая закрытая комната также ошибочно влияла на активный listener. Stop теперь отражает известное состояние активного listener и временно блокируется только на операцию. Browser regression проверяет выбор, failed refresh и фактическое отключение.
+**Исправление классификации в RELEASE-006:** точная версия FINAL-005 была
+проверена парно в actual player. Без Playwright init script исключения нет; с
+`context.addInitScript(()=>localStorage.setItem(...))` возникает тот же
+`SecurityError` из frame origin `null`, поскольку init script применяется также
+к sandboxed игре. Поэтому этот SecurityError не подтверждает defect generated
+HTML и старый отчёт FINAL-005 сохранён как исторический, с correction note.
+Game HTML и sandbox не менялись.
 
-- При реальном просмотре screenshot 390px бренд пересекался с header-tools (правый край 274px, кнопки начинались на 209px). В HTML два дочерних элемента, а CSS оставлял три grid columns. Header теперь имеет две колонки, подпись бренда до 430px переносится под название. Regression сверяет реальные bounding boxes, отдельно от общего overflow.
+Также подтверждён отдельный UI defect: клик по сохранённой карточке не всегда
+возвращал workspace из Library, поэтому загруженный iframe оставался скрыт.
+Обработчики карточек переключают view в `create` до открытия; выбранные Chromium
+MVP и mobile specs прошли 3/3 и 5/5 после того, как synthetic fixtures стали
+учитывать обязательный provider preflight.
+Не считать оставшуюся browser matrix закрытой: 158 исторических FAIL системно
+не устранены. См. RELEASE-006 report (локально: `../.local/yaplix-release-006/REPORT.md`).
 
-- Полная RELEASE-INTEGRATION-001 матрица дала 604 PASS / 2119 SKIP / 1 FAIL: Chromium tablet не декодировал screenshot QR. Три повтора сохранили реальное перекрытие верхней части QR sticky header (768px, DPR2.75). Причина: `attempt.finally → lock(false)` после открытия телефона возвращал viewport к игре; один центрирующий scroll этого не исправлял. Действие «На телефон» теперь сохраняет собственную цель прокрутки, QR центрируется, остальные действия сохраняют game reveal. Тот же screenshot→jsQR и настоящая игра на телефоне прошли 3/3; в regression дополнительно проверяется, что QR целиком в viewport ниже header. SVG, decoder, QR secret и протокол не менялись. Исходный FAIL/trace сохранён, он не объявляется PASS.
-
-## ARENA-UNIVERSAL-001: режим попытки и обязательная декларация
-
-- Обычная gallery-игра тоже получает `yaplix_init`/session. Проверка одного
-  `telemetry.session` ошибочно блокировала Restart обеих authored игр. Старые
-  arcades browser tests дали RED 2/2; ограничение теперь проверяет только
-  `init.arena===true`, который задаёт Arena parent. Те же tests дали GREEN 2/2.
-- Инструкция модели сама по себе не обеспечивает совместимость нового HTML.
-  Synthetic ответ без декларации раньше сохранялся как completed. Локальный
-  `ARENA_CONTRACT_REQUIRED` теперь оставляет checkpoint в needs_attention;
-  чувствительный durable test подтвердил один dispatch, без repair/fallback.
-- Сырые mouse coordinates на середине высокого iframe могли попасть за
-  viewport после длинного заголовка. Screenshot воспроизвёл Gate 1 без ввода.
-  Обычный locator click прокручивает цель; тест по-прежнему реально проходит
-  ворота и ждёт подтверждённый рекорд. Force-click, score POST и state injection нет.
-- Универсальные значения используют прежнюю колонку sessions.score, но время/дистанция не являются очками. Analytics теперь возвращает resultMetric/meanResult; nonscore meanScore=null. Unit RED 5000 как очки → GREEN 5.000 с и 30 м, UI browser regression проверяет единицы.
-
-## Source Full из клона Ubuntu
-
-- Если Chrome недоступен, source bootstrap готовит Full. Проверенный локальный
-  Playwright-кэш используется первым; повреждённый кэш сохраняется и не входит
-  в пакет. При отсутствии сети и закреплённых архивов сообщение направляет к
-  готовому Full-пакету. Не отключайте sandbox или TLS ради установки.
-- `curl` предпочитает строчные proxy-переменные. Source Full явно передаёт
-  текущий `HTTPS_PROXY` (либо `https_proxy`, если верхний регистр не задан) и
-  `NO_PROXY`, чтобы унаследованное значение не меняло маршрут незаметно.
-- Архив Chrome for Testing распаковывается с каталогом `chrome-linux64` внутри
-  корня браузера. Проверка SHA256 дерева должна включать этот каталог; проверка
-  только его содержимого ошибочно отвергала корректный официальный архив.
-
-## RELEASE-CI-001: обязательный статус PR
-
-- REST ruleset `protect-main` 26.10.2026 вернул обязательные контексты
-  `repository-checks` и `secret-scan`, тогда как workflow публиковал только
-  `repository-checks (ubuntu-24.04)` и `repository-checks (windows-latest)`.
-  Добавлен отдельный агрегат `repository-checks`, который требует успеха обеих
-  платформ и Windows installer job. При `actions/permissions.enabled=false`
-  отсутствие hosted контекста остаётся PARTIAL, даже если локальные тесты зелёные.
-- Первый hosted FULL на `6fba842` нашёл `BROWSER_INSTALL_REQUIRED` в backend
-  unit-тестах обеих ОС: workflow устанавливал Chromium только после unit.
-  Перенесите установку pinned checker Chromium и проверенного Ubuntu sandbox
-  helper до этих тестов; полный browser suite и security-проверки сохраняются.
-  Windows дополнительно обнаружил сравнение путей с Unix-разделителем в двух
-  тестах и Linux-only `zenity` fixture в тесте настроек. Путь сравнивается в
-  нормализованном виде; `zenity` сценарий выполняется на Linux, Windows GUI
-  диалог остаётся отдельной границей проверки.
-- На следующем head `3f3a7c6` Ubuntu unit прошли, но FULL остановился через
-  8 минут на `playwright install --with-deps`: apt скачивал 181 системный пакет
-  через медленный runner mirror. Для browser profiles используется закреплённый
-  Playwright без установки ОС-пакетов; browser suite остаётся обязательным и
-  покажет, хватает ли библиотек готового runner image.
-- Windows Lite/Full EXE успешно собрались с SHA256, но source bootstrap из
-  `powershell.exe` не нашёл штатный `Get-FileHash`, доступный в build-step `pwsh`.
-  CI-процесс больше не передаёт PowerShell 7 `PSModulePath` в Windows PowerShell
-  и проверяет cmdlet до bootstrap. Причина будет подтверждена только hosted
-  повтором; sandbox/контроль SHA не ослабляются.
-- Windows FULL browser suite превысил 20 минут; четыре положительных WebGL
-  сценария отменились на 18-секундном budget во время полной проверки трёх
-  viewport. Независимые viewport теперь проверяются параллельно, сохраняя
-  реальные touch-действия, Canvas snapshots и прежний production watchdog.
-  Локальный положительный WebGL2-кейс прошёл за 13,5 секунды; следующий hosted
-  Windows platform job подтвердил PASS. CI step получил 45 минут, job — 90.
-- Hosted run `fc14f40`: Windows platform browser suite и secret-scan прошли.
-  Ubuntu suite выполнил 500 тестов, но все WebKit-профили не стартовали из-за
-  отсутствующих библиотек в одноразовом Ubuntu runner. CI ставит зависимости
-  только WebKit на runner отдельным шагом; пользовательский установщик ОС не
-  меняет. Windows Lite/Full EXE собрались и ранний PowerShell bootstrap прошёл,
-  но source installation превысила 10 минут без сообщения о последней стадии.
-  CI заранее наполняет тот же изолированный npm cache и запускает source
-  проверку офлайн; при новом отказе выводит хвост лога для точной причины.
-- Повторный Windows run показал, что source установка уже напечатала результат
-  `apiReady/uiReady/sandboxReady:true`, но `spawnSync` ожидал ещё 15 минут до
-  `ETIMEDOUT`. Вероятно, фоновый desktop server удерживал pipe вывода открытым.
-  CI перенаправляет вывод команд, создающих сервер, в отдельные локальные файлы;
-  процесс установщика и его exit code остаются обязательными. Гипотезу должен
-  подтвердить следующий hosted запуск, после чего проверяются оба NSIS EXE.
-- Ubuntu browser suite после подготовки WebKit завершил 701 PASS и один Firefox
-  FAIL: Arena survival не показал `#play` в течение 5 секунд после join, при
-  этом видимая форма ещё ожидала ответ. Общий helper ждёт 12 секунд, не меняя
-  условие успеха и 8-секундный сетевой deadline приложения. Следующий hosted
-  run должен подтвердить переход либо показать ошибку join.
-- Следующий Windows installer run прошёл source без pipe timeout и собрал оба
-  EXE, но acceptance получил `fetch ECONNRESET` без указания loopback endpoint.
-  CI отмечает профиль и этап, сохраняет локальные журналы при отказе и
-  ограниченно повторяет только read-only GET при транспортном сбросе. POST
-  остаётся однократным; постоянный отказ по-прежнему FAIL.
-- Hosted run `f286996`: Windows installer и platform suite прошли, Ubuntu
-  browser suite завершил 701 PASS и один FAIL. Тест наблюдал все три viewport,
-  но требовал порядок их появления, хотя Full HTML checker запускает профили
-  параллельно. Сравнивайте отсортированный набор размеров; порядок сохранённых
-  `evidence.profiles` проверяется отдельно. Целевой локальный тест после правки
-  прошёл; новый hosted run ещё нужен.
+Первоначальное наблюдение FINAL-005 (источник в игре неизвестен) superseded
+проверкой RELEASE-006 выше: точный вызов шёл из Playwright init script. Sandbox
+остаётся opaque; не добавляйте `allow-same-origin`.

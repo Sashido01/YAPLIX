@@ -8,6 +8,13 @@ manifest=json.loads((base/'integrity.json').read_text())
 for name,value in manifest.items():
  f=(base/name).resolve()
  if not f.is_relative_to(base) or digest(f)!=value:raise RuntimeError('Base payload integrity mismatch: '+name)
+# A cached payload may predate DEMO removal or the current UI. Never silently
+# publish those assets alongside current runtime overlays; rebuild the payload.
+for name in manifest:
+ if name.startswith('assets/'):
+  source=ROOT/name
+  if not source.is_file() or digest(source)!=manifest[name]:
+   raise RuntimeError('STALE_PAYLOAD_ASSETS: rebuild the reviewed current payload: '+name)
 out=(a.output or ROOT/'.local/install-002/packages').resolve();out.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='pack-',dir=out.parent) as tmp:
  stage=pathlib.Path(tmp);app=stage/'payload';app.mkdir()
@@ -17,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='pack-',dir=out.parent) as tmp:
   f.chmod(f.stat().st_mode&0o777) # never install setuid files in a user profile
  # Reviewed source overlays keep the existing app, dependencies and build pipeline.
  sources=[n for n in manifest if n.startswith(('src/','build/src/','build/public/'))]+['src/browser-target.ts','build/src/browser-target.js','scripts/desktop.mjs','package.json','INSTALL.md']
- sources+=['scripts/app-runtime.ts','scripts/install-engine.mjs','scripts/install-adapter.mjs','scripts/install-ui.mjs','scripts/install-probe.mjs','packaging/install.html','packaging/install-client.js','packaging/install-shortcuts.ps1']
+ sources+=['scripts/operation-trace.mjs','scripts/app-runtime.ts','scripts/install-engine.mjs','scripts/install-adapter.mjs','scripts/install-ui.mjs','scripts/install-probe.mjs','packaging/install.html','packaging/install-client.js','packaging/install-shortcuts.ps1']
  for name in set(sources):
   f=app/name;f.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/name,f)
  (app/'packaging/delivery.json').write_text(json.dumps({'browser':'system-chrome' if a.mode=='lite' else 'isolated-chromium','os':'windows-10-11' if a.platform=='windows' else 'ubuntu-24.04','arch':'x64'}))

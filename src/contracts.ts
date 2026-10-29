@@ -9,6 +9,7 @@ export interface RenderingEvidence {contract:'canvas-webgl-v1'|'canvas-webgl-str
 export interface BrowserEvidence extends BrowserChecks { profiles:number[]; offline:true; errors:0; scope:BrowserScope; levels?:string[];rendering?:RenderingEvidence }
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_EVENT_BYTES = 4096;
+export const MAX_EDIT_PROMPT_CHARS = 1200;
 export const methods = ['llm_code', 'template_config', 'mock', 'fallback','authored'] as const;
 export const eventTypes = ['game_ready', 'game_started', 'score_changed', 'result_changed', 'game_won', 'game_lost', 'session_ended', 'game_error'] as const;
 export type GenerationMethod = typeof methods[number];
@@ -78,12 +79,12 @@ function strings(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 12) throw new Fault('INVALID_ARRAY');
   return value.map(v => string(v, 64));
 }
-export function parseSpec(value: unknown): GameSpec {
+export function parseSpec(value: unknown, maxPromptChars = 500): GameSpec {
   const o = object(value, ['prompt', 'audience', 'genre', 'mechanics', 'controls', 'responsive', 'webview']);
   if (typeof o.responsive !== 'boolean' || typeof o.webview !== 'boolean') throw new Fault('INVALID_BOOLEAN');
   const controls = strings(o.controls).map(v => choice(v, ['keyboard', 'touch', 'pointer'] as const));
   if (!controls.length) throw new Fault('CONTROLS_REQUIRED');
-  return { prompt: string(o.prompt, 500, 2), audience: choice(o.audience, ['default', 'kids', 'elderly', 'hardcore'] as const), genre: string(o.genre, 64), mechanics: strings(o.mechanics), controls, responsive: o.responsive, webview: o.webview };
+  return { prompt: string(o.prompt, maxPromptChars, 2), audience: choice(o.audience, ['default', 'kids', 'elderly', 'hardcore'] as const), genre: string(o.genre, 64), mechanics: strings(o.mechanics), controls, responsive: o.responsive, webview: o.webview };
 }
 export function parseArtifact(value: unknown, source:'generation'|'saved-metadata'='generation'): Artifact {
   const o = object(value, ['html', 'method', 'provider', 'model', 'generationStatus', 'validationStatus','generation']);

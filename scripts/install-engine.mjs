@@ -1,4 +1,5 @@
 // Platform-neutral installation transaction. Adapters own OS operations only.
+import { OperationTrace, operationId } from './operation-trace.mjs';
 export class InstallError extends Error {
  constructor(code){super(code);this.code=code;}
 }
@@ -28,26 +29,29 @@ export function planInstallation(facts){
  if(facts.needsNetwork&&!facts.online)throw new InstallError('OFFLINE');
  return {action:facts.currentSame?'reuse':facts.installedVersion?'update':'install',dependencies:facts.dependencies??[],needsNetwork:!!facts.needsNetwork,requiresAdmin:false};
 }
-export async function runInstallation(adapter,notify=()=>{}){
+export async function runInstallation(adapter,notify=()=>{},trace=new OperationTrace({dataRoot:adapter.dataHome??'.local',operationId:operationId()})){
  let snapshot,changed=false;
- const emit=(stage,code='OK',details={})=>{notify({stage,code,...details});};
+ trace.record('install','install.started','STARTED');
+ let stageStarted=Date.now();
+ const eventFor={CHECK:'install.platform_checked',PLAN:'install.planned',PREPARE:'install.prepared',INSTALL:'install.installed',VERIFY:'install.verified',LAUNCH:'install.launched',DONE:'install.completed',ROLLBACK:'install.rollback_started',ERROR:'install.failed'};
+ const emit=(stage,code='OK',details={})=>{notify({stage,code});const event=eventFor[stage],durationMs=Math.max(0,Date.now()-stageStarted);if(event)trace.record('install',event,stage==='ERROR'?'FAIL':stage==='ROLLBACK'?'STARTED':stage==='DONE'?'PASS':'PASS',{durationMs,errorCode:stage==='ERROR'?code:null,details});stageStarted=Date.now();};
  try{
-  emit('CHECK');let facts=await adapter.check();
-  if(facts.supported&&facts.integrity&&await adapter.recover?.())facts=await adapter.check();
-  const plan=planInstallation(facts);emit('PLAN','OK',{plan});
+  let facts=await adapter.check();emit('CHECK','OK',{platform:facts.platform,architecture:facts.architecture});
+  if(facts.supported&&facts.integrity&&await adapter.recover?.()){trace.record('install','install.recovery_checked','PASS');facts=await adapter.check();}
+  const plan=planInstallation(facts);emit('PLAN','OK',{action:plan.action,componentCount:plan.dependencies.length});
   if(plan.action!=='reuse'){
-   emit('PREPARE');snapshot=await adapter.prepare(plan);
-   emit('INSTALL');changed=true;await adapter.install(plan,snapshot);
+   snapshot=await adapter.prepare(plan);emit('PREPARE');if(snapshot?.backupCreated)trace.record('install','install.backup_ready','PASS',{details:{backupCreated:true}});
+   changed=true;await adapter.install(plan,snapshot);emit('INSTALL');
   }
-  emit('VERIFY');const verified=await adapter.verify(plan);
+  const verified=await adapter.verify(plan);emit('VERIFY','OK',{apiReady:Boolean(verified?.apiReady),uiReady:Boolean(verified?.uiReady),sandboxReady:Boolean(verified?.sandboxReady)});
   if(!verified?.apiReady||!verified?.uiReady||!verified?.sandboxReady)throw new InstallError('VERIFY');
-  emit('LAUNCH');const launched=await adapter.launch();
+  const launched=await adapter.launch();emit('LAUNCH');
   if(!/^http:\/\/127\.0\.0\.1:[0-9]+\/$/.test(launched?.url??''))throw new InstallError('START');
   await adapter.commit?.();emit('DONE');return {plan,verified,url:launched.url};
  }catch(error){
   const code=failureCode(error);
   if(changed&&snapshot?.rollback){
-   emit('ROLLBACK');try{await adapter.rollback(snapshot);}catch{emit('ERROR','ROLLBACK');throw new InstallError('ROLLBACK');}
+   emit('ROLLBACK');try{await adapter.rollback(snapshot);trace.record('install','install.rolled_back','PASS');}catch{emit('ERROR','ROLLBACK');throw new InstallError('ROLLBACK');}
   }
   emit('ERROR',code);throw new InstallError(code);
  }
