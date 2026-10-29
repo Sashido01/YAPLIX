@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {requireCanvas,type CanvasSnapshot} from '../src/canvas-check.ts';
+import {requireCanvas,canvasDiagnosticFeedback,type CanvasSnapshot} from '../src/canvas-check.ts';
 
 function frame(id=1,image='drawn',meaningful=true,context='webgl',draws=3):CanvasSnapshot{
  return {dom:0,canvases:[{id,image,meaningful,context,draws,fits:true,exposed:true}]};
@@ -26,4 +26,15 @@ test('terminal labels cannot exempt blank final frames in strict rendering',()=>
   assert.throws(()=>requireCanvas([...prior,terminal]),/BROWSER_CANVAS_RENDER_UNVERIFIED/);
  const fake=frame();fake.terminal=true;
  assert.throws(()=>requireCanvas([fake,terminal]),/BROWSER_CANVAS_RENDER_UNVERIFIED/);
+});
+test('Canvas rejection diagnostics distinguish sampled rendering from failed interaction probes',()=>{
+ const sample=frame(4,'hash-a');
+ const rendering=JSON.parse(canvasDiagnosticFeedback('BROWSER_CANVAS_RENDER_UNVERIFIED','canvas-input',[sample]));
+ assert.equal(rendering.code,'BROWSER_CANVAS_RENDER_UNVERIFIED');assert.equal(rendering.observations[0].canvases[0].hash,'hash-a');
+ const activity=JSON.parse(canvasDiagnosticFeedback('BROWSER_CANVAS_ACTIVITY_UNVERIFIED','canvas-input',[sample],[{point:[.5,.5],canvasId:4,hashChanged:false,drawDelta:8}]));
+ assert.match(activity.diagnosis,/static gameplay or an interaction point that missed/);assert.equal(activity.probes[0].drawDelta,8);assert.equal(activity.probes[0].hashChanged,false);
+ const many=Array.from({length:20},(_,n)=>frame(n+1,'hash-'+n));
+ const probes=Array.from({length:20},(_,n)=>({point:[n/20,.5] as [number,number],canvasId:n+1,hashChanged:false,drawDelta:0}));
+ const bounded=canvasDiagnosticFeedback('BROWSER_CANVAS_ACTIVITY_UNVERIFIED','canvas-input',many,probes);
+ assert.ok(Buffer.byteLength(bounded)<=2000);assert.ok(bounded.includes('"point":[0.95,0.5]'),'the last attempted target remains diagnosable');
 });

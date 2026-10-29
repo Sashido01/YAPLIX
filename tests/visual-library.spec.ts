@@ -17,7 +17,7 @@ test.beforeEach(async ({ page }) => {
       failures.push('Unexpected resource: ' + url.href);
       return route.abort();
     }
-    await route.fulfill({ body: await readFile(new URL('../assets/visual-library/' + file, import.meta.url)),
+    await route.fulfill({ body: await readFile(new URL('./fixtures/visual-library/' + file, import.meta.url)),
       contentType: file.endsWith('.js') ? 'text/javascript' : 'text/html' });
   });
   (page as Page & { visualFailures: string[] }).visualFailures = failures;

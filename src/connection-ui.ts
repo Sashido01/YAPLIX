@@ -1,4 +1,4 @@
-interface Status { ok: boolean; demoReady?: boolean; liveConfigured?: boolean; liveReady?: boolean; llmState?: string; mode?: string; connectionUrl?: string; accessRequired?: boolean; provider?: string; model?: string; browserReady?: boolean; readinessSource?: string; readinessCheckedAt?: string; network?: {category?:string}; lastSavedGeneration?: {createdAt:string;model:string} }
+interface Status { ok: boolean; appReady?: boolean; liveConfigured?: boolean; liveReady?: boolean; llmState?: string; mode?: string; connectionUrl?: string; accessRequired?: boolean; provider?: string; model?: string; browserReady?: boolean; readinessSource?: string; readinessCheckedAt?: string; network?: {category?:string}; lastSavedGeneration?: {createdAt:string;model:string} }
 let telegramToken:string|undefined;
 let imageUrl: string | undefined;
 const el = (id: string) => document.getElementById(id)!;

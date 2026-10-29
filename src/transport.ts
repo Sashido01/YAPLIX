@@ -15,9 +15,11 @@ export function providerMode(value:unknown):ProviderMode {
 export interface GenerationContext {
   durableJob?:true;
   trace?(event:string,data?:TraceData):void;
+  captureMessages?(messages:Message[]):void;
+  saveBrowserSnapshot?(viewport:string,image:Uint8Array):{captureId:string;sha256:string}|void;
   providerMode?:ProviderMode;
   manualContinuation?:boolean;
-  checkpoint?:string; maxCalls?:number;
+  checkpoint?:string; maxCalls?:number; repairBudget?:number;
   blockedRoutes?:string[];
   checkpointOrigin?:{provider:string;requestedModel:string;model:string};
   cooldowns?:Record<string,{until:number;code:string}>;
@@ -112,7 +114,7 @@ export class CloudTransport implements CodeTransport {
   private async response<T>(path:string,signal:AbortSignal,body:object|undefined,consume:(response:Response)=>Promise<T>,observe?:(value:NetworkDiagnostic)=>void,context?:GenerationContext) {
     const began=performance.now();let snapshot:NetworkDiagnostic|undefined;
     try{return await networkRequest(new URL(path,this.base),{method:body?'POST':'GET',redirect:'error',signal,headers:{Authorization:'Bearer '+this.key,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})},this.provider,async(response,diagnostic)=>{
-      snapshot=diagnostic;context?.trace?.('response.headers',{httpStatus:response.status,durationMs:Math.round(performance.now()-began)});try{
+      snapshot=diagnostic;context?.trace?.('response.headers',{httpStatus:response.status,durationMs:Math.round(performance.now()-began),details:{postOutcome:'http_response_received'}});try{
         if(!response.ok){
           let detail='';try{detail=await boundedText(response,16000);}catch{}
           const retry=response.headers.get('retry-after');const delay=retry&&/^\d+(\.\d+)?$/.test(retry)?Number(retry)*1000:retry?Date.parse(retry)-Date.now():0;
@@ -122,7 +124,7 @@ export class CloudTransport implements CodeTransport {
         if(body)diagnostic.stage='stream';
         return await consume(response);
       }catch(error){if(error instanceof ProviderFailure){diagnostic.category=error.code;error.diagnostic={...diagnostic,durationMs:Math.round(performance.now()-began)};}throw error;}
-    },this.networkEnv());}catch(error){
+    },this.networkEnv(),fetch,body?()=>context?.trace?.('request.wire_dispatched',{status:'STARTED',details:{dispatchStarted:true,postOutcome:'unknown'}}):undefined);}catch(error){
       if(error instanceof NetworkFailure){const failure=new ProviderFailure(error.code);failure.diagnostic=error.diagnostic;snapshot=error.diagnostic;throw failure;}
       if(error instanceof Fault){snapshot??={provider:this.provider,route:'configuration',stage:'configuration',durationMs:0,category:error.code};snapshot.category=error.code;}
       throw error;

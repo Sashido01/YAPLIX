@@ -34,29 +34,65 @@ for(const format of ['doctype','json'])test('format repair is revalidated and pe
   }finally{await jobs.close();store.close();}
 });
 
-test('one mocked LLM repair is pinned to the route, revalidated, and cannot create duplicate versions',async()=>{
+test('confirmed sandbox storage failure repairs on the same route, revalidates, and saves once',async()=>{
   const original=html.replace('draw();','throw Error("startup defect");');let calls=0,checks=0,secondary=0;
-  const primary=route(async messages=>{calls++;if(calls===2){assert.ok(messages.at(-1)!.content.includes('startup defect'));assert.ok(messages.at(-1)!.content.length<2500);}return{code:calls===1?original:html,model:'gemma4:31b'};});
-  const store=new Store(':memory:'),jobs=new GenerationJobs(store,new GenerationEngine([primary,{...route(async()=>{secondary++;return{code:html,model:'other'};}),provider:'openrouter',model:'openrouter/free',route:'secondary'}],{repairs:2,check:async()=>{if(++checks===1)throw new BrowserFailure('JAVASCRIPT_EXCEPTION','startup defect');return evidence();}}));
+  const primary=route(async messages=>{calls++;if(calls===2){assert.ok(messages.at(-1)!.content.includes('BROWSER_STORAGE_ACCESS_FORBIDDEN'));assert.ok(messages.at(-1)!.content.includes('keep game state in JavaScript memory'));assert.equal(messages.at(-2)!.content.trimEnd(),original.trimEnd());}return{code:calls===1?original:html,model:'gemma4:31b'};});
+  const storageDefect='Generated game attempted forbidden persistent browser storage (localStorage). Games run in an opaque-origin sandboxed iframe; remove this dependency and keep game state in JavaScript memory.';
+  const store=new Store(':memory:'),jobs=new GenerationJobs(store,new GenerationEngine([primary,{...route(async()=>{secondary++;return{code:html,model:'other'};}),provider:'openrouter',model:'openrouter/free',route:'secondary'}],{repairs:2,check:async()=>{if(++checks===1)throw new BrowserFailure('BROWSER_STORAGE_ACCESS_FORBIDDEN',storageDefect);return evidence();}}));
   try{
     const request={spec,mode:'live' as const,telegramConsent:false},id=jobs.create('owner','mock-repair-idempotent',request).jobId,done=await settled(jobs,id);
-    assert.equal(done.stage,'completed');assert.equal(calls,2);assert.equal(checks,2);assert.equal(secondary,0);assert.equal(done.repairUsed,true);assert.equal(done.originalCheckpoint,original);assert.equal(done.checkpoint,html);assert.equal(done.history[0].errorCode,'JAVASCRIPT_EXCEPTION');
-    assert.equal(jobs.create('owner','mock-repair-idempotent',request).versionId,done.versionId);assert.equal(store.history(done.gameId!).length,1);
+    assert.equal(done.stage,'completed');assert.equal(calls,2);assert.equal(checks,2);assert.equal(secondary,0);assert.equal(done.repairUsed,true);assert.equal(done.repairCount,1);assert.equal(done.originalCheckpoint,original);assert.equal(done.checkpoint,html);assert.equal(done.history[0].errorCode,'BROWSER_STORAGE_ACCESS_FORBIDDEN');assert.equal(done.validation?.level,'VERIFIED');
+    assert.equal(jobs.create('owner','mock-repair-idempotent',request).versionId,done.versionId);assert.equal(store.history(done.gameId!).length,1);assert.equal(store.getVersion(done.versionId!).html.trimEnd(),html.trimEnd());
   }finally{await jobs.close();store.close();}
 });
 
-test('broken repair stops after one rewrite; original, diagnostic and repair claim survive SQLite reopen and Continue',async()=>{
+test('Ollama Cloud honors the configured two-repair ceiling and preserves a failed draft without saving',async()=>{
+  const first=html.replace('draw();','throw Error("original defect");'),second=html.replace('draw();','draw();/* incomplete repair */');
+  const messagesSeen:Array<{role:string;content:string}[]> = [];let calls=0,checks=0;
+  const primary=route(async messages=>{messagesSeen.push(structuredClone(messages));calls++;return{code:calls===1?first:second,model:'gemma4:31b'};});
+  const store=new Store(':memory:'),engine=new GenerationEngine([primary],{repairs:2,allowLlmRepair:true,check:async()=>{checks++;throw new BrowserFailure(checks===1?'JAVASCRIPT_EXCEPTION':'BROWSER_INPUT_NO_EFFECT',checks===1?'original browser exception':'repair still has no working input');}}),jobs=new GenerationJobs(store,engine);
+  try{
+    assert.equal(engine.repairLimit,2);
+    const id=jobs.create('owner','one-repair-bound',{spec,mode:'live',providerMode:'ollama-cloud',telegramConsent:false}).jobId,done=await settled(jobs,id);
+    assert.equal(done.stage,'needs_attention');assert.equal(calls,3);assert.equal(checks,3);assert.equal(done.repairCount,2);assert.equal(done.repairUsed,true);
+    assert.equal(messagesSeen[1].at(-2)?.content,first);assert.match(messagesSeen[1].at(-1)?.content??'',/JAVASCRIPT_EXCEPTION/);assert.ok(messagesSeen[1].some(message=>message.role==='user'&&message.content.includes(spec.prompt)));assert.ok(messagesSeen[1].some(message=>message.role==='assistant'&&message.content===first));
+    assert.equal(done.originalCheckpoint,first);assert.equal(done.checkpoint,second);assert.equal(store.list().length,0);
+  }finally{await jobs.close();store.close();}
+});
+
+test('configured Ollama repair ceiling defaults to three and accepts only zero through three',()=>{
+  const engine=(repairs?:string)=>configuredGenerator({LIVE_PROVIDER:'ollama-cloud',OLLAMA_CLOUD_API_KEY:'synthetic',...(repairs===undefined?{}:{LLM_REPAIRS:repairs})})!;
+  assert.equal(engine().repairLimit,3);assert.equal(engine('0').repairLimit,0);assert.equal(engine('2').repairLimit,2);assert.equal(engine('3').repairLimit,3);
+  assert.throws(()=>engine('4'),/INVALID_LLM_CONFIGURATION/);
+});
+
+test('an interrupted repair is not resent after automatic retry, SQLite reopen, or Continue',async()=>{
+  const path='.local/tests/micro022-inflight-'+randomUUID()+'.sqlite';let calls=0,checks=0;
+  const engine=new GenerationEngine([route(async()=>{if(++calls===1)return{code:html,model:'gemma4:31b'};throw new Fault('LLM_HTTP',503);})],{check:async()=>{checks++;throw new BrowserFailure('JAVASCRIPT_EXCEPTION','same original browser failure');}});
+  let store=new Store(path),jobs=new GenerationJobs(store,engine,undefined,true,{retryMs:10});let id='';
+  try{
+    id=jobs.create('owner','repair-inflight-no-replay',{spec,mode:'live',providerMode:'ollama-cloud',telegramConsent:false}).jobId;const failed=await settled(jobs,id);
+    assert.equal(failed.stage,'needs_attention');assert.equal(failed.repairCount,1);assert.equal(failed.repairInFlight,true);assert.equal(calls,2);assert.equal(failed.originalCheckpoint,html);assert.equal(store.list().length,0);
+  }finally{await jobs.close();store.close();}
+  store=new Store(path);jobs=new GenerationJobs(store,engine);
+  try{
+    assert.equal(jobs.get('owner',id).repairInFlight,true);jobs.continue('owner',id);const failed=await settled(jobs,id);
+    assert.equal(failed.stage,'needs_attention');assert.equal(failed.errorCode,'JAVASCRIPT_EXCEPTION');assert.equal(calls,2);assert.equal(failed.repairCount,1);assert.equal(store.integrity(),true);
+  }finally{await jobs.close();store.close();}
+});
+
+test('broken Ollama repair stops at the configured two-rewrite limit; drafts survive reopen and Continue',async()=>{
   const path='.local/tests/micro022-'+randomUUID()+'.sqlite';let calls=0;
   const engine=new GenerationEngine([route(async()=>({code:html.replace('</html>','<!-- attempt '+(++calls)+' --></html>'),model:'gemma4:31b'}))],{repairs:2,check:async()=>{throw new BrowserFailure('JAVASCRIPT_EXCEPTION','Cannot set properties of null');}});
   let store=new Store(path),jobs=new GenerationJobs(store,engine);let id='',original='';
   try{
     id=jobs.create('owner','bad-repair-durable',{spec,mode:'live',telegramConsent:false}).jobId;const failed=await settled(jobs,id);original=failed.originalCheckpoint!;
-    assert.equal(failed.stage,'needs_attention');assert.equal(failed.errorCode,'JAVASCRIPT_EXCEPTION');assert.equal(calls,2);assert.equal(failed.repairUsed,true);assert.equal(failed.validation?.level,'FAILED');assert.equal(store.list().length,0);
+    assert.equal(failed.stage,'needs_attention');assert.equal(failed.errorCode,'JAVASCRIPT_EXCEPTION');assert.equal(calls,3);assert.equal(failed.repairUsed,true);assert.equal(failed.repairCount,2);assert.equal(failed.repairInFlight,false);assert.equal(failed.validation?.level,'FAILED');assert.equal(store.list().length,0);
   }finally{await jobs.close();store.close();}
   store=new Store(path);jobs=new GenerationJobs(store,engine);
   try{
     assert.equal(jobs.get('owner',id).originalCheckpoint,original);jobs.continue('owner',id);const failed=await settled(jobs,id);
-    assert.equal(failed.stage,'needs_attention');assert.equal(calls,2);assert.equal(failed.errorCode,'JAVASCRIPT_EXCEPTION');assert.equal(store.integrity(),true);assert.equal(store.list().length,0);
+    assert.equal(failed.stage,'needs_attention');assert.equal(calls,3);assert.equal(failed.errorCode,'JAVASCRIPT_EXCEPTION');assert.equal(failed.repairCount,2);assert.equal(store.integrity(),true);assert.equal(store.list().length,0);
   }finally{await jobs.close();store.close();}
 });
 
@@ -85,7 +121,7 @@ test('a failed repair transport cannot turn provider fallback into another repai
 
 test('disabled cloud repair cannot rewrite an incomplete checkpoint through recovery',async t=>{
   let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw Error('INFERENCE_FORBIDDEN');});
-  const engine=configuredGenerator({OLLAMA_CLOUD_API_KEY:'synthetic'})!;
+  const engine=configuredGenerator({OLLAMA_CLOUD_API_KEY:'synthetic',LLM_AUTO_REPAIR:'0'})!;
   const context:GenerationContext={checkpoint:'<!DOCTYPE html><html>draft',checkpointOrigin:{provider:'ollama.com',requestedModel:'gemma4:31b',model:'gemma4:31b'},stage:()=>{},dispatch:()=>{},partial:()=>{},attempt:()=>{}};
   await assert.rejects(engine.generate(spec,undefined,'llm_code',undefined,context),/LLM_INVALID_HTML/);assert.equal(calls,0);
 });
@@ -101,9 +137,9 @@ test('incomplete last repair cannot bypass the durable cap on Continue or worker
   let calls=0;const path='.local/tests/micro022-incomplete-'+randomUUID()+'.sqlite';let store=new Store(path);
   const engine=new GenerationEngine([route(async()=>({code:++calls===1?html:'incomplete repaired document',model:'gemma4:31b'}))],{check:async()=>{throw new BrowserFailure('JAVASCRIPT_EXCEPTION','original defect');}});
   let jobs=new GenerationJobs(store,engine);let id='';
-  try{id=jobs.create('owner','incomplete-repair',{spec,mode:'live',telegramConsent:false}).jobId;const bad=await settled(jobs,id);assert.equal(bad.errorCode,'LLM_INVALID_HTML');assert.equal(calls,2);assert.equal(bad.checkpoint,'incomplete repaired document');jobs.continue('owner',id);assert.equal((await settled(jobs,id)).errorCode,'LLM_INVALID_HTML');assert.equal(calls,2);}finally{await jobs.close();store.close();}
+  try{id=jobs.create('owner','incomplete-repair',{spec,mode:'live',telegramConsent:false}).jobId;const bad=await settled(jobs,id);assert.equal(bad.errorCode,'LLM_INVALID_HTML');assert.equal(bad.automaticLimit,4);assert.equal(bad.repairBudget,3);assert.equal(bad.attempts,4);assert.equal(bad.repairCount,3);assert.equal(calls,4);assert.equal(bad.checkpoint,'incomplete repaired document');assert.throws(()=>jobs.continue('owner',id),/JOB_ATTEMPT_LIMIT/);assert.equal(calls,4);}finally{await jobs.close();store.close();}
   store=new Store(path);jobs=new GenerationJobs(store,engine);
-  try{jobs.continue('owner',id);const bad=await settled(jobs,id);assert.equal(calls,2);assert.equal(bad.originalCheckpoint,html);assert.equal(bad.errorCode,'LLM_INVALID_HTML');assert.equal(store.list().length,0);}finally{await jobs.close();store.close();}
+  try{assert.throws(()=>jobs.continue('owner',id),/JOB_ATTEMPT_LIMIT/);const bad=jobs.get('owner',id);assert.equal(calls,4);assert.equal(bad.automaticLimit,4);assert.equal(bad.repairBudget,3);assert.equal(bad.originalCheckpoint,html);assert.equal(bad.errorCode,'LLM_INVALID_HTML');assert.equal(store.list().length,0);}finally{await jobs.close();store.close();}
 });
 
 test('truncated repair automatic retry preserves the original and cannot dispatch another repair',async()=>{
@@ -123,9 +159,9 @@ test('validation timeout is NOT_VERIFIED, consumes no repair, and preserves chec
   try{const id=jobs.create('owner','validation-timeout',{spec,mode:'live',telegramConsent:false}).jobId,job=await settled(jobs,id);assert.equal(job.stage,'needs_attention');assert.equal(job.validation?.level,'NOT_VERIFIED');assert.equal(calls,1);assert.equal(job.originalCheckpoint,html);assert.equal(job.repairUsed,undefined);assert.equal(store.list().length,0);}finally{await jobs.close();store.close();}
 });
 
-test('production cloud repair is opt-in; the gate stops before a second inference dispatch',async t=>{
+test('explicitly disabled cloud repair stops after the first inference dispatch',async t=>{
   let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;return Response.json({model:'gemma4:31b',choices:[{finish_reason:'stop',message:{content:html}}]});});
-  const engine=configuredGenerator({OLLAMA_CLOUD_API_KEY:'synthetic'})!;
+  const engine=configuredGenerator({OLLAMA_CLOUD_API_KEY:'synthetic',LLM_AUTO_REPAIR:'0'})!;
   // Keep the real CloudTransport and production policy; replace only the browser.
   (engine as unknown as {check:typeof evidence}).check=async()=>{throw new BrowserFailure('JAVASCRIPT_EXCEPTION','fixture');};
   await assert.rejects(engine.generate(spec),/JAVASCRIPT_EXCEPTION/);assert.equal(calls,1);

@@ -23,5 +23,5 @@ document.addEventListener('keydown',e=>{const keys={ArrowLeft:[-1,0],a:[-1,0],Ar
 let pointer=null;canvas.addEventListener('pointerdown',e=>{pointer={x:e.clientX,y:e.clientY,id:e.pointerId};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointerup',e=>{if(!pointer||e.pointerId!==pointer.id)return;const mx=e.clientX-pointer.x,my=e.clientY-pointer.y;pointer=null;if(Math.max(Math.abs(mx),Math.abs(my))<15)return;Math.abs(mx)>Math.abs(my)?move(Math.sign(mx),0):move(0,Math.sign(my));});canvas.addEventListener('pointercancel',()=>pointer=null);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&active){active=false;start.textContent='Продолжить';status.textContent='Пауза';controls();}});
 if(parent===window){const replay=document.createElement('button');replay.textContent='Перезапуск';replay.onclick=()=>location.reload();document.querySelector('main').append(replay);}
-window.addEventListener('error',e=>emit('game_error',{message:String(e.message).slice(0,512)}));new ResizeObserver(draw).observe(canvas);controls();draw();
+window.addEventListener('error',e=>emit('game_error',{message:String(e.message).slice(0,512)}));const canvasResizeObserver=new ResizeObserver(draw);canvasResizeObserver.observe(canvas);addEventListener('resize',draw,{passive:true});controls();draw();
 </script></body></html>

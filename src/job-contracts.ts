@@ -15,7 +15,7 @@ export interface GenerationJob {
   recoveryState?:'retry_scheduled'|'waiting_for_provider'|'failed_permanent';
   checkpointOrigin?:{provider:string;requestedModel:string;model:string};
   routeCooldowns?:Record<string,{until:number;code:string}>;
-  automaticRuns?:number; automaticLimit?:number; deadlineAt?:number; blockedRoutes?:string[];retiredRoutes?:string[];
+  automaticRuns?:number; automaticLimit?:number; repairBudget?:number; deadlineAt?:number; blockedRoutes?:string[];retiredRoutes?:string[];
   originalCheckpoint?:string;
   validation?:ValidationDiagnostic;
   deterministicRepair?:FormatRepair;

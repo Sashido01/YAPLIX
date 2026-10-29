@@ -1,5 +1,9 @@
 # A1.8.6 — Strict Canvas / WebGL game contract
 
+Этот файл описывает текущий контракт, а не подтверждение качества каждой
+генерации. Текущие LIVE-результаты и границы checker evidence: [release status](release-status.md);
+формат traces и приватность снимков: [diagnostics](diagnostics.md).
+
 Новые LIVE create/edit и Continue обязаны подтвердить `canvas-webgl-strict-v2`.
 Все видимые элементы игры рисуются только Canvas 2D, WebGL или WebGL2: мир,
 Start/Restart/Pause, HUD, прогресс, жизни, правила, настройки, управление звуком,
@@ -68,6 +72,16 @@ transparent text без image/shadow и нулевой font-size без image н
 подавлять текст; ancestor clipping учитывает containing blocks. Иначе zero-box
 paint остаётся NOT_VERIFIED. Эти проверки работают в прежнем bounded scan после
 Start/input/Game Over/Restart и реального scroll; deadline не увеличен.
+
+Дополнительный Canvas Layout Gate наблюдает `fillText`/`strokeText` с нативными
+TextMetrics, transform, alignment/baseline и clipping state. Он блокирует только
+повторно подтверждённые границы за пределами bitmap; неподдержанный paint/clip,
+WebGL text и semantic hitboxes остаются `NOT_VERIFIED`. Проверка overlap — отдельная
+узкая категория: минимум два стабильных наблюдения одинакового существенного
+пересечения реальных glyph pixels между разными text draw calls; общие bounding
+boxes сами по себе недостаточны. Фоновая графика, смысл контролов и перекрытие
+текста произвольным рисунком этим gate универсально не распознаются. Подробный
+evidence и repair ограничения: [validation](game-validation.md) и [diagnostics](diagnostics.md).
 
 Нативные draw/getContext сохраняют receiver, аргументы, результат и exceptions.
 32×24 readback не считает clear рисованием. WebGL evidence снимается microtask

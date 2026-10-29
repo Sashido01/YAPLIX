@@ -19,7 +19,7 @@ export function offlineChatGpt(request:typeof fetch,policy=localPolicy,expires=3
   if(url!==SIWC.token)return request(input,init);
   const token=await new SignJWT({nonce:authorization.searchParams.get('nonce')}).setProtectedHeader({alg:'RS256',kid:'offline'}).setIssuer(SIWC.issuer).setAudience('oaiapp_offline').setSubject('offline-subject').setIssuedAt().setExpirationTime('5m').sign(keys.privateKey);
   return Response.json({access_token:'offline-access-credential',refresh_token:'offline-refresh-credential',id_token:token,token_type:'Bearer',expires_in:expires,scope:'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct'});
- },openBrowser:async value=>{
+ },networkEnv:{YAPLIX_LLM_NETWORK:'direct'},openBrowser:async value=>{
   authorization=new URL(value);const callback=new URL(authorization.searchParams.get('redirect_uri')!);
   callback.search=new URLSearchParams({state:authorization.searchParams.get('state')!,code:'offline-code',client_id:'oaiapp_offline'}).toString();await fetch(callback);
  }});

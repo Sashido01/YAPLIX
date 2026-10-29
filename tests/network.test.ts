@@ -9,7 +9,7 @@ import { networkPolicy, AccessSessions } from '../src/access.ts';
 import { runtimeKey } from '../src/runtime-control.ts';
 import { createApp } from '../src/api.ts';
 import { Store, PROJECT_ROOT } from '../src/store.ts';
-import { spec, event } from './helpers.ts';
+import { spec, event, artifact } from './helpers.ts';
 
 test('network configuration stays loopback unless private LAN or HTTPS proxy is explicitly secured', () => {
   assert.equal(networkPolicy({}).host, '127.0.0.1');
@@ -32,7 +32,7 @@ test('LAN authentication guards data/export/backup and retains exact Host, Origi
     assert.equal((await app.request(base+'/api/games',{headers:{Cookie:cookie.split(';')[0]}})).status,200);
     assert.equal((await app.request(base+'/api/games',{headers:{Cookie:cookie.split(';')[0],Origin:'http://attacker.example'}})).status,403);
     assert.equal((await app.request('http://attacker.example/api/games',{headers:{Cookie:cookie}})).status,403);
-    const version=await(await app.request(base+'/api/games',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',Origin:base},body:JSON.stringify({mode:'demo',spec})})).json();
+    const version=store.save(spec,artifact);
     assert.equal(store.getVersion(version.versionId).model,null);
     const session=await(await app.request(base+'/api/versions/'+version.versionId+'/sessions',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'})).json();
     assert.equal((await app.request(base+'/api/sessions/'+session.sessionId+'/events',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(event(session,'game_ready',0))})).status,401);
@@ -65,7 +65,7 @@ test('production graceful shutdown via local IPC closes SQLite and survives upda
   let child:ReturnType<typeof fork>|undefined,closed:Promise<number|null>,output='';
   const start=async()=>{child=fork('src/server.ts',[],{cwd:PROJECT_ROOT,env:{...process.env,PORT:String(port),YAPLIX_MODE:'local',YAPLIX_HOST:'127.0.0.1',PUBLIC_URL:'',LIVE_PROVIDER:'none',YAPLIX_DB:dir+'/data.sqlite'},silent:true});closed=new Promise(done=>child!.once('exit',done));await new Promise<void>((done,fail)=>{child!.stdout!.once('data',()=>done());child!.once('error',fail);child!.once('exit',()=>fail(Error('START_FAILED')));});child.stdout!.on('data',data=>output+=data);};
   const stop=async()=>{child!.send('shutdown');assert.equal(await closed,0);child=undefined;assert.match(output,/SQLite closed/);};
-  try {await start();const url='http://127.0.0.1:'+port;const v=await(await fetch(url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();await stop();await start();assert.equal((await(await fetch(url+'/api/versions/'+v.versionId)).json()).sha256,v.sha256);await stop();}
+  try {await start();const url='http://127.0.0.1:'+port;const setup=new Store(dir+'/data.sqlite');const v=setup.save(spec,artifact);setup.close();await stop();await start();assert.equal((await(await fetch(url+'/api/versions/'+v.versionId)).json()).sha256,v.sha256);await stop();}
   finally {child?.kill();rmSync(dir,{recursive:true});}
 });
 
@@ -77,7 +77,7 @@ test('authenticated loopback shutdown endpoint closes SQLite, releases port and 
   try{
     await start();const url='http://127.0.0.1:'+port;
     // Version saved before shutdown must survive a full restart afterwards.
-    const v=await(await fetch(url+'/api/games',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'demo',spec})})).json();
+    const setup=new Store(dir+'/data.sqlite');const v=setup.save(spec,artifact);setup.close();
     const noHeader=await fetch(url+'/api/runtime/shutdown',{method:'POST'});assert.equal(noHeader.status,403);
     const wrongKey=await fetch(url+'/api/runtime/shutdown',{method:'POST',headers:{'X-Yaplix-Control':'a'.repeat(64)}});assert.equal(wrongKey.status,403);
     assert.equal((await fetch(url+'/api/runtime/shutdown',{method:'POST',headers:{'X-Yaplix-Control':'x'.repeat(64),'X-Forwarded-Proto':'https'}})).status,403);

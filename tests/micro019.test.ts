@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {configuredGenerator,GenerationEngine} from '../src/live.ts';
 import {CloudTransport,ProviderFailure} from '../src/transport.ts';
@@ -38,15 +39,18 @@ test('authorization and exhausted quota are not retried without a job context',a
  for(const code of ['LLM_AUTH','LLM_QUOTA']){let calls=0;const engine=new GenerationEngine([route('ollama.com',async()=>{calls++;throw new ProviderFailure(code);})],{check:evidence,repairs:2});await assert.rejects(engine.generate(spec),new RegExp(code));await assert.rejects(engine.generate(spec),new RegExp(code));assert.equal(calls,1);}
 });
 
-test('legacy idempotency replays through the API despite the added default provider mode',async()=>{
- const store=new Store(':memory:'),jobs=new GenerationJobs(store),app=createApp(store,undefined,undefined,undefined,undefined,undefined,jobs);
- try{const old=jobs.create('owner','legacy-replay',{...request,mode:'demo'});const response=await app.request('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...request,mode:'demo',idempotencyKey:'legacy-replay'})});assert.equal(response.status,202);assert.equal((await response.json()).jobId,old.jobId);assert.equal(jobs.list('owner').length,1);}finally{await jobs.close();store.close();}
+test('legacy demo jobs are preserved but never dispatched or accepted again',async()=>{
+ const store=new Store(':memory:');let calls=0;const engine=new GenerationEngine([route('ollama.com',async()=>{calls++;return{code:html,model:'gemma4:31b'};})],{check:evidence});
+ const id=randomUUID(),createdAt=new Date().toISOString(),legacy={spec,mode:'demo',providerMode:'auto',telegramConsent:false},metadata={...legacy,provider:null,requestedModel:null,automaticLimit:1,repairBudget:0,deadlineAt:Date.now()+60000};
+ store.db.prepare('INSERT INTO generation_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,0)').run(id,'owner','legacy-demo',JSON.stringify(legacy),'queued',0,'',JSON.stringify(metadata),createdAt,createdAt,null);
+ const app=createApp(store,engine);let jobs:GenerationJobs|undefined;
+ try{const response=await app.request('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...request,mode:'demo',idempotencyKey:'legacy-demo'})});assert.equal(response.status,400);assert.equal((await response.json()).error,'INVALID_MODE');jobs=new GenerationJobs(store,engine);const stopped=await settle(jobs,id);assert.equal(stopped.stage,'needs_attention');assert.equal(stopped.errorCode,'LEGACY_DEMO_DISABLED');assert.equal(calls,0);assert.equal(store.db.prepare('SELECT count(*) n FROM generation_jobs').get()?.n,1);}finally{await jobs?.close();engine.close();store.close();}
 });
 
 test('removing an interrupted explicit provider does not prevent startup or delete its job',async()=>{
  const store=new Store(':memory:');let jobs=new GenerationJobs(store);const old=jobs.create('owner','missing-route',{...request,providerMode:'ollama-cloud'});await settle(jobs,old.jobId);await jobs.close();store.db.prepare("UPDATE generation_jobs SET status='generating' WHERE job_id=?").run(old.jobId);
  const engine=new GenerationEngine([route('openrouter',async()=>({code:html,model:'upstream'}))],{check:evidence});jobs=new GenerationJobs(store,engine);
- try{assert.equal(jobs.get('owner',old.jobId).stage,'needs_attention');const demo=jobs.create('owner','still-works',{...request,mode:'demo'});assert.equal((await settle(jobs,demo.jobId)).stage,'completed');assert.equal(jobs.list('owner').length,2);}finally{await jobs.close();store.close();}
+ try{assert.equal(jobs.get('owner',old.jobId).stage,'needs_attention');const resumed=jobs.create('owner','still-works',{...request,providerMode:'openrouter'});assert.equal((await settle(jobs,resumed.jobId)).stage,'completed');assert.equal(jobs.list('owner').length,2);}finally{await jobs.close();store.close();}
 });
 
 test('manual Continue keeps the explicitly selected router',async()=>{

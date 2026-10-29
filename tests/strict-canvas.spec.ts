@@ -8,6 +8,20 @@ test('strict Canvas rejects a visible HTML HUD',async({browser})=>{
  const source=canvasGame(); // Previously accepted visible HTML Start/Move/HUD.
  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_DOM_GAME_UI'});
 });
+test('strict Canvas leaves an off-center Start behavior unverified when generic taps do not reach it',async({browser})=>{
+ const source=strictCanvas().replace('return;}act();});\naddEventListener','return;}if(!active&&!(x>surface.width*.2&&x<surface.width*.8&&y>surface.height*.4&&y<surface.height*.48))return;act();});\naddEventListener');
+ await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});
+});
+test('strict Canvas reaches a below-midpoint Start without verifying deep gameplay',async({browser})=>{
+ const source=strictCanvas()
+  .replace('ctx.fillRect(w*.2,h*.4,w*.6,48);','ctx.fillRect(w*.2,h*.52,w*.6,48);')
+  .replace("ctx.fillText(!active?'Start':step>=4?'Game Over / Restart':'Move',w*.3,h*.4+30);","ctx.fillText(!active?'Start':step>=4?'Game Over / Restart':'Move',w*.3,h*.52+30);")
+  .replace('return;}act();});\naddEventListener','return;}if(!active&&!(x>surface.width*.2&&x<surface.width*.8&&y>surface.height*.52&&y<surface.height*.6))return;act();});\naddEventListener');
+ const evidence=await checkFullHtml(browser,source,AbortSignal.timeout(18000));
+ expect(evidence.checks).toContainEqual({aspect:'html-runs',level:'VERIFIED'});
+ for(const aspect of ['input-works','gameplay-observed','win-reachable','loss-reachable','restart-works'])
+  expect(evidence.checks).toContainEqual({aspect,level:'NOT_VERIFIED'});
+});
 for(const kind of ['2d','webgl','webgl2'])test('strict Canvas accepts '+kind+' UI, DPR, landscape and repeated touch',async({browser})=>{
  const evidence=await checkFullHtml(browser,strictCanvas(kind),AbortSignal.timeout(18000));
  expect(evidence.rendering).toMatchObject({contract:'canvas-webgl-strict-v2',profiles:[320,390,844]});
@@ -41,9 +55,16 @@ for(const [name,source] of [
  ['open shadow',insert('<custom-hud></custom-hud>').replace('let active=', 'document.querySelector("custom-hud").attachShadow({mode:"open"}).innerHTML="<span>Lives 3</span>";let active=')],
  ['closed shadow',insert('<custom-hud></custom-hud>').replace('let active=', 'document.querySelector("custom-hud").attachShadow({mode:"closed"}).innerHTML="<span>Lives 3</span>";let active=')],
  ['nested document',insert('<iframe srcdoc="<p>HUD</p>"></iframe>')],
-] as const)test('strict Canvas rejects '+name,async({browser})=>{
- await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:expect.stringMatching(/BROWSER_DOM_GAME_UI|NETWORK_ATTEMPT|BROWSER_CONSOLE_ERROR/)});
-});
+] as const){
+ if(name==='victory overlay'||name==='HTML after Restart')test('strict Canvas leaves '+name+' NOT_VERIFIED without semantic gameplay input',async({browser})=>{
+  const result=await checkFullHtml(browser,source,AbortSignal.timeout(18000));
+  expect(result.rendering?.contract).toBe('canvas-webgl-strict-v2');
+  expect(result.checks?.find(check=>check.aspect==='gameplay-observed')?.level).toBe('NOT_VERIFIED');
+ });
+ else test('strict Canvas rejects '+name,async({browser})=>{
+  await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:expect.stringMatching(/BROWSER_DOM_GAME_UI|NETWORK_ATTEMPT|BROWSER_CONSOLE_ERROR/)});
+ });
+}
 test('strict Canvas allows transparent structure and invisible technical resources',async({browser})=>{
  const source=strictCanvas().replace('<canvas aria-label="Game">','<div><canvas aria-label="Game">').replace('</canvas>','</canvas></div><span hidden>Technical text</span><canvas hidden></canvas>')
   .replace('canvas{display:block','[hidden]{display:none!important}div{width:100%;height:100%}canvas{display:block');
@@ -144,7 +165,10 @@ for(const [paint,markup] of [['marker',marker],['pseudo',pseudo]] as const){
  });
  for(const [phase,trigger] of [['Start','active=true;'],['input','step++;'],['Game Over','step++;'],['Restart','step=0;paused=false;']] as const){
   const source=strictCanvas().replace(trigger,trigger+(phase==='Game Over'?'if(step===4)':'')+`document.body.insertAdjacentHTML('afterbegin',${JSON.stringify(markup)});`);
-  test('A1.8.8 refuses '+paint+' after '+phase,async({browser})=>{
+  if(phase==='Game Over'||phase==='Restart')test('A1.8.8 leaves '+paint+' after '+phase+' NOT_VERIFIED without reaching that state',async({browser})=>{
+   const result=await checkFullHtml(browser,source,AbortSignal.timeout(18000));expect(result.checks?.find(check=>check.aspect==='gameplay-observed')?.level).toBe('NOT_VERIFIED');
+  });
+  else test('A1.8.8 refuses '+paint+' after '+phase,async({browser})=>{
    await expect(checkFullHtml(browser,source,AbortSignal.timeout(18000))).rejects.toMatchObject({code:'BROWSER_CANVAS_DOM_UNVERIFIED'});
   });
  }

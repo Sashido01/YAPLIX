@@ -4,8 +4,9 @@ import {Fault,MAX_HTML_BYTES} from './contracts.ts';
 import type {NetworkPolicy} from './access.ts';
 import {ProviderFailure} from './transport.ts';
 import type {CodeTransport,Message,GenerationContext} from './transport.ts';
+import {MODEL_CATALOG} from './model-catalog.ts';
 
-export const CHATGPT_MODEL='gpt-6.1-sol';
+export const CHATGPT_MODEL=MODEL_CATALOG[2].model;
 type State='DISCONNECTED'|'CONNECTING'|'CONNECTED'|'EXPIRED'|'ERROR';
 async function openBrowser(url:string){
  await new Promise<void>((yes,no)=>{
@@ -29,13 +30,13 @@ export class ChatGptSession {
   if(!this.available())throw new Fault('CHATGPT_LOCAL_ONLY',403);
   if(this.#pending||this.status().connected)throw new Fault('CHATGPT_BUSY',409);
   this.#state='CONNECTING';this.#error=null;const epoch=++this.#epoch;
-  this.#pending=this.#auth.signIn().then(()=>{if(epoch===this.#epoch)this.#state='CONNECTED';}).catch(()=>{if(epoch===this.#epoch){this.#auth.dispose();this.#state='ERROR';this.#error='CHATGPT_AUTH_FAILED';}}).finally(()=>{this.#pending=undefined;});
+  this.#pending=this.#auth.signIn().then(()=>{if(epoch===this.#epoch)this.#state='CONNECTED';}).catch(error=>{if(epoch===this.#epoch){this.#auth.dispose();this.#state='ERROR';this.#error=error instanceof SiwcError&&/^SIWC_[A-Z0-9_]{1,72}$/.test(error.message)?error.message:'CHATGPT_AUTH_FAILED';}}).finally(()=>{this.#pending=undefined;});
   return this.status();
  }
  disconnect(){++this.#epoch;this.#auth.dispose();this.#state='DISCONNECTED';this.#error=null;return this.status();}
- async respond(messages:Message[],signal:AbortSignal,beforePost:()=>void,longWait=false){
+ async respond(messages:Message[],signal:AbortSignal,beforePost:()=>void,longWait=false,onResponse?:(status:number)=>void,onStreamComplete?:(details:{wireBytes:number;outputBytes:number;model:string})=>void){
   this.assertConnected();
-  try{return await this.#auth.respond(messages,signal,()=>{this.assertConnected();beforePost();},MAX_HTML_BYTES,longWait);}
+  try{return await this.#auth.respond(messages,signal,()=>{this.assertConnected();beforePost();},MAX_HTML_BYTES,longWait,onResponse,onStreamComplete);}
   catch(error){if(!this.#auth.status().connected){this.#state='EXPIRED';this.#error='CHATGPT_AUTH_REQUIRED';}throw error;}
  }
 }
@@ -47,7 +48,10 @@ export class ChatGptTransport implements CodeTransport {
  async complete(messages:Message[],signal:AbortSignal,context?:GenerationContext){
   // Legacy synchronous endpoints cannot spend a personal-account budget.
   if(!context?.durableJob)throw new Fault('CHATGPT_JOB_REQUIRED',409);
-  try{return await this.#session.respond(messages,signal,()=>context.dispatch(this),true);}
+  try{return await this.#session.respond(messages,signal,()=>{
+   context.dispatch(this);
+   context.trace?.('request.wire_dispatched',{status:'STARTED',details:{dispatchStarted:true,postOutcome:'unknown'}});
+  },true,status=>context.trace?.('response.headers',{httpStatus:status,details:{postOutcome:'http_response_received'}}),details=>context.trace?.('response.stream_completed',{wireBytes:details.wireBytes,outputBytes:details.outputBytes,actualModel:details.model,details:{postOutcome:'response_stream_completed'}}));}
   catch(error){throw error instanceof Fault?error:new ProviderFailure(error instanceof SiwcError?error.message:'SIWC_NETWORK');}
  }
 }

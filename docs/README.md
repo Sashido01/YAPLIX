@@ -1,34 +1,58 @@
 # Документация YAPLIX
 
-Начните с [обзора продукта](../README.md). Актуальные проверки объединённого кандидата описаны в [отчёте подготовки](submission-verification.md); [исторический отчёт интеграции](release-integration.md) относится к прежнему SHA.
+## Начало работы
 
-## Пользователю и жюри
+- [README и обзор проекта](../README.md)
+- [Установка Ubuntu portable](../INSTALL.md)
+- [Разработка и локальное обслуживание](development-setup.md)
+- [Сборка desktop-пакетов](installer-building.md)
+- [Ubuntu setup и проверенные команды](UBUNTU_SETUP.md)
+- [Диагностика и журналы](diagnostics.md)
 
-| Задача | Документ |
-| --- | --- |
-| Установить, обновить, сохранить и восстановить данные | [Установка и обслуживание](development-setup.md) |
-| Провести демонстрацию за 3–5 минут | [Сценарий демонстрации](demo-readiness.md) |
-| Открыть игру по QR | [Телефон и частная сеть](phone.md) |
-| Понять статус соревнований | [Arena: общий рейтинг](arena.md) |
-| Подготовить Windows к QR и Arena | [Частная сеть и Firewall](lan-network-setup.md) |
-| Подключить модель | [Сеть LLM](llm-network.md), [личный ChatGPT](chatgpt-setup.md) |
-| Настроить бота и Mini App | [Telegram](telegram.md) |
+## Архитектура и игровые контракты
 
-## Разработчику
+- [Архитектура](architecture.md)
+- [Production game validation](game-validation.md)
+- [Canvas/WebGL rendering contract](canvas-rendering-contract.md)
+- [Natural-language intent](nl-game-intent.md)
+- [Game Vocabulary](game-vocabulary.md)
+- [Оценочные корпуса и benchmark](nl-evaluation/README.md)
+- [Arena](arena.md)
 
-| Тема | Документ |
-| --- | --- |
-| Компоненты, данные и границы доступа | [Архитектура](architecture.md) |
-| HTML, браузерная проверка и ограничения | [Валидация](game-validation.md), [Canvas/WebGL](canvas-rendering-contract.md) |
-| Сборка, API, тесты, backup | [Рабочее место](development-setup.md) |
-| Windows, Ubuntu, браузеры | [Переносимость и датированные замеры](cross-platform.md) |
-| CI и серверная защита | [FAST/FULL](ci-economy.md), [GitHub ruleset](github-ruleset.md) |
-| Воспроизводимые ошибки и решения | [Известные проблемы](known-errors.md) |
-| Процесс разработки и безопасность | [CONTRIBUTING](../CONTRIBUTING.md), [SECURITY](../SECURITY.md) |
-| Необязательный разбор идеи без LLM | [Game Intent](nl-game-intent.md), [корпуса для тестов](nl-evaluation/README.md) |
+## Безопасность и эксплуатация
 
-## Состояние и доказательства
+- [Security policy](../SECURITY.md)
+- [Сеть и proxy](llm-network.md)
+- [ChatGPT setup и ограничения](chatgpt-setup.md)
+- [Telegram](telegram.md)
+- [Известные ошибки](known-errors.md)
+- [Текущий статус и release readiness](release-status.md)
+- [Демо readiness](defense-readiness.md)
+- [Cross-platform и device boundaries](cross-platform.md)
+- [CI economy](ci-economy.md)
+- [Licensing](licensing.md)
 
-[Проверки кандидата](submission-verification.md) · [История интеграции](release-integration.md) · [История очистки репозитория](repository-cleanup.md).
+## Контекст и отчёты
 
-В [архиве](archive/README.md) хранятся датированные исследования, прежние handoff и матрица требований кейса. Их verdict относятся к своей версии, а не ко всему текущему продукту. Исходные JSON и изображения сохранены. Официальные закрытые материалы кейса и пользовательские данные не публикуются.
+- [Текущий project context](PROJECT_CONTEXT.md)
+- [Статус редизайна UI-002](UI_002_STATUS.md)
+- [Session handoff](SESSION_HANDOFF.md)
+- [Предыдущий docs audit MICRO-036.2](micro-036-2-docs-audit.md)
+- [Решения по репозиторию](decisions/)
+- [Командная разработка и release workflow](../CONTRIBUTING.md)
+- Текущий технический итог YAPLIX-FINAL-001 хранится в игнорируемом
+  `.local/yaplix-final-001/REPORT.md`; он содержит пользовательские traces и не
+  входит в документацию клона или release.
+- Task/MICRO reports в `docs/` — исторические snapshots. Используйте записанный
+  в каждом отчёте HEAD/date; они не заменяют текущий release status.
+- `.local/` содержит игнорируемые доказательства отдельных запусков. Эти файлы
+  чувствительны и не являются частью clone/release документации.
+
+Операции без durable `jobId` ищите по [operationId в диагностике](diagnostics.md#операционный-trace).
+
+## Устаревшие сведения
+
+Указания о `main 942387e`, незамёрдженном PR #46, старых release gates и статусах
+из отчёта MICRO-036.2 являются историческими. Дата, SHA и границы каждого
+эксперимента сохраняются в исходном документе; актуальная сводка находится в
+[release status](release-status.md) и в [project context](PROJECT_CONTEXT.md).

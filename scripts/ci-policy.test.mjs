@@ -14,7 +14,7 @@ test('docs only retains FAST; unit test changes require Windows full units', () 
     { windowsFull: true, browsers: false, reason: 'unit-tests' });
 });
 test('runtime, Canvas, generation, backend, browsers, dependencies and CI fail closed to FULL', () => {
-  for (const path of ['src/ui.ts', 'src/runtime.ts', 'src/demo.ts', 'src/live.ts', 'src/api.ts',
+  for (const path of ['src/ui.ts', 'src/runtime.ts', 'src/jobs.ts', 'src/live.ts', 'src/api.ts',
     'src/access.ts', 'src/store.ts', 'tests/jobs.spec.ts', 'tests/helpers.ts', 'tests/browser-server.ts',
     'scripts/build.mjs', 'scripts/ci-policy.mjs', 'scripts/ci-policy.test.mjs',
     'playwright.config.ts', 'tsconfig.json', 'package.json', 'package-lock.json',

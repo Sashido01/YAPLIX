@@ -16,7 +16,9 @@ test('exported synthetic HTML starts offline from file, with touch/keyboard and 
   writeFileSync(path, bytes, { flag: 'wx' });
   const errors: string[] = []; const network: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('request', req => { if (/^https?:/.test(req.url())) network.push(req.url()); });
+  // The host may finish forwarding game_ready after this listener is installed.
+  // Only requests initiated by the exported file itself belong to the offline assertion.
+  page.on('request', req => { if (/^https?:/.test(req.url()) && req.frame().url().startsWith('file:')) network.push(req.url()); });
   try {
     await context.setOffline(true);
     await page.goto(pathToFileURL(resolve(path)).href);
@@ -102,6 +104,7 @@ test('host loads the complete ESM graph, creates a session and initializes gamep
   page.on('pageerror', error => errors.push(error.message));
   expect((await page.goto('/host'))!.status()).toBe(200);
   await expect.poll(() => page.evaluate(() => (window as any).received?.[0]?.type)).toBe('game_ready');
+  await expect.poll(() => page.frameLocator('iframe').locator('canvas').evaluate(canvas => (canvas as HTMLCanvasElement).width)).toBeGreaterThan(0);
   const session = await page.evaluate(() => (window as any).testSession);
   expect(session.sessionId).toMatch(/^[0-9a-f-]{36}$/);
   expect([...modules].sort()).toEqual([

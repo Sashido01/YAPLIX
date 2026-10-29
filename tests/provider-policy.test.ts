@@ -13,6 +13,7 @@ import {createApp} from '../src/api.ts';
 import {Store} from '../src/store.ts';
 import {GenerationJobs} from '../src/jobs.ts';
 import {artifact,spec} from './helpers.ts';
+import {randomUUID} from 'node:crypto';
 
 test('effective empty/whitespace/absent keys are configuration refusals, with zero HTTP',async t=>{
  let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;throw Error('NO_HTTP');});
@@ -42,16 +43,16 @@ test('configuration produces three independent pinned routes, including explicit
  const engine=configuredGenerator({OLLAMA_CLOUD_API_KEY:'synthetic-o',CLOUD_API_KEY:'synthetic-r',LIVE_PROVIDER:'chatgpt'},personal)!;
  for(const [mode,provider,model] of [['auto','ollama.com','gemma4:31b'],['ollama-cloud','ollama.com','gemma4:31b'],['openrouter','openrouter','openrouter/free'],['chatgpt','chatgpt','gpt-6.1-sol']] as const){const routes=engine.routesFor(mode);assert.equal(routes.length,1);assert.equal(routes[0].provider,provider);assert.equal(routes[0].model,model);}
  assert.equal(engine.routesFor()[0].provider,'chatgpt');
- assert.deepEqual(engine.timeouts,{responseMs:1800000,jobMs:2100000});
+ assert.deepEqual(engine.timeouts,{responseMs:1800000,jobMs:7800000});
  assert.equal(configuredGenerator({OLLAMA_CLOUD_API_KEY:'',CLOUD_API_KEY:'synthetic'},personal)!.routes.length,2);
 });
 
 test('single timeout policy validates finite caps, shared settings and legacy alias',()=>{
- assert.deepEqual(generationTimeouts(),{responseMs:1800000,jobMs:2100000});
+ assert.deepEqual(generationTimeouts(),{responseMs:1800000,jobMs:7800000});
  const env={LLM_REQUEST_TIMEOUT_MS:'1200000',LLM_MAX_DURATION_MS:'1800000',LLM_TIMEOUT_MS:'1000'};
  assert.deepEqual(configuredGenerator({...env,OLLAMA_CLOUD_API_KEY:'synthetic'})!.timeouts,{responseMs:1200000,jobMs:1800000});
  assert.deepEqual(generationTimeouts({LLM_TIMEOUT_MS:'2000'}),{responseMs:2000,jobMs:2000});
- for(const env of [{LLM_REQUEST_TIMEOUT_MS:'1800001'},{LLM_MAX_DURATION_MS:'2100001'},{LLM_REQUEST_TIMEOUT_MS:'NaN'},{LLM_MAX_DURATION_MS:'Infinity'},{LLM_REQUEST_TIMEOUT_MS:'1.5'},{LLM_REQUEST_TIMEOUT_MS:''},{LLM_REQUEST_TIMEOUT_MS:'2000',LLM_MAX_DURATION_MS:'1000'}])assert.throws(()=>generationTimeouts(env),/INVALID_LLM_CONFIGURATION/);
+ for(const env of [{LLM_REQUEST_TIMEOUT_MS:'1800001'},{LLM_MAX_DURATION_MS:'7800001'},{LLM_REQUEST_TIMEOUT_MS:'NaN'},{LLM_MAX_DURATION_MS:'Infinity'},{LLM_REQUEST_TIMEOUT_MS:'1.5'},{LLM_REQUEST_TIMEOUT_MS:''},{LLM_REQUEST_TIMEOUT_MS:'2000',LLM_MAX_DURATION_MS:'1000'}])assert.throws(()=>generationTimeouts(env),/INVALID_LLM_CONFIGURATION/);
 });
 
 test('provider status endpoint uses local routes without network or readiness claims',async t=>{
@@ -61,7 +62,17 @@ test('provider status endpoint uses local routes without network or readiness cl
   const engine=configuredGenerator({CLOUD_API_KEY:'synthetic'})!;
   const response=await createApp(store,engine).request('/api/providers'),data=await response.json();
   assert.equal(response.status,200);assert.deepEqual(data.providers.map((p:{state:string})=>p.state),['not_configured','needs_verification','not_configured']);
-  assert.deepEqual(data.timeouts,{responseMs:1800000,jobMs:2100000});assert.equal(requests,0);assert.ok(!JSON.stringify(data).includes('synthetic'));
+  assert.deepEqual(data.timeouts,{responseMs:1800000,jobMs:7800000});assert.equal(requests,0);assert.ok(!JSON.stringify(data).includes('synthetic'));
+ }finally{store.close();}
+});
+
+test('dynamic OpenRouter alias accepts a successful catalog readiness result without claiming inference',async()=>{
+ const store=new Store(':memory:');let completions=0;
+ const route:CodeTransport={provider:'openrouter',model:'openrouter/free',route:'primary',readiness:async()=>'model_missing',complete:async()=>{completions++;throw Error('NO_INFERENCE');}};
+ try{
+  const app=createApp(store,new GenerationEngine([route]));
+  const response=await app.request('/api/providers/openrouter/check'),data=await response.json() as any;
+  assert.equal(response.status,200);assert.deepEqual({configured:data.configured,ready:data.ready,state:data.state,model:data.model},{configured:true,ready:true,state:'dynamic_upstream_ready',model:'openrouter/free'});assert.equal(completions,0);
  }finally{store.close();}
 });
 
@@ -75,20 +86,19 @@ for(const provider of ['ollama.com','openrouter'])for(const phase of ['headers',
 });
 
 test('SQLite completion rolls back if its write crosses the durable deadline',async t=>{
- const store=new Store(':memory:'),jobs=new GenerationJobs(store);let time=Date.now();
+ const store=new Store(':memory:'),jobs=new GenerationJobs(store,undefined,undefined,false);let time=Date.now();
  try{
-  const job=jobs.create('owner','sqlite-deadline',{spec,mode:'demo',providerMode:'auto',telegramConsent:false});
-  await setImmediate();await jobs.close();
-  const deadline=time+1000;t.mock.method(Date,'now',()=>time);
-  store.db.prepare("UPDATE generation_jobs SET status='validating',metadata=json_set(metadata,'$.deadlineAt',?) WHERE job_id=?").run(deadline,job.jobId);
+  const jobId=randomUUID(),deadline=time+1000,request={spec,mode:'live',providerMode:'auto',telegramConsent:false},metadata={...request,deadlineAt:deadline,automaticLimit:4,repairBudget:2};
+  store.db.prepare('INSERT INTO generation_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,0)').run(jobId,'owner','sqlite-deadline',JSON.stringify(request),'validating',0,'',JSON.stringify(metadata),new Date(time).toISOString(),new Date(time).toISOString(),null);
+  t.mock.method(Date,'now',()=>time);
   const count=store.list().length,prepare=store.db.prepare.bind(store.db);
   t.mock.method(store.db,'prepare',((sql:string)=>{
    const statement=prepare(sql);
    if(sql.startsWith('INSERT INTO versions')){const run=statement.run.bind(statement);t.mock.method(statement,'run',(...args:Parameters<typeof run>)=>{const value=run(...args);time=deadline;return value;});}
    return statement;
   }) as typeof store.db.prepare);
-  assert.throws(()=>store.saveAndCompleteJob(job.jobId,'owner',spec,artifact),/JOB_DURATION_LIMIT/);
-  assert.equal(store.list().length,count);assert.equal(jobs.get('owner',job.jobId).stage,'validating');
+  assert.throws(()=>store.saveAndCompleteJob(jobId,'owner',spec,artifact),/JOB_DURATION_LIMIT/);
+  assert.equal(store.list().length,count);assert.equal(jobs.get('owner',jobId).stage,'validating');
  }finally{await jobs.close();store.close();}
 });
 

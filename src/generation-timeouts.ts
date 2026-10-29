@@ -1,6 +1,7 @@
 import {Fault} from './contracts.ts';
 import {LIVE_JOB_TIMEOUT_MS} from './generation-limits.ts';
 export {LIVE_JOB_TIMEOUT_MS} from './generation-limits.ts';
+export {SINGLE_POST_JOB_TIMEOUT_MS} from './generation-limits.ts';
 
 export const LIVE_RESPONSE_TIMEOUT_MS=30*60_000;
 export function generationTimeouts(env:NodeJS.ProcessEnv={}){

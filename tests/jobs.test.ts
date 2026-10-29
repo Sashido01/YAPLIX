@@ -84,7 +84,7 @@ test('one DB worker owns recovery; shutdown/restart keeps uncertain sent request
 
 test('failed completion transaction rolls back version and preserves draft; quotas bound jobs and calls',async()=>{
   const store=new Store(':memory:');const jobs=new GenerationJobs(store,new GenerationEngine([route(async()=>({code:html,model:'actual'}))],{check:evidence}));
-  try{store.db.exec("CREATE TRIGGER synthetic_failure BEFORE UPDATE OF status ON generation_jobs WHEN NEW.status='completed' BEGIN SELECT RAISE(ABORT,'synthetic atomic failure'); END;");const failed=await settled(jobs,jobs.create('owner','atomic-key',request).jobId);assert.equal(failed.stage,'needs_attention');assert.equal(store.list().length,0);assert.ok(failed.checkpoint.includes('</html>'));store.db.exec('DROP TRIGGER synthetic_failure');jobs.continue('owner',failed.jobId);assert.equal((await settled(jobs,failed.jobId)).stage,'completed');assert.equal(store.list().length,1);store.db.prepare('UPDATE generation_jobs SET attempts=12,status=? WHERE job_id=?').run('needs_attention',failed.jobId);assert.throws(()=>jobs.continue('owner',failed.jobId),/JOB_ATTEMPT_LIMIT/);}finally{await jobs.close();store.close();}
+  try{store.db.exec("CREATE TRIGGER synthetic_failure BEFORE UPDATE OF status ON generation_jobs WHEN NEW.status='completed' BEGIN SELECT RAISE(ABORT,'synthetic atomic failure'); END;");const failed=await settled(jobs,jobs.create('owner','atomic-key',request).jobId);assert.equal(failed.stage,'needs_attention');assert.equal(store.list().length,0);assert.ok(failed.checkpoint.includes('</html>'));store.db.exec('DROP TRIGGER synthetic_failure');jobs.continue('owner',failed.jobId);assert.equal((await settled(jobs,failed.jobId)).stage,'completed');assert.equal(store.list().length,1);store.db.prepare("UPDATE generation_jobs SET attempts=4,checkpoint='incomplete',status=?,metadata=json_set(metadata,'$.automaticLimit',4) WHERE job_id=?").run('needs_attention',failed.jobId);assert.throws(()=>jobs.continue('owner',failed.jobId),/JOB_ATTEMPT_LIMIT/);}finally{await jobs.close();store.close();}
 });
 
 test('v1 migration protects old immutable games/events and validates both legacy and v2 backup',async()=>{
@@ -102,8 +102,8 @@ test('Telegram notification requires own consent/HTTPS identity and validates ac
 });
 test('consented bot notification waits for Mini App absence, claims once, and retains unknown acknowledgement',async t=>{
   t.mock.timers.enable({apis:['setInterval']});let clock=Date.now(),calls=0;t.mock.method(Date,'now',()=>clock);
-  const store=new Store(':memory:'),jobs=new GenerationJobs(store,undefined,async(owner)=>{assert.equal(owner,'123');calls++;return'unknown';});
-  try{const job=await settled(jobs,jobs.create('123','notification-key',{spec,mode:'demo',telegramConsent:true}).jobId,'123');jobs.list('123');clock+=1000;t.mock.timers.tick(5000);await Promise.resolve();assert.equal(calls,0);clock+=31000;t.mock.timers.tick(5000);await Promise.resolve();assert.equal(calls,1);assert.equal(jobs.get('123',job.jobId).telegramState,'unknown');t.mock.timers.tick(10000);await Promise.resolve();assert.equal(calls,1);}finally{await jobs.close();store.close();}
+  const store=new Store(':memory:'),engine=new GenerationEngine([route(async()=>({code:html,model:'actual'}))],{check:evidence}),jobs=new GenerationJobs(store,engine,async(owner)=>{assert.equal(owner,'123');calls++;return'unknown';});
+  try{const job=await settled(jobs,jobs.create('123','notification-key',{...request,telegramConsent:true}).jobId,'123');jobs.list('123');clock+=1000;t.mock.timers.tick(5000);await Promise.resolve();assert.equal(calls,0);clock+=31000;t.mock.timers.tick(5000);await Promise.resolve();assert.equal(calls,1);assert.equal(jobs.get('123',job.jobId).telegramState,'unknown');t.mock.timers.tick(10000);await Promise.resolve();assert.equal(calls,1);}finally{await jobs.close();store.close();}
 });
 
 test('429 resumes automatically after Retry-After without holding the worker; one final version',async()=>{
@@ -111,6 +111,64 @@ test('429 resumes automatically after Retry-After without holding the worker; on
  const primary=route(async()=>{times.push(Date.now());if(++calls===1){retryAt=Date.now()+80;throw new ProviderFailure('LLM_RATE_LIMIT',null,'',{},retryAt,429);}return{code:html,model:'actual'};});
  const jobs=new GenerationJobs(store,new GenerationEngine([primary],{check:evidence}),undefined,true,{retryMs:10});
  try{const id=jobs.create('owner','automatic-429',request).jobId;await new Promise(r=>setTimeout(r,20));const waiting=jobs.get('owner',id);assert.equal(waiting.stage,'queued');assert.equal(waiting.recoveryState,'waiting_for_provider');assert.equal(calls,1);const done=await settled(jobs,id);assert.equal(done.stage,'completed');assert.equal(calls,2);assert.ok(times[1]>=retryAt);assert.equal(store.list().length,1);assert.equal(done.notificationClaimed,false);}finally{await jobs.close();store.close();}
+});
+
+test('bounded live run can disable automatic network retries while preserving the call budget',async()=>{
+ const store=new Store(':memory:');let calls=0;
+ const provider={...route(async()=>{calls++;throw new ProviderFailure('LLM_NETWORK_UNAVAILABLE',null,'',{});}),provider:'ollama.com',model:'gemma4:31b'};
+ const jobs=new GenerationJobs(store,new GenerationEngine([provider],{allowLlmRepair:true,repairs:1,check:evidence}),undefined,true,{maxCalls:2,automaticRetries:false,retryMs:10});
+ try{const done=await settled(jobs,jobs.create('owner','no-retry-live',request).jobId);assert.equal(done.stage,'needs_attention');assert.equal(done.attempts,1);assert.equal(calls,1);assert.equal(done.repairCount,0);}finally{await jobs.close();store.close();}
+});
+
+test('bounded live run permits an explicit zero-call revalidation of its saved complete checkpoint',async()=>{
+ const store=new Store(':memory:');let calls=0,checks=0;
+ const routeWithCheckpoint=route(async()=>{calls++;return{code:html,model:'actual'};});
+ const firstEngine=new GenerationEngine([routeWithCheckpoint],{allowLlmRepair:true,repairs:1,check:async()=>{if(++checks===1)throw Object.assign(new Fault('BROWSER_CANVAS_RENDER_UNVERIFIED',502),{feedback:'Unverified rendering evidence.'});return evidence();}});
+ let jobs=new GenerationJobs(store,firstEngine,undefined,true,{maxCalls:2,automaticRetries:false,retryMs:10});const id=jobs.create('owner','local-revalidate',request).jobId;
+ const failed=await settled(jobs,id);assert.equal(failed.stage,'needs_attention');assert.equal(failed.attempts,1);await jobs.close();
+ jobs=new GenerationJobs(store,new GenerationEngine([routeWithCheckpoint],{allowLlmRepair:true,repairs:1,check:evidence}),undefined,true,{maxCalls:2,automaticRetries:false,retryMs:10});
+ try{jobs.continue('owner',id);const done=await settled(jobs,id);assert.equal(done.stage,'completed');assert.equal(done.attempts,1);assert.equal(calls,1);}finally{await jobs.close();store.close();}
+});
+
+test('durable edit allows the initial POST and three same-provider repairs while preserving the prior version',async()=>{
+ const store=new Store(':memory:'),original=store.save(spec,artifact),batches:Message[][]=[];let calls=0,checks=0;
+ const provider:CodeTransport={route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async(messages)=>{batches.push(structuredClone(messages));calls++;return{code:html,model:'gemma4:31b'};}};
+ const engine=new GenerationEngine([provider],{allowLlmRepair:true,repairs:3,check:async()=>{if(++checks<=1)throw new Fault('BROWSER_DUPLICATE_START');return evidence();}}),jobs=new GenerationJobs(store,engine);
+ try{
+  const created=jobs.create('owner','one-edit-repair',{...request,providerMode:'ollama-cloud',previousVersionId:original.versionId});assert.equal(created.automaticLimit,4);assert.equal(created.repairBudget,3);
+  const done=await settled(jobs,created.jobId);assert.equal(done.stage,'completed');assert.equal(done.attempts,2);assert.equal(done.repairCount,1);assert.equal(done.repairBudget,3);assert.equal(calls,2);assert.equal(new Set(done.history.map(item=>item.provider+'/'+item.requestedModel)).size,1);assert.ok(batches[1][1].content.includes(original.html));assert.equal(store.getVersion(original.versionId).html,original.html);assert.equal(store.history(original.gameId).length,2);
+  const report=jobs.report('owner',done.jobId);assert.equal(report.configuration.automaticLimit,4);assert.equal(report.configuration.repairBudget,3);assert.equal(report.repairCount,1);
+ }finally{await jobs.close();store.close();}
+});
+
+test('durable create and edit enforce four total POST across repair, Continue and restart',async()=>{
+ const store=new Store(':memory:'),original=store.save(spec,artifact);let calls=0,checks=0;
+ const provider:CodeTransport={route:'primary',provider:'synthetic',model:'requested',readiness:async()=>'ready',complete:async()=>({code:html.replace('</html>',`<!-- response ${++calls} --></html>`),model:'requested'})};
+ const engine=new GenerationEngine([provider],{allowLlmRepair:true,repairs:3,check:async()=>{checks++;throw new Fault('JAVASCRIPT_EXCEPTION',502);}});
+ let jobs=new GenerationJobs(store,engine,undefined,true,{retryMs:10});
+ try{
+  const created=jobs.create('owner','budget-create',{...request,mode:'live'});assert.equal(created.automaticLimit,4);assert.equal(created.repairBudget,3);
+  const createFailed=await settled(jobs,created.jobId);assert.equal(createFailed.stage,'needs_attention');assert.equal(createFailed.attempts,4);assert.equal(createFailed.repairCount,3);assert.equal(calls,4);
+  await jobs.close();jobs=new GenerationJobs(store,engine);
+  const edited=jobs.create('owner','budget-edit',{...request,mode:'live',previousVersionId:original.versionId});assert.equal(edited.automaticLimit,4);assert.equal(edited.repairBudget,3);
+  const editFailed=await settled(jobs,edited.jobId);assert.equal(editFailed.stage,'needs_attention');assert.equal(editFailed.attempts,4);assert.equal(editFailed.repairCount,3);assert.equal(calls,8);
+  await jobs.close();jobs=new GenerationJobs(store,engine);
+  for(const failed of [createFailed,editFailed]){jobs.continue('owner',failed.jobId);const resumed=await settled(jobs,failed.jobId);assert.equal(resumed.attempts,failed.attempts);assert.equal(resumed.repairCount,failed.repairCount);}
+  assert.equal(calls,8);assert.ok(checks>=10);assert.equal(store.integrity(),true);
+ }finally{await jobs.close();store.close();}
+});
+
+test('ChatGPT transport has one POST and no automatic repair while preserving the pinned model',async()=>{
+ const store=new Store(':memory:');let posts=0,checks=0;
+ const session={respond:async(_messages:Message[],_signal:AbortSignal,beforePost:()=>void,_longWait:boolean,onResponse?:(status:number)=>void,onStreamComplete?:(details:{wireBytes:number;outputBytes:number;model:string})=>void)=>{beforePost();posts++;onResponse?.(200);onStreamComplete?.({wireBytes:2048,outputBytes:html.length,model:'gpt-6.1-sol'});return{code:html,model:'gpt-6.1-sol'};}};
+ const {ChatGptTransport}=await import('../src/chatgpt.ts');const engine=new GenerationEngine([new ChatGptTransport(session as any)],{allowLlmRepair:true,repairs:3,check:async()=>{checks++;throw new Fault('BROWSER_DUPLICATE_START');}}),jobs=new GenerationJobs(store,engine);
+ try{const created=jobs.create('owner','chatgpt-no-repair',{...request,providerMode:'chatgpt'});assert.equal(created.automaticLimit,1);assert.equal(created.repairBudget,0);const done=await settled(jobs,created.jobId);assert.equal(done.stage,'needs_attention');assert.equal(done.attempts,1);assert.equal(done.repairCount,0);assert.equal(checks,1);assert.equal(posts,1);assert.equal(done.provider,'chatgpt');assert.equal(done.requestedModel,'gpt-6.1-sol');assert.equal(jobs.report('owner',created.jobId).events.filter((event:any)=>event.event==='response.stream_completed').length,1);}finally{await jobs.close();store.close();}
+});
+
+test('unknown Ollama POST outcome is traced and never automatically re-dispatched',async()=>{
+ const store=new Store(':memory:');let calls=0;const provider:CodeTransport={route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async()=>{calls++;throw new ProviderFailure('LLM_NETWORK_UNAVAILABLE');}};
+ const jobs=new GenerationJobs(store,new GenerationEngine([provider],{allowLlmRepair:true,repairs:3,check:evidence}),undefined,true,{maxCalls:4,retryMs:10});
+ try{const created=jobs.create('owner','unknown-post',{...request,providerMode:'ollama-cloud'});const done=await settled(jobs,created.jobId);await new Promise(r=>setTimeout(r,50));assert.equal(done.stage,'needs_attention');assert.equal(done.attempts,1);assert.equal(done.repairCount,0);assert.equal(calls,1);assert.ok(done.blockedRoutes?.includes('ollama.com/gemma4:31b'));const report=jobs.report('owner',done.jobId);assert.ok(report.events.some((event:any)=>event.event==='repair.eligibility'&&event.status==='SKIPPED'&&event.details?.blockers?.includes('UNKNOWN_POST_OUTCOME')));}finally{await jobs.close();store.close();}
 });
 
 test('per-request timeout automatically falls back without retrying unknown billed request',async()=>{
@@ -141,6 +199,6 @@ test('complete checkpoint is browser-validated after restart with zero repeated 
 test('legacy router draft requires manual continuation; cancellation stays cancelled',async()=>{
  const store=new Store(':memory:');let jobs=new GenerationJobs(store);const id=jobs.create('owner','legacy-timeout',request).jobId;await settled(jobs,id);const cancelled=jobs.create('owner','legacy-cancel',request).jobId;jobs.cancel('owner',cancelled);await jobs.close();
  store.db.prepare("UPDATE generation_jobs SET attempts=2,metadata=json_set(json_remove(metadata,'$.automaticLimit','$.automaticRuns','$.deadlineAt'),'$.errorCode','LLM_TIMEOUT','$.provider','openrouter','$.requestedModel','specific:free') WHERE job_id=?").run(id);
- let calls=0;jobs=new GenerationJobs(store,new GenerationEngine([{...route(async()=>{calls++;return{code:html,model:'actual'};}),provider:'ollama.com',model:'gemma4:31b'}],{check:evidence}),undefined,true,{maxCalls:2,retryMs:10});
+ let calls=0;jobs=new GenerationJobs(store,new GenerationEngine([{...route(async()=>{calls++;return{code:html,model:'actual'};}),provider:'ollama.com',model:'gemma4:31b'}],{check:evidence}),undefined,true,{maxCalls:3,retryMs:10});
  try{assert.equal((await settled(jobs,id)).stage,'needs_attention');assert.equal(calls,0);jobs.continue('owner',id);const done=await settled(jobs,id);assert.equal(done.stage,'completed');assert.equal(done.attempts,3);assert.equal(calls,1);assert.equal(done.spec.prompt,spec.prompt);assert.equal(store.list().length,1);assert.equal(jobs.get('owner',cancelled).stage,'cancelled');}finally{await jobs.close();store.close();}
 });
