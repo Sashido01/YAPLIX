@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {resolve} from 'node:path';
+import {homedir} from 'node:os';
 import {syncBuiltinESMExports} from 'node:module';
 import {mkdtempSync,readFileSync,writeFileSync,utimesSync,existsSync,statSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
@@ -27,7 +28,7 @@ test('trace drops unknown fields, raw text, credentials and env secrets; absent 
  assert.throws(()=>safeTrace('untrusted-event',id));
 });
 test('trace records explicit status, safe launch diagnosis and durable timeline fields',()=>{
- const id=randomUUID(),row=safeTrace('browser.launch.failed',id,{status:'NOT_VERIFIED',errorCode:'BROWSER_INSTALL_REQUIRED',details:{nodeVersion:'24.18.0',browserTarget:'chromium',sandboxEnabled:true,launchError:'Executable does not exist at /home/talonsqu/.cache/ms-playwright/chromium/chrome',unsafe:'private-secret'}},{API_TOKEN:'private-secret'}),encoded=JSON.stringify(row);
+ const id=randomUUID(),row=safeTrace('browser.launch.failed',id,{status:'NOT_VERIFIED',errorCode:'BROWSER_INSTALL_REQUIRED',details:{nodeVersion:'24.18.0',browserTarget:'chromium',sandboxEnabled:true,launchError:`Executable does not exist at ${homedir()}/.cache/ms-playwright/chromium/chrome`,unsafe:'private-secret'}},{API_TOKEN:'private-secret'}),encoded=JSON.stringify(row);
  assert.equal(row.jobId,id);assert.equal(row.stage,'browser.launch');assert.equal(row.status,'NOT_VERIFIED');assert.equal((row.details as any).launchError,'Executable does not exist at <HOME>/.cache/ms-playwright/chromium/chrome');assert.ok(!encoded.includes('private-secret'));assert.ok(!('unsafe' in (row.details as object)));
  const invalid=safeTrace('browser.launch.completed',id,{status:'private-secret'} as any);assert.equal(invalid.status,'PASS');
 });

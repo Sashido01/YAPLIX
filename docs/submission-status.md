@@ -77,3 +77,17 @@ NOT_VERIFIED, но принятие произвольной игры ещё н�
 
 Навигация по уточнению владельца: только **Создать · Игры · Арена**. Скрытый
 четвёртый пункт удалён; контекстный возврат из редактора сохранён.
+
+## FINAL-30 — 29 октября
+
+README, инструкция и восемь слайдов оформлены как продуктовые материалы.
+Подтверждённые сценарии генерации и long-v1 сохранены; новых LLM POST нет.
+Quick/integration, 3 Canvas classification/keyboard regressions, 21 unit и
+20 Python tests: PASS. Неподвижный по вводу animated START остаётся
+NOT_VERIFIED по input/gameplay; причинный input-proof P1 не закрыт.
+
+CI исправления: Python suite после build; operation-trace включён в source
+installer и payload overlay; Linux ELF test не компилируется на Windows;
+переносимая fixture/редакция домашнего пути. Windows installer workflow сохранён.
+Hosted Actions активны. Результаты старого run не являются проверкой нового SHA;
+незавершённые checks и полная матрица не считаются PASS.

@@ -1,3 +1,21 @@
+## FINAL-30: порядок CI и переносимые проверки
+
+Run 40821319327 запускал Python packaging test до npm ci/build. Suite перенесён
+после сборки; ранний check_repo сохранён. В отдельной копии без build выполнены
+npm ci → build → 20 Python tests: PASS.
+
+Windows source bootstrap не включал operation-trace.mjs, импортируемый
+install-engine.mjs. Добавлен модуль в source allowlist и в overlay проверенного
+payload; regression dependency closure прошёл RED→GREEN. Ubuntu source bootstrap
+дошёл до установки и apiReady/uiReady/sandboxReady. Windows native — только по CI.
+
+Следующий run 40823367517 обнаружил два независимых дефекта тестов: Linux ELF
+packaging test запускался на Windows только по наличию gcc (нет sys/wait.h), а
+trace fixture содержал путь конкретного Ubuntu-пользователя. ELF smoke теперь
+ограничен Linux; Windows installer job сохранён. Fixture использует homedir();
+trace редактирует homedir() и HOME для переносимой защиты пути. 21 целевой unit
+и 20 Python tests PASS. Успех нового hosted SHA проверяется отдельно.
+
 ## SUBMISSION-009: LAN и чистая проверка упаковки
 
 При выборочном merge отсутствовали boot-mount и runtime route существующей

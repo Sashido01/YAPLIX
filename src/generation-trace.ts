@@ -1,5 +1,6 @@
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { DATA_ROOT, managedPath } from './store.ts';
 import { uuid } from './contracts.ts';
@@ -41,7 +42,7 @@ export function safeTrace(event:string,jobId:string,data:TraceData={},env:NodeJS
       else if(typeof value==='number'&&Number.isFinite(value)&&value>=0)details[key]=Math.round(value);
       else if(typeof value==='boolean')details[key]=value;
       else if(typeof value==='string'){
-        let candidate=value.slice(0,key==='launchError'?300:key==='stack'?2048:128).replace(/[\r\n\t]/g,' ').replaceAll(process.env.HOME??'\0','<HOME>');
+        let candidate=value.slice(0,key==='launchError'?300:key==='stack'?2048:128).replace(/[\r\n\t]/g,' ').replaceAll(homedir(),'<HOME>').replaceAll(process.env.HOME??'\0','<HOME>');
         if(key==='stack')candidate=candidate.replace(/https?:\/\/[^/\s)]+/g,'').replace(/\?[^\s):]*/g,'').replace(/Bearer\s+\S+/gi,'Bearer [REDACTED]').replace(/(?:api[_ -]?key|access[_ -]?token|password|secret)\s*[:=]\s*[^\s,;)]+/gi,'[REDACTED]');
         const clean=key==='launchError'&&candidate.length<=300&&!/https?:|bearer|password|secret|token|api.key/i.test(candidate)&&!secrets.some(s=>candidate.includes(s))?candidate:key==='stack'&&!secrets.some(s=>candidate.includes(s))?candidate:safe(candidate);
         if(clean!==null)details[key]=clean;

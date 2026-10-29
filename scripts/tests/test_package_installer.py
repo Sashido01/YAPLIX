@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@unittest.skipUnless(shutil.which("gcc"), "Linux package smoke requires gcc")
+@unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("gcc"), "Linux ELF package smoke requires Linux and gcc; Windows installers have a separate native CI job")
 class PackageInstallerTests(unittest.TestCase):
     def test_ubuntu_package_rejects_stale_assets_and_uses_current_verified_payload(self):
         with tempfile.TemporaryDirectory(prefix="package-test-", dir=ROOT) as temporary:
