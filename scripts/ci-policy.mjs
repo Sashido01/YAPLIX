@@ -7,6 +7,12 @@ const documentation = path => /^(?:[^/]+\.md|docs\/.+\.md)$/.test(path);
 const unitTest = path => /^tests\/[^/]+\.test\.ts$/.test(path)
   || /^scripts\/tests\/test_[^/]+\.py$/.test(path);
 
+export function secretScanRouteForEvent(eventName, releaseTag = '') {
+  if (eventName === 'release' || (eventName === 'workflow_dispatch' && releaseTag)) return 'cli';
+  if (['pull_request', 'merge_group', 'workflow_dispatch'].includes(eventName)) return 'action';
+  return 'cli';
+}
+
 // An allowlist of inexpensive changes; new/unknown executable paths need FULL.
 export function classifyPaths(paths) {
   if (!Array.isArray(paths) || !paths.length

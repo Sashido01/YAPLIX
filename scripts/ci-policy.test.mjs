@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { classifyPaths, planForEvent } from './ci-policy.mjs';
+import { classifyPaths, planForEvent, secretScanRouteForEvent } from './ci-policy.mjs';
 
 const base = 'a'.repeat(40), head = 'b'.repeat(40);
 const event = { pull_request: { base: { sha: base } } };
@@ -32,6 +32,15 @@ test('empty, malformed, mixed and large diffs cannot silently omit risky files',
 test('manual, release, merge_group and unsupported events cannot request FAST', () => {
   for (const name of ['workflow_dispatch', 'release', 'merge_group', 'push', undefined]) {
     assert.equal(planForEvent(name, event, head, () => { throw Error('must not diff'); }).browsers, true);
+  }
+});
+test('release scans use the CLI while supported PR, merge queue and manual scans keep the action', () => {
+  for (const name of ['pull_request', 'merge_group', 'workflow_dispatch']) {
+    assert.equal(secretScanRouteForEvent(name), 'action', name);
+  }
+  assert.equal(secretScanRouteForEvent('workflow_dispatch', 'v0.0.1'), 'cli', 'manual exact-tag scan');
+  for (const name of ['release', 'push', undefined]) {
+    assert.equal(secretScanRouteForEvent(name), 'cli', String(name));
   }
 });
 test('PR compares exact base and checked-out merge SHA; API labels cannot disable FULL', () => {

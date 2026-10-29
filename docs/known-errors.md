@@ -9,6 +9,20 @@ sent. A local attempt to join a valid room was blocked by this host's proxy
 routing for its private LAN address. The existing selected-game Arena scenario
 remains unchanged; hosted results on the #72 patch are pending.
 
+## Release scan: Gitleaks Action не поддерживает событие release
+
+Run 40937349760 завершил `secret-scan` ошибкой `The [release] event is not yet
+supported`. Это сбой запуска Action, а не найденный секрет. Кандидат для #71
+оставляет Gitleaks Action для `pull_request`, `merge_group` и обычного
+`workflow_dispatch`; публикация release и ручной выбор точного тега используют
+закреплённый Gitleaks CLI 8.24.3. CI проверяет SHA256 архива, совпадение тега
+с release checkout, всю историю до tag commit и файлы точного дерева тега.
+
+На исходном теге `v0.0.1` локально проверены CLI и SHA256 архива: history scan
+прошёл 197 commits, scan дерева тега также завершился без находок. Hosted CI
+для исправления должен подтвердить тот же путь до закрытия #71; тег и assets
+релиза не перепубликовывать.
+
 ## RELEASE-011: «На телефон» при открытии новой версии
 
 PR run 40921598800 на Windows: один phone-version assertion оставался на старой
