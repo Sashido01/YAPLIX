@@ -6,6 +6,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      scan_release_tag:
+        description: Optional exact tag to check with the release secret-scan path
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -175,7 +180,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Scan with Gitleaks
+      - name: Select secret scan route
+        id: scan-route
+        run: node scripts/secret-scan-policy.mjs
+      - name: Install pinned Gitleaks CLI for release tags
+        if: steps.scan-route.outputs.route == 'cli'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gitleaks_8.24.3_linux_x64.tar.gz"
+          url='https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz'
+          curl --fail --location --silent --show-error "$url" --output "$archive"
+          printf '%s  %s\n' '9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c' "$archive" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/gitleaks" gitleaks
+          chmod 0755 "$RUNNER_TEMP/gitleaks/gitleaks"
+          test "$("$RUNNER_TEMP/gitleaks/gitleaks" version)" = '8.24.3'
+          printf 'GITLEAKS_BIN=%s\n' "$RUNNER_TEMP/gitleaks/gitleaks" >> "$GITHUB_ENV"
+      - name: Scan with Gitleaks Action
+        if: steps.scan-route.outputs.route == 'action'
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -183,3 +206,8 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
           GITLEAKS_ENABLE_SUMMARY: 'false'
           GITLEAKS_VERSION: '8.24.3'
+      - name: Scan exact release tag and its full history with Gitleaks CLI
+        if: steps.scan-route.outputs.route == 'cli'
+        env:
+          RELEASE_SCAN_TAG: ${{ github.event.release.tag_name || inputs.scan_release_tag || '' }}
+        run: node scripts/release-secret-scan.mjs
