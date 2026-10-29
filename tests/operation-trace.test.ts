@@ -24,8 +24,8 @@ test('operation trace persists one correlated lifecycle with bounded allowlisted
   assert.equal(rows[0].status,'STARTED');assert.equal(rows[1].status,'PASS');
   assert.equal(rows[1].durationMs>=0,true);assert.equal(rows[1].details.schemaVersion,3);
   assert.equal('apiKey' in rows[1].details,false);assert.equal(rows[2].event,'generation.job_linked');
-  assert.equal(statSync(file).mode&0o777,0o600);
-  assert.equal(statSync(resolve(root,'diagnostics/operations')).mode&0o777,0o700);
+  if(process.platform!=='win32')assert.equal(statSync(file).mode&0o777,0o600);
+  if(process.platform!=='win32')assert.equal(statSync(resolve(root,'diagnostics/operations')).mode&0o777,0o700);
   const restarted=new OperationTrace({dataRoot:root,operationId});
   restarted.record('startup','startup.completed','PASS');
   assert.equal(readFileSync(file,'utf8').trim().split('\n').length,4);

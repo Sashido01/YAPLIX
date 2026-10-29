@@ -42,13 +42,13 @@ test('desktop starts once, reopens, saves a game and preserves it after full sto
   const traceDir=resolve(home,'diagnostics/operations'),rows=readdirSync(traceDir).filter(name=>/^[0-9a-f-]{36}\.jsonl$/.test(name)).flatMap(name=>readFileSync(resolve(traceDir,name),'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)));
   const events=new Set(rows.map(row=>row.event));for(const event of ['desktop.started','desktop.backend_ready','desktop.instance_reused','desktop.stop_requested','desktop.stopped','desktop.restart'])assert.ok(events.has(event),`missing ${event}`);
   assert.ok(rows.every(row=>row.operationId&&Number.isFinite(Date.parse(row.timestamp))&&row.stage&&row.status));
-  assert.equal(statSync(traceDir).mode&0o777,0o700);assert.ok(readdirSync(traceDir).every(name=>(statSync(resolve(traceDir,name)).mode&0o777)===0o600));
+  if(process.platform!=='win32'){assert.equal(statSync(traceDir).mode&0o777,0o700);assert.ok(readdirSync(traceDir).every(name=>(statSync(resolve(traceDir,name)).mode&0o777)===0o600));}
   await stopped();
  }finally{stopBestEffort(home);await new Promise<void>(done=>busy.close(()=>done()));rmSync(home,{recursive:true,force:true});}
 });
 
 
-test('AI dialog saves OpenRouter settings privately and configures the existing route', {timeout:60000}, async()=>{
+test('Linux AI dialog saves OpenRouter settings privately and configures the existing route', {timeout:60000,skip:process.platform==='win32'}, async()=>{
  const {readFileSync,statSync,existsSync}=await import('node:fs');
  const {setTimeout:delay}=await import('node:timers/promises');
  const home=isolatedProfile('desktop-settings-'),bin=resolve(home,'bin');mkdirSync(bin);
