@@ -1,0 +1,101 @@
+name: Ubuntu installer candidates
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ubuntu-installer-candidates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu-installer-candidates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu-installers:
+    name: Ubuntu Lite and Full installer acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.0'
+          cache: npm
+      - name: Check tracked inputs and install locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_repo.py
+          npm ci
+          npm run build
+      - name: Install pinned Chromium and headless-shell
+        timeout-minutes: 12
+        run: node scripts/browser-tests.mjs install chromium
+      - name: Prepare protected Google Chrome sandbox for isolated acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=/opt/google/chrome/chrome-sandbox
+          test -f "$helper" && test ! -L "$helper"
+          dpkg-query -S "$helper" | grep -Fx 'google-chrome-stable: /opt/google/chrome/chrome-sandbox'
+          expected=$(awk '$2 == "opt/google/chrome/chrome-sandbox" {print $1}' /var/lib/dpkg/info/google-chrome-stable.md5sums)
+          actual=$(md5sum "$helper" | cut -d ' ' -f 1)
+          test -n "$expected" && test "$actual" = "$expected"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
+      - name: Download and verify pinned official Node archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .local/ci-ubuntu-inputs
+          base=https://nodejs.org/dist/v24.18.0
+          curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 240 "$base/node-v24.18.0-linux-x64.tar.xz" --output .local/ci-ubuntu-inputs/node-v24.18.0-linux-x64.tar.xz
+          curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 60 "$base/SHASUMS256.txt" --output .local/ci-ubuntu-inputs/SHASUMS256.txt
+          printf '%s  %s\n' '55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742' '.local/ci-ubuntu-inputs/node-v24.18.0-linux-x64.tar.xz' | sha256sum --check --status
+          grep -F 'node-v24.18.0-linux-x64.tar.xz' .local/ci-ubuntu-inputs/SHASUMS256.txt
+      - name: Build actual Ubuntu Lite and Full executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/build-installers.py --platform linux \
+            --node-archive .local/ci-ubuntu-inputs/node-v24.18.0-linux-x64.tar.xz \
+            --shasums .local/ci-ubuntu-inputs/SHASUMS256.txt \
+            --browsers .local/playwright \
+            --output .local/ci-ubuntu-packages
+          cd .local/ci-ubuntu-packages/packages
+          test "$(find . -maxdepth 1 -type f -name '*.run' | wc -l)" -eq 2
+          for file in *.sha256; do sha256sum --check "$file"; done
+      - name: Exercise real Ubuntu Lite installer, UI, SQLite and restart
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          lite=.local/ci-ubuntu-packages/packages/YAPLIX-0.0.1-ubuntu24.04-x64-lite.run
+          test -x "$lite"
+          node scripts/installer-smoke.mjs "$lite" \
+            "$PWD/.local/ci-ubuntu-acceptance/profile" \
+            "$PWD/.local/ci-ubuntu-acceptance/evidence"
+      - name: Record exact source and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "import fs from 'node:fs';import {execFileSync} from 'node:child_process';fs.writeFileSync('.local/ci-ubuntu-packages/packages/SOURCE.json', JSON.stringify({sourceCommit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),sourceTree:execFileSync('git',['rev-parse','HEAD^{tree}'],{encoding:'utf8'}).trim(),githubRun:process.env.GITHUB_RUN_ID,version:'0.0.1',status:'candidate; not a published release',ubuntuLiteInstallerSmoke:'PASS'},null,2)+'\\n')"
+      - name: Upload verified Ubuntu installers and checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ubuntu-installers-${{ github.sha }}
+          path: |
+            .local/ci-ubuntu-packages/packages/*.run
+            .local/ci-ubuntu-packages/packages/*.sha256
+            .local/ci-ubuntu-packages/packages/*.json
+            .local/ci-ubuntu-acceptance/evidence/evidence.json
+          if-no-files-found: error
+          retention-days: 7
