@@ -41,6 +41,21 @@ test('saved recoverable job reopens in the workspace and continues locally after
  }finally{await jobs.close();store.close();}
 });
 
+test('unverified Canvas input offers a sandboxed draft preview without another provider request',async({page,context,baseURL})=>{
+ test.setTimeout(30000);const store=new Store(':memory:');let calls=0;
+ const engine=new GenerationEngine([{route:'primary',provider:'ollama.com',model:'gemma4:31b',readiness:async()=>'ready',complete:async()=>{calls++;return{code:html,model:'gemma4:31b'};}}],{allowLlmRepair:false,check:async()=>{throw new Fault('BROWSER_CANVAS_ACTIVITY_UNVERIFIED',502);}});
+ const jobs=new GenerationJobs(store,engine,undefined,true,{maxCalls:2,automaticRetries:false}),app=createApp(store,engine,undefined,undefined,undefined,undefined,jobs);
+ await context.route(baseURL+'/**',async route=>{const req=route.request(),response=await app.request(req.url(),{method:req.method(),headers:{...req.headers(),'accept-encoding':'identity'},...(req.postData()?{body:req.postData()!}:{})});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});});
+ try{
+  await page.goto('/');await page.locator('#prompt').fill('Canvas input proof is incomplete');await page.locator('#generate').click();
+  await expect.poll(()=>jobs.list('owner')[0]?.stage,{timeout:10000}).toBe('needs_attention');
+  const preview=page.locator('#gen-preview');await expect(preview).toBeVisible();await expect(preview).toHaveAttribute('href',/\/api\/jobs\/.+\/preview/);
+  const popupPromise=page.waitForEvent('popup');await preview.click();const popup=await popupPromise;await expect(popup).toHaveTitle('Synthetic test game');
+  expect(popup.url()).toContain('/api/jobs/');expect(calls).toBe(1);expect(jobs.list('owner')[0].validation).toMatchObject({level:'NOT_VERIFIED',code:'BROWSER_CANVAS_ACTIVITY_UNVERIFIED'});expect(store.list()).toHaveLength(0);
+  await popup.close();
+ }finally{await jobs.close();store.close();}
+});
+
 test('saved game editor stays available while nonessential post-open diagnostics are pending',async({page,context,baseURL})=>{
  const store=new Store(':memory:');const saved=store.save(spec,artifact);let release!:()=>void,started!:()=>void;
  const pending=new Promise<void>(done=>release=done),seen=new Promise<void>(done=>started=done);

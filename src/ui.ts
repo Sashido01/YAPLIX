@@ -628,6 +628,7 @@ function syncGenFromJobs(jobs:JobSummary[]) {
     el('gen-stage').textContent = stageLabel(tracked) + ' · ' + jobDuration(tracked);
     el('gen-result').textContent = '';
     el<HTMLButtonElement>('gen-continue').hidden = true;
+    el<HTMLAnchorElement>('gen-preview').hidden = true;
     setGenState('working');
     return;
   }
@@ -642,6 +643,7 @@ function syncGenFromJobs(jobs:JobSummary[]) {
     el('gen-model').textContent = providerLabel(tracked.providerMode);
     el('gen-result').textContent = (tracked.errorCode ? (errors[tracked.errorCode] ?? tracked.errorCode) : 'Подробности — в раскрываемом блоке ниже.');
     const continueButton=el<HTMLButtonElement>('gen-continue');continueButton.hidden=!tracked.canContinue;continueButton.disabled=!tracked.canContinue;
+    const preview=el<HTMLAnchorElement>('gen-preview');const previewable=tracked.stage==='needs_attention'&&tracked.validation?.level==='NOT_VERIFIED'&&['BROWSER_CHECK_INCONCLUSIVE','BROWSER_CANVAS_ACTIVITY_UNVERIFIED'].includes(tracked.validation.code);preview.hidden=!previewable;if(previewable)preview.href='/api/jobs/'+tracked.jobId+'/preview';else preview.removeAttribute('href');
     setGenState('failed');
   }
 }
@@ -711,7 +713,7 @@ function renderJobs(jobs:JobSummary[]){
       if(job.stage==='completed'){add('Играть',()=>openJob(job));add('Изменить',async()=>{await openJob(job);const more=el<HTMLDetailsElement>('create-more');if(more&&!more.open)more.open=true;el('iterate').scrollIntoView({block:'center'});el('change').focus();});add('На телефон',()=>phoneFor(job.versionId!));const download=document.createElement('a');download.textContent='Скачать HTML';download.href='/api/versions/'+job.versionId+'/export';download.download='game.html';actions.append(download);}
     else if(['needs_attention','failed','cancelled'].includes(job.stage)){const button=add('Продолжить генерацию',()=>api('/api/jobs/'+job.jobId+'/continue',{}));button.disabled=!job.canContinue;}
     else add('Отменить задание',()=>api('/api/jobs/'+job.jobId+'/cancel',{}));
-    if(job.validation?.level==='NOT_VERIFIED'&&job.validation.code==='BROWSER_CHECK_INCONCLUSIVE'&&job.stage==='needs_attention'){const preview=document.createElement('a');preview.textContent='Предпросмотр · NOT_VERIFIED';preview.href='/api/jobs/'+job.jobId+'/preview';preview.target='_blank';preview.rel='noopener noreferrer';actions.append(preview);}
+    if(job.validation?.level==='NOT_VERIFIED'&&['BROWSER_CHECK_INCONCLUSIVE','BROWSER_CANVAS_ACTIVITY_UNVERIFIED'].includes(job.validation.code)&&job.stage==='needs_attention'){const preview=document.createElement('a');preview.textContent='Предпросмотр · NOT_VERIFIED';preview.href='/api/jobs/'+job.jobId+'/preview';preview.target='_blank';preview.rel='noopener noreferrer';actions.append(preview);}
     if(job.checkpointBytes)add('Скачать черновик',async()=>{const draft=await api('/api/jobs/'+job.jobId);const url=URL.createObjectURL(new Blob([draft.checkpoint],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='yaplix-draft-'+job.jobId+'.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     row.append(actions);container.append(row);
   }

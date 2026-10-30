@@ -182,10 +182,20 @@ export async function runRulesGameplay(
   }
   if (actions.length >= maxActions) stopReason = 'action budget';
   else if (samples.length >= 2048) stopReason = 'observation budget';
-  // Two independent observations after a real-time settling window catch
-  // transient/spurious outcomes and threshold-without-completion bugs.
+  // A terminal event can arrive one render before its visible overlay. After
+  // settling, collect two consecutive visible confirmations so a delayed
+  // overlay is not left NOT_VERIFIED after an otherwise complete real play.
   if (paused && !current.terminal.visible) await pause(false);
-  if (remaining() > 350) { await page.waitForTimeout(300); current = await observe(); }
+  if (remaining() > 350) {
+    await page.waitForTimeout(300);
+    let terminalConfirmations = 0;
+    for (let i = 0; i < 4 && remaining() > 150 && terminalConfirmations < 2; i++) {
+      current = await observe();
+      const ended = current.events.some(e => e.type === 'game_won' || e.type === 'session_ended');
+      terminalConfirmations = current.terminal.visible && ended ? terminalConfirmations + 1 : 0;
+      if (terminalConfirmations < 2 && remaining() > 150) await page.waitForTimeout(100);
+    }
+  }
   await screenshot('final');
   const proof = proveWin(goal, samples, actions, errors);
   if (proof.level === 'VERIFIED' && samples.length >= 2048) { proof.level = 'NOT_VERIFIED'; proof.reason = 'observation budget exhausted before final corroboration'; }

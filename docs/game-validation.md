@@ -196,9 +196,11 @@ Playwright actionability failure. A full-HTML inconclusive failure records the
 bounded probe phase and viewport width, without raw exception/source text.
 No uncertain mechanic automatically authorizes another inference request.
 
-For a complete statically safe checkpoint with BROWSER_CHECK_INCONCLUSIVE,
+For a complete statically safe checkpoint with BROWSER_CHECK_INCONCLUSIVE or
+BROWSER_CANVAS_ACTIVITY_UNVERIFIED,
 `GET /api/jobs/:id/preview` offers an explicitly NOT_VERIFIED, opaque sandbox/CSP
-preview. Critical errors, unsafe/incomplete HTML and browser timeouts are refused.
+preview. The generation result exposes the same preview action without a new LLM
+request. Critical errors, unsafe/incomplete HTML and browser timeouts are refused.
 This creates no accepted game/version, Ready label or gameplay PASS. Continue can
 revalidate a complete checkpoint locally. OpenRouter cannot auto-repair a failed
 checkpoint after restart. Trace failures degrade diagnostics, not durable jobs.
