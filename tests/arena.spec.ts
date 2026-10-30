@@ -8,8 +8,8 @@ import {PNG} from 'pngjs';
 import jsQR from 'jsqr';
 import {lanAddresses} from '../src/network.ts';
 
-async function backend(path:string){
-  const child=fork('tests/arena-server.ts',[],{env:{...process.env,YAPLIX_ARENA_TEST_DB:path},stdio:['ignore','pipe','pipe','ipc']});
+async function backend(path:string,emptyLibrary=false){
+  const child=fork('tests/arena-server.ts',[],{env:{...process.env,YAPLIX_ARENA_TEST_DB:path,YAPLIX_ARENA_TEST_EMPTY:emptyLibrary?'1':'0'},stdio:['ignore','pipe','pipe','ipc']});
   let errors='';child.stderr?.on('data',data=>{errors+=data;});
   const origin=await new Promise<string>((done,fail)=>{const timer=setTimeout(()=>fail(new Error('Arena fixture startup timeout: '+errors)),10000);child.once('message',message=>{clearTimeout(timer);done((message as {origin:string}).origin);});child.once('exit',code=>{clearTimeout(timer);fail(new Error('Arena fixture exit '+code+': '+errors));});});
   return {child,origin};
@@ -30,7 +30,7 @@ async function openSavedGame(page:Page,origin:string){
   await expect(page.locator('#qr')).toBeVisible();const url=await page.locator('#url').inputValue();
   return {url,id};
 }
-async function join(page:Page,url:string,nickname:string){await page.goto(url);await expect(page.locator('#join')).toBeVisible();await page.locator('#nickname').fill(nickname);await page.locator('#join button').click();await expect(page.locator('#play')).toBeVisible();}
+async function join(page:Page,url:string,nickname:string){await page.goto(url);await expect(page.locator('#join')).toBeVisible();await page.locator('#nickname').fill(nickname);await page.locator('#join button').click();await expect(page.locator('#play')).toBeVisible({timeout:10_000});}
 const attemptAcknowledged=new WeakMap<Page,number>();
 async function startAttempt(page:Page){
   // Respect the public one-second attempt limit from the previous acknowledgement.
@@ -101,6 +101,31 @@ test('Arena vertical scenario: one decoded QR, ten independent real games, retry
     await expect(returning.locator('#scores tr')).toHaveCount(10);await page.locator('#stop').click();await expect(page.locator('#invite')).toBeHidden();await expect(page.locator('#scores tr')).toHaveCount(10);
     expect(errors).toEqual([]);
   }finally{await Promise.all(contexts.map(c=>c.close()));await stop(server.child);rmSync(dir,{recursive:true});}
+});
+
+test('Arena room status explains an empty library without requesting an empty versionId',async({page})=>{
+  const dir=mkdtempSync('.local/arena-empty-'),server=await backend(resolve(dir,'arena.sqlite'),true);
+  const emptyRequests:string[]=[];
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/arena'&&url.searchParams.has('versionId')&&!url.searchParams.get('versionId'))emptyRequests.push(url.href);});
+  try{
+    await page.goto(server.origin);
+    for(const viewport of [
+      {width:320,height:700},{width:360,height:700},{width:390,height:780},
+      {width:430,height:700},{width:768,height:1024},{width:1440,height:900},
+    ]){
+      await page.setViewportSize(viewport);
+      await page.getByRole('button',{name:'Арена',exact:true}).click();
+      await page.getByRole('button',{name:'Комната и QR',exact:true}).click();
+      await expect(page.locator('#arena-status')).toHaveText('Сначала откройте игру в библиотеке.');
+      await expect.poll(()=>page.locator('#arena-status').evaluate(element=>{
+        const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+        return Boolean(hit&&(hit===element||element.contains(hit)));
+      })).toBe(true);
+      await page.getByRole('button',{name:'Обновить статус',exact:true}).click();
+      await expect(page.locator('#arena-status')).toHaveText('Сначала откройте игру в библиотеке.');
+    }
+    expect(emptyRequests).toEqual([]);
+  }finally{await stop(server.child);rmSync(dir,{recursive:true});}
 });
 
 test('Arena responsive touch or keyboard game, no fabricated score, version isolation and unsupported game',async({page,browser,isMobile},info)=>{
