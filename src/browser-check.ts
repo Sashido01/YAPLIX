@@ -12,6 +12,7 @@ import type { BrowserEvidence } from './contracts.ts';
 import {BROWSER_VIEWPORTS,BROWSER_PROFILES} from './browser-profiles.ts';
 import {BROWSER_STORAGE_INIT_SCRIPT,BROWSER_STORAGE_MARKER,browserStorageFeedback,browserStorageName} from './browser-storage-guard.ts';
 import {browserPhaseTracker} from './browser-phase.ts';
+import {awaitWithAbort} from './abortable.ts';
 import type { TraceData } from './generation-trace.ts';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve(PROJECT_ROOT,'.local/playwright');
 const {chromium}=await import('playwright-core');
@@ -67,7 +68,7 @@ export async function browserCheck(html: string, signal: AbortSignal, options:{t
       trace('browser.viewport.started',{details:{viewport:`${width}x${height}`,deviceScaleFactor:2}});
       if(deadline.aborted)throw new Fault('BROWSER_TIMEOUT',504);
       const phases=browserPhaseTracker(trace,`${width}x${height}`);phases.start('document-boot');
-      const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false});
+      const context=await awaitWithAbort(browser.newContext({viewport:{width,height},deviceScaleFactor:2,hasTouch:true,isMobile:true,offline:true,serviceWorkers:'block',acceptDownloads:false}),deadline,()=>new Fault(signal.aborted?'REQUEST_CANCELLED':'BROWSER_TIMEOUT',signal.aborted?499:504),context=>context.close());
       await context.addInitScript(BROWSER_STORAGE_INIT_SCRIPT);
       phase='render';let phaseBudgetExceeded=false;let profileChecks:BrowserEvidence['checks'];const page=await context.newPage();page.setDefaultTimeout(VALIDATION_BUDGETS.renderMs);const errors:string[]=[];
       let exception='';page.on('pageerror',error=>{const storage=browserStorageName(error.message);errors.push(storage?'BROWSER_STORAGE_ACCESS_FORBIDDEN':'JAVASCRIPT_EXCEPTION');exception=storage?browserStorageFeedback(storage):error.message.slice(0,250);});
